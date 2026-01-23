@@ -1295,19 +1295,20 @@ export default function DrivePage() {
         </div>
       )}
 
-      {/* 메인 컨텐츠 (사이드바 여백) */}
-      <div className="lg:pl-64">
+      {/* 메인 컨텐츠 (사이드바 여백 + 모바일 하단 탭 여백) */}
+      <div className="lg:pl-64 pb-20 lg:pb-0">
         {/* 헤더 */}
         <header className="header safe-area-top">
           <div className="header-content">
             {/* 왼쪽: 메뉴 버튼 + 타이틀 */}
-            <div className="flex items-center gap-3 min-w-0">
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
               {/* 모바일 메뉴 버튼 */}
               <button
                 onClick={() => setIsSidebarOpen(true)}
-                className="lg:hidden p-2 rounded-xl hover:bg-white/10 transition-colors"
+                className="lg:hidden p-2 -ml-2 rounded-xl transition-colors"
+                style={{ color: 'var(--foreground)' }}
               >
-                <svg className="w-6 h-6" style={{ color: 'var(--foreground)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </button>
@@ -1315,127 +1316,127 @@ export default function DrivePage() {
               {/* 현재 위치 */}
               <div className="flex items-center gap-2">
                 {currentCategory !== 'all' ? (
-                  <h1 className="font-bold text-lg" style={{ color: 'var(--foreground)' }}>
+                  <h1 className="font-semibold text-base sm:text-lg whitespace-nowrap" style={{ color: 'var(--foreground)' }}>
                     {currentCategory === 'photos' && '사진'}
                     {currentCategory === 'videos' && '동영상'}
                     {currentCategory === 'documents' && '문서'}
                   </h1>
                 ) : breadcrumbs.length > 0 ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
                     <button
                       onClick={() => router.push('/drive')}
-                      className="text-sm hover:underline"
+                      className="text-xs sm:text-sm hover:underline hidden sm:block"
                       style={{ color: 'var(--foreground-secondary)' }}
                     >
-                      내 드라이브
+                      드라이브
                     </button>
-                    <svg className="w-4 h-4 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3 h-3 sm:w-4 sm:h-4 opacity-40 hidden sm:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
-                    <span className="font-medium truncate max-w-[150px]" style={{ color: 'var(--foreground)' }}>
+                    <span className="font-medium text-sm sm:text-base truncate max-w-[120px] sm:max-w-[200px]" style={{ color: 'var(--foreground)' }}>
                       {breadcrumbs[breadcrumbs.length - 1]?.name}
                     </span>
                   </div>
                 ) : (
-                  <h1 className="font-bold text-lg" style={{ color: 'var(--foreground)' }}>내 드라이브</h1>
+                  <h1 className="font-semibold text-base sm:text-lg whitespace-nowrap" style={{ color: 'var(--foreground)' }}>내 드라이브</h1>
                 )}
               </div>
             </div>
 
             {/* 오른쪽: 액션 버튼들 */}
-          <div className="flex items-center gap-2">
-            {/* 업로드 버튼 */}
-            <label className="btn btn-primary cursor-pointer">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              <span className="hidden sm:inline">업로드</span>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/*,video/*"
-                onChange={handleFileSelect}
-                disabled={uploading}
-                className="hidden"
-              />
-            </label>
+            <div className="flex items-center gap-1 sm:gap-2">
+              {/* 업로드 버튼 */}
+              <label className="btn btn-primary cursor-pointer !px-3 sm:!px-4">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                <span className="hidden sm:inline">업로드</span>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,video/*"
+                  onChange={handleFileSelect}
+                  disabled={uploading}
+                  className="hidden"
+                />
+              </label>
 
-            {/* 새 폴더 버튼 */}
-            <button
-              onClick={() => setShowNewFolderInput(true)}
-              className="btn btn-secondary"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-              </svg>
-              <span className="hidden sm:inline">새 폴더</span>
-            </button>
-
-            {/* 뷰 모드 토글 */}
-            <div className="hidden sm:flex items-center rounded-lg p-0.5" style={{ background: 'var(--background-tertiary)' }}>
+              {/* 새 폴더 버튼 - 데스크톱만 */}
               <button
-                onClick={() => setViewMode('grid')}
-                className="p-2 rounded-md transition-all"
-                style={viewMode === 'grid' ? { background: 'var(--background)', boxShadow: 'var(--shadow-sm)' } : { opacity: 0.5 }}
+                onClick={() => setShowNewFolderInput(true)}
+                className="btn btn-secondary hidden sm:flex"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                </svg>
+                <span className="hidden md:inline">새 폴더</span>
+              </button>
+
+              {/* 뷰 모드 토글 - 데스크톱만 */}
+              <div className="hidden md:flex items-center rounded-lg p-0.5" style={{ background: 'var(--background-tertiary)' }}>
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className="p-2 rounded-md transition-all"
+                  style={viewMode === 'grid' ? { background: 'var(--background)', boxShadow: 'var(--shadow-sm)' } : { opacity: 0.5 }}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className="p-2 rounded-md transition-all"
+                  style={viewMode === 'list' ? { background: 'var(--background)', boxShadow: 'var(--shadow-sm)' } : { opacity: 0.5 }}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* 테마 토글 - 데스크톱만 */}
+              <button
+                onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                className="btn btn-ghost !p-2 hidden sm:flex"
+                title={isDark ? '라이트 모드' : '다크 모드'}
+              >
+                {isDark ? (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                  </svg>
+                )}
+              </button>
+
+              {/* 설정 - 데스크톱만 */}
+              <button
+                onClick={() => router.push('/settings')}
+                className="btn btn-ghost !p-2 hidden sm:flex"
+                title="설정"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </button>
+
+              {/* 로그아웃 - 데스크톱만 */}
               <button
-                onClick={() => setViewMode('list')}
-                className="p-2 rounded-md transition-all"
-                style={viewMode === 'list' ? { background: 'var(--background)', boxShadow: 'var(--shadow-sm)' } : { opacity: 0.5 }}
+                onClick={handleLogout}
+                className="btn btn-ghost !p-2 hidden md:flex"
+                title="로그아웃"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                 </svg>
               </button>
             </div>
-
-            {/* 테마 토글 */}
-            <button
-              onClick={() => setTheme(isDark ? 'light' : 'dark')}
-              className="btn btn-ghost !p-2"
-              title={isDark ? '라이트 모드' : '다크 모드'}
-            >
-              {isDark ? (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-              ) : (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                </svg>
-              )}
-            </button>
-
-            {/* 설정 */}
-            <button
-              onClick={() => router.push('/settings')}
-              className="btn btn-ghost !p-2"
-              title="설정"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
-
-            {/* 로그아웃 */}
-            <button
-              onClick={handleLogout}
-              className="btn btn-ghost !p-2 hidden sm:flex"
-              title="로그아웃"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-            </button>
           </div>
-        </div>
-      </header>
+        </header>
 
       {/* 선택 모드 툴바 - 모바일: 하단 고정, 데스크톱: 헤더 하단 */}
       {isSelecting && (
@@ -2116,6 +2117,79 @@ export default function DrivePage() {
       )}
 
       </div>{/* lg:pl-64 끝 */}
+
+      {/* 모바일 하단 탭 네비게이션 */}
+      <nav className="fixed bottom-0 left-0 right-0 lg:hidden safe-area-bottom z-50" style={{ background: 'var(--background)', borderTop: '1px solid var(--glass-border)' }}>
+        <div className="flex items-center justify-around h-14">
+          {/* 홈 */}
+          <button
+            onClick={() => {
+              setCurrentCategory('all')
+              router.push('/drive')
+            }}
+            className="flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors"
+            style={{ color: currentCategory === 'all' ? 'var(--accent-primary)' : 'var(--foreground-muted)' }}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            <span className="text-[10px] font-medium">홈</span>
+          </button>
+
+          {/* 사진 */}
+          <button
+            onClick={() => setCurrentCategory('photos')}
+            className="flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors"
+            style={{ color: currentCategory === 'photos' ? 'var(--accent-primary)' : 'var(--foreground-muted)' }}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span className="text-[10px] font-medium">사진</span>
+          </button>
+
+          {/* 업로드 (FAB 스타일) */}
+          <div className="flex items-center justify-center flex-1">
+            <label className="w-12 h-12 -mt-4 rounded-full flex items-center justify-center cursor-pointer shadow-lg transition-transform active:scale-95" style={{ background: 'var(--accent-gradient)', boxShadow: '0 4px 20px rgba(49, 130, 246, 0.4)' }}>
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              <input
+                type="file"
+                multiple
+                accept="image/*,video/*"
+                onChange={handleFileSelect}
+                disabled={uploading}
+                className="hidden"
+              />
+            </label>
+          </div>
+
+          {/* 동영상 */}
+          <button
+            onClick={() => setCurrentCategory('videos')}
+            className="flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors"
+            style={{ color: currentCategory === 'videos' ? 'var(--accent-primary)' : 'var(--foreground-muted)' }}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            <span className="text-[10px] font-medium">동영상</span>
+          </button>
+
+          {/* 더보기/설정 */}
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors"
+            style={{ color: 'var(--foreground-muted)' }}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            <span className="text-[10px] font-medium">더보기</span>
+          </button>
+        </div>
+      </nav>
     </main>
   )
 }
