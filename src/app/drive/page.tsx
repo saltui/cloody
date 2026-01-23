@@ -8,6 +8,7 @@ import { useUpload } from '@/lib/upload-context'
 import { useDownload } from '@/lib/download-context'
 import { useSignedUrl } from '@/lib/signed-url-context'
 import { useUser } from '@/lib/user-context'
+import Sidebar, { FileCategory } from '@/components/Sidebar'
 
 interface Photo {
   id: string
@@ -78,7 +79,7 @@ interface DuplicateFile {
   existingPhoto: Photo
 }
 
-export default function GalleryPage() {
+export default function DrivePage() {
   const { theme, viewMode, setTheme, setViewMode } = useTheme()
   const { uploading, uploadQueue, uploadProgress, setShowUploadPanel, addToQueue, updateQueueItem } = useUpload()
   const { startDownload } = useDownload()
@@ -97,6 +98,7 @@ export default function GalleryPage() {
   const [lastSelectedIndex, setLastSelectedIndex] = useState<{ type: 'photo' | 'folder', index: number } | null>(null)
   const [showNewFolderInput, setShowNewFolderInput] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
   // 폴더 수정 관련
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null)
@@ -1245,14 +1247,37 @@ export default function GalleryPage() {
     )
   }
 
+  const currentCategory = (searchParams.get('category') as FileCategory) || 'all'
+
+  // 카테고리별 파일 필터링
+  const filteredPhotos = photos.filter(photo => {
+    if (currentCategory === 'all') return true
+    const ext = photo.name.split('.').pop()?.toLowerCase() || ''
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif']
+    const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'm4v']
+    const docExts = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'rtf', 'csv']
+
+    if (currentCategory === 'photos') return imageExts.includes(ext)
+    if (currentCategory === 'videos') return videoExts.includes(ext)
+    if (currentCategory === 'documents') return docExts.includes(ext)
+    return true
+  })
+
   return (
     <main
-      className={`min-h-screen select-none ${isDark ? 'bg-zinc-950 text-white' : 'bg-white text-gray-900'}`}
+      className="min-h-screen select-none"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      {/* 사이드바 */}
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        storageUsed={storageUsed}
+      />
+
       {/* 드래그 오버레이 */}
       {isDragging && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center pointer-events-none animate-fade-in" style={{ background: 'rgba(99, 102, 241, 0.1)', backdropFilter: 'blur(4px)' }}>
@@ -1270,37 +1295,54 @@ export default function GalleryPage() {
         </div>
       )}
 
-      {/* 헤더 */}
-      <header className="header safe-area-top">
-        <div className="header-content">
-          {/* 왼쪽: 로고 + 브레드크럼 */}
-          <div className="flex items-center gap-3 min-w-0">
-            <button
-              onClick={() => router.push('/gallery')}
-              className="flex items-center gap-2.5 hover:opacity-90 transition-opacity flex-shrink-0"
-            >
-              <div className="w-9 h-9 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-primary)', boxShadow: 'var(--shadow-md)' }}>
-                <svg className="w-5 h-5" style={{ color: 'var(--accent-text)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
+      {/* 메인 컨텐츠 (사이드바 여백) */}
+      <div className="lg:pl-72">
+        {/* 헤더 */}
+        <header className="header safe-area-top">
+          <div className="header-content">
+            {/* 왼쪽: 메뉴 버튼 + 타이틀 */}
+            <div className="flex items-center gap-3 min-w-0">
+              {/* 모바일 메뉴 버튼 */}
+              <button
+                onClick={() => setIsSidebarOpen(true)}
+                className="lg:hidden p-2 rounded-xl hover:bg-white/10 transition-colors"
+              >
+                <svg className="w-6 h-6" style={{ color: 'var(--foreground)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
-              </div>
-              <span className="font-bold text-lg hidden sm:inline">Cloody</span>
-            </button>
+              </button>
 
-            {/* 브레드크럼 - 폴더 안에 있을 때만 표시 */}
-            {breadcrumbs.length > 0 && (
-              <div className="flex items-center gap-1.5 text-sm min-w-0" style={{ color: 'var(--foreground-secondary)' }}>
-                <svg className="w-4 h-4 flex-shrink-0 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-                <span className="truncate max-w-[120px] sm:max-w-[200px] font-medium" style={{ color: 'var(--foreground)' }}>
-                  {breadcrumbs[breadcrumbs.length - 1]?.name}
-                </span>
+              {/* 현재 위치 */}
+              <div className="flex items-center gap-2">
+                {currentCategory !== 'all' ? (
+                  <h1 className="font-bold text-lg" style={{ color: 'var(--foreground)' }}>
+                    {currentCategory === 'photos' && '사진'}
+                    {currentCategory === 'videos' && '동영상'}
+                    {currentCategory === 'documents' && '문서'}
+                  </h1>
+                ) : breadcrumbs.length > 0 ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => router.push('/drive')}
+                      className="text-sm hover:underline"
+                      style={{ color: 'var(--foreground-secondary)' }}
+                    >
+                      내 드라이브
+                    </button>
+                    <svg className="w-4 h-4 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span className="font-medium truncate max-w-[150px]" style={{ color: 'var(--foreground)' }}>
+                      {breadcrumbs[breadcrumbs.length - 1]?.name}
+                    </span>
+                  </div>
+                ) : (
+                  <h1 className="font-bold text-lg" style={{ color: 'var(--foreground)' }}>내 드라이브</h1>
+                )}
               </div>
-            )}
-          </div>
+            </div>
 
-          {/* 오른쪽: 액션 버튼들 */}
+            {/* 오른쪽: 액션 버튼들 */}
           <div className="flex items-center gap-2">
             {/* 업로드 버튼 */}
             <label className="btn btn-primary cursor-pointer">
@@ -2073,21 +2115,7 @@ export default function GalleryPage() {
         </div>
       )}
 
-      {/* 스토리지 사용량 (좌측 하단 - 데스크톱만) */}
-      {!isSelecting && (
-        <div className="storage-indicator glass animate-fade-in">
-          <div className="flex items-center gap-2">
-            <svg className="w-4 h-4" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-            </svg>
-            <span className="text-sm font-medium">
-              {storageUsed >= 1024 * 1024 * 1024
-                ? `${(storageUsed / (1024 * 1024 * 1024)).toFixed(2)} GB`
-                : `${(storageUsed / (1024 * 1024)).toFixed(1)} MB`}
-            </span>
-          </div>
-        </div>
-      )}
+      </div>{/* lg:pl-72 끝 */}
     </main>
   )
 }

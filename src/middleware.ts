@@ -165,10 +165,9 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl)
   }
 
-  // 로그인 된 상태에서 로그인 페이지 접근 시 내 파일로
-  // 단, 루트 경로(/)는 새 로그인 페이지가 아니므로 내 파일로 리다이렉트
+  // 로그인 된 상태에서 로그인 페이지 접근 시 드라이브로
   if (isAuthenticated && (pathname === '/' || pathname === '/login')) {
-    return NextResponse.redirect(new URL('/gallery', request.url))
+    return NextResponse.redirect(new URL('/drive', request.url))
   }
 
   // 토큰 갱신 필요 시 헤더에 표시
