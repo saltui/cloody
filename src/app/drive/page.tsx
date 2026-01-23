@@ -1296,7 +1296,7 @@ export default function DrivePage() {
       )}
 
       {/* 메인 컨텐츠 (사이드바 여백) */}
-      <div className="lg:pl-72">
+      <div className="lg:pl-64">
         {/* 헤더 */}
         <header className="header safe-area-top">
           <div className="header-content">
@@ -2115,7 +2115,7 @@ export default function DrivePage() {
         </div>
       )}
 
-      </div>{/* lg:pl-72 끝 */}
+      </div>{/* lg:pl-64 끝 */}
     </main>
   )
 }

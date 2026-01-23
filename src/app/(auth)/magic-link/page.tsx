@@ -35,9 +35,9 @@ function MagicLinkContent() {
         }
 
         setStatus('success')
-        // 잠시 후 내 파일로 이동
+        // 잠시 후 드라이브로 이동
         setTimeout(() => {
-          router.push('/gallery')
+          router.push('/drive')
         }, 1500)
       })
       .catch(() => {
@@ -47,43 +47,50 @@ function MagicLinkContent() {
   }, [searchParams, router])
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--background)' }}>
-      <div className="w-full max-w-md">
-        <div className="card p-8 text-center" style={{ boxShadow: 'var(--shadow-xl)' }}>
+    <main className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Cosmic Background */}
+      <div className="cosmic-bg" />
+
+      {/* Decorative Orbs */}
+      <div className="orb orb-1" />
+      <div className="orb orb-2" />
+
+      <div className="w-full max-w-sm relative z-10">
+        <div className="card card-no-hover card-glow p-8 text-center">
           {status === 'loading' && (
             <div className="animate-fade-in">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-primary)' }}>
-                <div className="w-8 h-8 border-3 rounded-full animate-spin" style={{ borderColor: 'var(--accent-text)', borderTopColor: 'transparent', opacity: 0.6 }} />
+              <div className="w-14 h-14 mx-auto mb-5 rounded-xl flex items-center justify-center" style={{ background: 'var(--accent-gradient-subtle)', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+                <div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--accent-tertiary)', borderTopColor: 'transparent' }} />
               </div>
-              <h2 className="text-xl font-semibold mb-2">로그인 중...</h2>
-              <p style={{ color: 'var(--foreground-secondary)' }}>잠시만 기다려주세요.</p>
+              <h2 className="text-lg font-medium mb-2" style={{ color: 'var(--foreground)' }}>로그인 중...</h2>
+              <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>잠시만 기다려주세요</p>
             </div>
           )}
 
           {status === 'success' && (
             <div className="animate-fade-in">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-green-100 flex items-center justify-center">
-                <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+              <div className="w-14 h-14 mx-auto mb-5 rounded-xl flex items-center justify-center" style={{ background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                <svg className="w-7 h-7" style={{ color: 'var(--success)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <h2 className="text-xl font-semibold mb-2">로그인 성공!</h2>
-              <p style={{ color: 'var(--foreground-secondary)' }}>내 파일로 이동합니다...</p>
+              <h2 className="text-lg font-medium mb-2" style={{ color: 'var(--foreground)' }}>로그인 성공!</h2>
+              <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>드라이브로 이동합니다...</p>
             </div>
           )}
 
           {status === 'error' && (
             <div className="animate-fade-in">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-red-100 flex items-center justify-center">
-                <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+              <div className="w-14 h-14 mx-auto mb-5 rounded-xl flex items-center justify-center" style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                <svg className="w-7 h-7" style={{ color: 'var(--error)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </div>
-              <h2 className="text-xl font-semibold mb-2">인증 실패</h2>
-              <p className="mb-6" style={{ color: 'var(--foreground-secondary)' }}>{error}</p>
+              <h2 className="text-lg font-medium mb-2" style={{ color: 'var(--foreground)' }}>인증 실패</h2>
+              <p className="text-sm mb-5" style={{ color: 'var(--foreground-muted)' }}>{error}</p>
               <button
                 onClick={() => router.push('/login')}
-                className="btn btn-primary !py-3 px-6"
+                className="btn btn-primary"
               >
                 다시 로그인
               </button>
@@ -98,9 +105,12 @@ function MagicLinkContent() {
 export default function MagicLinkPage() {
   return (
     <Suspense fallback={
-      <main className="min-h-screen flex items-center justify-center p-4" style={{ background: 'var(--background)' }}>
-        <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-primary)' }}>
-          <div className="w-8 h-8 border-3 rounded-full animate-spin" style={{ borderColor: 'var(--accent-text)', borderTopColor: 'transparent', opacity: 0.6 }} />
+      <main className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+        <div className="cosmic-bg" />
+        <div className="orb orb-1" />
+        <div className="orb orb-2" />
+        <div className="w-14 h-14 rounded-xl flex items-center justify-center relative z-10" style={{ background: 'var(--accent-gradient-subtle)', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+          <div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--accent-tertiary)', borderTopColor: 'transparent' }} />
         </div>
       </main>
     }>
