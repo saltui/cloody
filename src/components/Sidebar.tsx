@@ -106,10 +106,10 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
           ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
         style={{
-          background: 'rgba(5, 5, 8, 0.95)',
+          background: 'var(--background-secondary)',
           borderRight: '1px solid var(--glass-border)',
-          backdropFilter: 'blur(40px)',
-          WebkitBackdropFilter: 'blur(40px)'
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)'
         }}
       >
         <div className="flex flex-col h-full">
