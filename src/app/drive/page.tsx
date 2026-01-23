@@ -135,6 +135,11 @@ export default function DrivePage() {
   const [showMoveModal, setShowMoveModal] = useState(false)
   const [moving, setMoving] = useState(false)
 
+  // 모바일 FAB 메뉴 & 업로드 패널
+  const [showFabMenu, setShowFabMenu] = useState(false)
+  const [showUploadPanel, setShowUploadPanel] = useState(false)
+  const fabFileInputRef = useRef<HTMLInputElement>(null)
+
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -1345,8 +1350,8 @@ export default function DrivePage() {
 
             {/* 오른쪽: 액션 버튼들 */}
             <div className="flex items-center gap-1 sm:gap-2">
-              {/* 업로드 버튼 */}
-              <label className="btn btn-primary cursor-pointer !px-3 sm:!px-4">
+              {/* 업로드 버튼 - 데스크톱만 (모바일은 FAB 사용) */}
+              <label className="btn btn-primary cursor-pointer !px-3 sm:!px-4 hidden sm:flex">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
@@ -1362,7 +1367,7 @@ export default function DrivePage() {
                 />
               </label>
 
-              {/* 새 폴더 버튼 - 데스크톱만 */}
+              {/* 새 폴더 버튼 - 데스크톱만 (모바일은 FAB 사용) */}
               <button
                 onClick={() => setShowNewFolderInput(true)}
                 className="btn btn-secondary hidden sm:flex"
@@ -2119,7 +2124,7 @@ export default function DrivePage() {
       </div>{/* lg:pl-64 끝 */}
 
       {/* 모바일 하단 탭 네비게이션 */}
-      <nav className="fixed bottom-0 left-0 right-0 lg:hidden safe-area-bottom z-50" style={{ background: 'var(--background)', borderTop: '1px solid var(--glass-border)' }}>
+      <nav className="fixed bottom-0 left-0 right-0 lg:hidden safe-area-bottom z-40" style={{ background: 'var(--background)', borderTop: '1px solid var(--glass-border)' }}>
         <div className="flex items-center justify-around h-14">
           {/* 홈 */}
           <button
@@ -2128,7 +2133,7 @@ export default function DrivePage() {
               router.push('/drive')
             }}
             className="flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors"
-            style={{ color: currentCategory === 'all' ? 'var(--accent-primary)' : 'var(--foreground-muted)' }}
+            style={{ color: currentCategory === 'all' && !showUploadPanel ? 'var(--accent-primary)' : 'var(--foreground-muted)' }}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -2138,9 +2143,12 @@ export default function DrivePage() {
 
           {/* 사진 */}
           <button
-            onClick={() => setCurrentCategory('photos')}
+            onClick={() => {
+              setShowUploadPanel(false)
+              setCurrentCategory('photos')
+            }}
             className="flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors"
-            style={{ color: currentCategory === 'photos' ? 'var(--accent-primary)' : 'var(--foreground-muted)' }}
+            style={{ color: currentCategory === 'photos' && !showUploadPanel ? 'var(--accent-primary)' : 'var(--foreground-muted)' }}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -2148,33 +2156,20 @@ export default function DrivePage() {
             <span className="text-[10px] font-medium">사진</span>
           </button>
 
-          {/* 업로드 (FAB 스타일) */}
-          <div className="flex items-center justify-center flex-1">
-            <label className="w-12 h-12 -mt-4 rounded-full flex items-center justify-center cursor-pointer shadow-lg transition-transform active:scale-95" style={{ background: 'var(--accent-gradient)', boxShadow: '0 4px 20px rgba(49, 130, 246, 0.4)' }}>
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              <input
-                type="file"
-                multiple
-                accept="image/*,video/*"
-                onChange={handleFileSelect}
-                disabled={uploading}
-                className="hidden"
-              />
-            </label>
-          </div>
-
-          {/* 동영상 */}
+          {/* 업로드 현황 */}
           <button
-            onClick={() => setCurrentCategory('videos')}
-            className="flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors"
-            style={{ color: currentCategory === 'videos' ? 'var(--accent-primary)' : 'var(--foreground-muted)' }}
+            onClick={() => setShowUploadPanel(true)}
+            className="flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors relative"
+            style={{ color: showUploadPanel ? 'var(--accent-primary)' : 'var(--foreground-muted)' }}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
-            <span className="text-[10px] font-medium">동영상</span>
+            <span className="text-[10px] font-medium">업로드</span>
+            {/* 업로드 중 표시 */}
+            {uploading && (
+              <span className="absolute top-1 right-1/4 w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)' }} />
+            )}
           </button>
 
           {/* 더보기/설정 */}
@@ -2190,6 +2185,159 @@ export default function DrivePage() {
           </button>
         </div>
       </nav>
+
+      {/* 모바일 FAB (플로팅 액션 버튼) */}
+      <div className="fixed right-4 bottom-20 lg:hidden z-50 safe-area-bottom">
+        {/* FAB 메뉴 */}
+        {showFabMenu && (
+          <>
+            <div className="fixed inset-0" onClick={() => setShowFabMenu(false)} />
+            <div className="absolute bottom-16 right-0 flex flex-col gap-3 items-end animate-fade-in">
+              {/* 새 폴더 */}
+              <button
+                onClick={() => {
+                  setShowFabMenu(false)
+                  setShowNewFolderInput(true)
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-full shadow-lg transition-transform active:scale-95"
+                style={{ background: 'var(--background)', border: '1px solid var(--glass-border)' }}
+              >
+                <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>새 폴더</span>
+                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
+                  <svg className="w-5 h-5" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                  </svg>
+                </div>
+              </button>
+              {/* 파일 업로드 */}
+              <label className="flex items-center gap-2 px-4 py-2.5 rounded-full shadow-lg cursor-pointer transition-transform active:scale-95" style={{ background: 'var(--background)', border: '1px solid var(--glass-border)' }}>
+                <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>파일 업로드</span>
+                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'var(--accent-gradient)' }}>
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                </div>
+                <input
+                  ref={fabFileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,video/*"
+                  onChange={(e) => {
+                    setShowFabMenu(false)
+                    handleFileSelect(e)
+                  }}
+                  disabled={uploading}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </>
+        )}
+
+        {/* FAB 버튼 */}
+        <button
+          onClick={() => setShowFabMenu(!showFabMenu)}
+          className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95"
+          style={{
+            background: showFabMenu ? 'var(--foreground)' : 'var(--accent-gradient)',
+            boxShadow: '0 4px 20px rgba(49, 130, 246, 0.4)',
+            transform: showFabMenu ? 'rotate(45deg)' : 'rotate(0deg)'
+          }}
+        >
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+      </div>
+
+      {/* 업로드 현황 패널 (모바일) */}
+      {showUploadPanel && (
+        <div className="fixed inset-0 lg:hidden z-30" style={{ top: '56px', bottom: '56px' }}>
+          <div className="h-full overflow-y-auto p-4" style={{ background: 'var(--background)' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>업로드 현황</h2>
+              {uploadQueue.length > 0 && (
+                <button
+                  onClick={() => {
+                    // 완료된 항목만 삭제하는 로직 필요
+                  }}
+                  className="text-sm"
+                  style={{ color: 'var(--foreground-muted)' }}
+                >
+                  완료 항목 삭제
+                </button>
+              )}
+            </div>
+
+            {uploadQueue.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4" style={{ background: 'var(--glass-bg)' }}>
+                  <svg className="w-8 h-8" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                </div>
+                <p className="text-sm font-medium mb-1" style={{ color: 'var(--foreground)' }}>업로드 내역이 없습니다</p>
+                <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>우측 하단의 + 버튼으로 파일을 업로드하세요</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {uploadQueue.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-3 rounded-xl"
+                    style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* 상태 아이콘 */}
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--background-tertiary)' }}>
+                        {item.status === 'uploading' && (
+                          <div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
+                        )}
+                        {item.status === 'completed' && (
+                          <svg className="w-5 h-5" style={{ color: 'var(--success)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                        {item.status === 'error' && (
+                          <svg className="w-5 h-5" style={{ color: 'var(--error)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        )}
+                        {item.status === 'pending' && (
+                          <svg className="w-5 h-5" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        )}
+                      </div>
+
+                      {/* 파일 정보 */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate" style={{ color: 'var(--foreground)' }}>{item.name}</p>
+                        <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
+                          {item.status === 'uploading' && `${item.progress}% 업로드 중...`}
+                          {item.status === 'completed' && '완료'}
+                          {item.status === 'error' && (item.error || '업로드 실패')}
+                          {item.status === 'pending' && '대기 중'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* 진행 바 */}
+                    {item.status === 'uploading' && (
+                      <div className="mt-2 h-1 rounded-full overflow-hidden" style={{ background: 'var(--glass-border)' }}>
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{ width: `${item.progress}%`, background: 'var(--accent-gradient)' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   )
 }
