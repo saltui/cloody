@@ -59,7 +59,7 @@ function MagicLinkContent() {
         <div className="card card-no-hover card-glow p-8 text-center">
           {status === 'loading' && (
             <div className="animate-fade-in">
-              <div className="w-14 h-14 mx-auto mb-5 rounded-xl flex items-center justify-center" style={{ background: 'var(--accent-gradient-subtle)', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+              <div className="w-14 h-14 mx-auto mb-5 rounded-xl flex items-center justify-center" style={{ background: 'var(--accent-gradient-subtle)', border: '1px solid rgba(49, 130, 246, 0.3)' }}>
                 <div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--accent-tertiary)', borderTopColor: 'transparent' }} />
               </div>
               <h2 className="text-lg font-medium mb-2" style={{ color: 'var(--foreground)' }}>로그인 중...</h2>
@@ -109,7 +109,7 @@ export default function MagicLinkPage() {
         <div className="cosmic-bg" />
         <div className="orb orb-1" />
         <div className="orb orb-2" />
-        <div className="w-14 h-14 rounded-xl flex items-center justify-center relative z-10" style={{ background: 'var(--accent-gradient-subtle)', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+        <div className="w-14 h-14 rounded-xl flex items-center justify-center relative z-10" style={{ background: 'var(--accent-gradient-subtle)', border: '1px solid rgba(49, 130, 246, 0.3)' }}>
           <div className="w-6 h-6 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--accent-tertiary)', borderTopColor: 'transparent' }} />
         </div>
       </main>

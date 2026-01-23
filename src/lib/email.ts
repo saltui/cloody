@@ -18,7 +18,7 @@ export function isEmailConfigured(): boolean {
   return !!(process.env.SMTP_USER && process.env.SMTP_PASS)
 }
 
-// 공통 이메일 템플릿 (Cosmic Dark Theme)
+// 공통 이메일 템플릿 (Toss Blue Theme)
 function getEmailTemplate(content: { title: string; greeting: string; message: string; buttonText: string; buttonUrl: string; footer: string; linkNote?: string }) {
   return `
     <!DOCTYPE html>
@@ -29,37 +29,37 @@ function getEmailTemplate(content: { title: string; greeting: string; message: s
       <meta name="color-scheme" content="dark">
       <meta name="supported-color-schemes" content="dark">
     </head>
-    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; background-color: #050508; margin: 0; padding: 40px 20px;">
+    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; background-color: #0d1117; margin: 0; padding: 40px 20px;">
       <div style="max-width: 420px; margin: 0 auto;">
         <!-- Card -->
         <div style="background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 32px; position: relative; overflow: hidden;">
           <!-- Glow Effect -->
-          <div style="position: absolute; top: -100px; right: -100px; width: 200px; height: 200px; background: radial-gradient(circle, rgba(139,92,246,0.15) 0%, transparent 70%); pointer-events: none;"></div>
+          <div style="position: absolute; top: -100px; right: -100px; width: 200px; height: 200px; background: radial-gradient(circle, rgba(49,130,246,0.15) 0%, transparent 70%); pointer-events: none;"></div>
 
           <!-- Logo -->
           <div style="text-align: center; margin-bottom: 28px;">
-            <div style="display: inline-block; width: 44px; height: 44px; background: linear-gradient(135deg, rgba(124,58,237,0.2) 0%, rgba(168,85,247,0.2) 100%); border: 1px solid rgba(139,92,246,0.3); border-radius: 12px; margin-bottom: 12px; line-height: 44px;">
-              <span style="color: #c084fc; font-size: 20px;">☁</span>
+            <div style="display: inline-block; width: 44px; height: 44px; background: linear-gradient(135deg, rgba(49,130,246,0.2) 0%, rgba(69,147,252,0.2) 100%); border: 1px solid rgba(49,130,246,0.3); border-radius: 12px; margin-bottom: 12px; line-height: 44px;">
+              <span style="color: #58a6ff; font-size: 20px;">☁</span>
             </div>
-            <h1 style="color: #f0f0f5; font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.02em;">Cloody</h1>
+            <h1 style="color: #f0f6fc; font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.02em;">Cloody</h1>
           </div>
 
           <!-- Title -->
-          <h2 style="color: #f0f0f5; font-size: 18px; font-weight: 500; text-align: center; margin: 0 0 20px 0;">${content.title}</h2>
+          <h2 style="color: #f0f6fc; font-size: 18px; font-weight: 500; text-align: center; margin: 0 0 20px 0;">${content.title}</h2>
 
           <!-- Message -->
-          <p style="color: #a0a0b0; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0; text-align: center;">
+          <p style="color: #8b949e; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0; text-align: center;">
             ${content.greeting}<br><br>
             ${content.message}
           </p>
 
           <!-- Button -->
-          <a href="${content.buttonUrl}" style="display: block; width: 100%; padding: 14px 0; background: linear-gradient(135deg, #7c3aed 0%, #a855f7 50%, #c084fc 100%); color: white; text-align: center; text-decoration: none; border-radius: 10px; font-weight: 500; font-size: 14px; margin-bottom: 20px; box-shadow: 0 0 20px rgba(139,92,246,0.3);">
+          <a href="${content.buttonUrl}" style="display: block; width: 100%; padding: 14px 0; background: linear-gradient(135deg, #1b64da 0%, #3182f6 50%, #58a6ff 100%); color: white; text-align: center; text-decoration: none; border-radius: 10px; font-weight: 500; font-size: 14px; margin-bottom: 20px; box-shadow: 0 0 20px rgba(49,130,246,0.3);">
             ${content.buttonText}
           </a>
 
           <!-- Footer Note -->
-          <p style="color: #606075; font-size: 12px; line-height: 1.5; margin: 0 0 16px 0; text-align: center;">
+          <p style="color: #6e7681; font-size: 12px; line-height: 1.5; margin: 0 0 16px 0; text-align: center;">
             ${content.footer}
           </p>
 
@@ -67,14 +67,14 @@ function getEmailTemplate(content: { title: string; greeting: string; message: s
           <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 20px 0;">
 
           <!-- Link Fallback -->
-          <p style="color: #606075; font-size: 11px; text-align: center; margin: 0; word-break: break-all;">
+          <p style="color: #6e7681; font-size: 11px; text-align: center; margin: 0; word-break: break-all;">
             ${content.linkNote || '버튼이 작동하지 않으면 아래 링크를 복사하세요:'}<br>
-            <a href="${content.buttonUrl}" style="color: #a855f7;">${content.buttonUrl}</a>
+            <a href="${content.buttonUrl}" style="color: #58a6ff;">${content.buttonUrl}</a>
           </p>
         </div>
 
         <!-- Bottom Text -->
-        <p style="color: #606075; font-size: 11px; text-align: center; margin-top: 24px;">
+        <p style="color: #6e7681; font-size: 11px; text-align: center; margin-top: 24px;">
           Secure • Private • Simple
         </p>
       </div>
@@ -104,7 +104,7 @@ export async function sendMagicLinkEmail(
       subject: 'Cloody 로그인',
       html: getEmailTemplate({
         title: '로그인 링크',
-        greeting: `안녕하세요, <span style="color: #c084fc;">${name}</span>님`,
+        greeting: `안녕하세요, <span style="color: #58a6ff;">${name}</span>님`,
         message: '아래 버튼을 클릭하여 Cloody에 로그인하세요.',
         buttonText: '로그인하기',
         buttonUrl: magicLink,
@@ -139,7 +139,7 @@ export async function sendVerificationEmail(
       subject: 'Cloody 이메일 인증',
       html: getEmailTemplate({
         title: '이메일 인증',
-        greeting: `안녕하세요, <span style="color: #c084fc;">${name}</span>님`,
+        greeting: `안녕하세요, <span style="color: #58a6ff;">${name}</span>님`,
         message: 'Cloody 가입을 환영합니다!<br>아래 버튼을 클릭하여 이메일을 인증해 주세요.',
         buttonText: '이메일 인증하기',
         buttonUrl: verifyLink,
@@ -174,7 +174,7 @@ export async function sendPasswordResetEmail(
       subject: 'Cloody 비밀번호 재설정',
       html: getEmailTemplate({
         title: '비밀번호 재설정',
-        greeting: `안녕하세요, <span style="color: #c084fc;">${name}</span>님`,
+        greeting: `안녕하세요, <span style="color: #58a6ff;">${name}</span>님`,
         message: '비밀번호 재설정 요청을 받았습니다.<br>아래 버튼을 클릭하여 새 비밀번호를 설정하세요.',
         buttonText: '비밀번호 재설정',
         buttonUrl: resetLink,

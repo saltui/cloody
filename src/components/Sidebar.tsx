@@ -116,7 +116,7 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
           {/* Header */}
           <div className="p-4 border-b" style={{ borderColor: 'var(--glass-border)' }}>
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent-gradient-subtle)', border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent-gradient-subtle)', border: '1px solid rgba(49, 130, 246, 0.3)' }}>
                 <svg className="w-4 h-4" style={{ color: 'var(--accent-tertiary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
                 </svg>
