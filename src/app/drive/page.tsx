@@ -2241,7 +2241,7 @@ export default function DrivePage() {
             </div>
 
             {/* 모바일 정렬 헤더 */}
-            <div className="sm:hidden flex items-center justify-between px-4 py-2.5" style={{ background: 'var(--background-secondary)', borderBottom: '1px solid var(--border-default)' }}>
+            <div className="sm:hidden flex items-center gap-2 px-4 py-2" style={{ borderBottom: '1px solid var(--border-light)' }}>
               <button
                 onClick={() => {
                   if (sortBy === 'name') {
@@ -2251,38 +2251,24 @@ export default function DrivePage() {
                     setSortOrder('asc')
                   }
                 }}
-                className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${sortBy === 'name' ? '' : 'opacity-60'}`}
-                style={{
-                  background: sortBy === 'name' ? 'var(--accent-primary-alpha)' : 'transparent',
-                  color: sortBy === 'name' ? 'var(--accent-primary)' : 'var(--foreground-muted)'
-                }}
+                className="flex items-center gap-1 text-sm"
+                style={{ color: 'var(--foreground-secondary)' }}
               >
-                이름 {sortBy === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={sortOrder === 'asc' ? "M3 4h13M3 8h9M3 12h5m4 0l4-4m0 0l4 4m-4-4v12" : "M3 4h13M3 8h9M3 12h9m4 0l4 4m0 0l-4 4m4-4H9"} />
+                </svg>
+                {sortBy === 'name' ? '이름' : '날짜'}
               </button>
-              <button
-                onClick={() => {
-                  if (sortBy === 'date') {
-                    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
-                  } else {
-                    setSortBy('date')
-                    setSortOrder('desc')
-                  }
-                }}
-                className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${sortBy === 'date' ? '' : 'opacity-60'}`}
-                style={{
-                  background: sortBy === 'date' ? 'var(--accent-primary-alpha)' : 'transparent',
-                  color: sortBy === 'date' ? 'var(--accent-primary)' : 'var(--foreground-muted)'
-                }}
-              >
-                날짜 {sortBy === 'date' && (sortOrder === 'asc' ? '↑' : '↓')}
-              </button>
+              <svg className="w-4 h-4" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
             </div>
 
             {/* 폴더 목록 - 전체 보기에서만 표시 */}
             {currentCategory === 'all' && sortedFolders.map((folder, folderIndex) => (
               <div
                 key={folder.id}
-                className="flex items-center px-4 py-3 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_1fr_100px_100px_auto] sm:gap-3"
+                className="flex items-center px-4 py-3.5 sm:py-3 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_1fr_100px_100px_auto] sm:gap-3"
                 style={{
                   background: selectedFolderIds.has(folder.id) ? 'var(--accent-primary-alpha)' : 'transparent',
                   borderBottom: '1px solid var(--border-light)'
@@ -2307,7 +2293,7 @@ export default function DrivePage() {
               >
                 {/* 체크박스 - 선택 모드일 때만 모바일에서 표시 */}
                 <div
-                  className={`mr-3 ${isSelecting ? 'block' : 'hidden sm:block'}`}
+                  className={`mr-3 sm:mr-0 ${isSelecting ? 'block' : 'hidden sm:block'}`}
                   onClick={(e) => toggleFolderSelect(folder.id, e, folderIndex)}
                 >
                   <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
@@ -2323,32 +2309,35 @@ export default function DrivePage() {
                   </div>
                 </div>
                 {/* 폴더 아이콘 + 이름 */}
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="w-10 h-10 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-primary-alpha)' }}>
-                    <svg className="w-5 h-5 sm:w-4 sm:h-4" style={{ color: 'var(--accent-primary)' }} fill="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center gap-3.5 sm:gap-3 min-w-0 flex-1">
+                  {/* 모바일: 더 큰 폴더 아이콘 */}
+                  <div className="w-12 h-12 sm:w-8 sm:h-8 rounded-xl sm:rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-primary-alpha)' }}>
+                    <svg className="w-6 h-6 sm:w-4 sm:h-4" style={{ color: 'var(--accent-primary)' }} fill="currentColor" viewBox="0 0 24 24">
                       <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z" />
                     </svg>
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium truncate">{folder.name}</p>
-                    <p className="text-xs sm:hidden" style={{ color: 'var(--foreground-muted)' }}>{formatDate(folder.created_at)}</p>
+                    <p className="font-medium truncate text-[15px] sm:text-sm">{folder.name}</p>
+                    <p className="text-xs sm:hidden mt-0.5" style={{ color: 'var(--foreground-muted)' }}>폴더 · {formatDate(folder.created_at)}</p>
                   </div>
                 </div>
                 {/* 데스크톱 추가 컬럼 */}
                 <div className="text-sm hidden sm:block" style={{ color: 'var(--foreground-muted)' }}>폴더</div>
                 <div className="text-sm hidden sm:block" style={{ color: 'var(--foreground-muted)' }}>{formatDate(folder.created_at)}</div>
                 {/* 더보기 버튼 */}
-                <div className="w-8 relative ml-2 sm:ml-0">
+                <div className="w-10 sm:w-8 relative ml-1 sm:ml-0">
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
                       setFolderMenuId(folderMenuId === folder.id ? null : folder.id)
                     }}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center transition-all sm:opacity-0 sm:group-hover:opacity-100 active:bg-black/10 dark:active:bg-white/10"
-                    style={{ color: 'var(--foreground-secondary)' }}
+                    className="w-10 h-10 sm:w-8 sm:h-8 rounded-full sm:rounded-lg flex items-center justify-center transition-all sm:opacity-0 sm:group-hover:opacity-100 active:bg-black/10 dark:active:bg-white/10"
+                    style={{ color: 'var(--foreground-muted)' }}
                   >
-                    <svg className="w-5 h-5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                    <svg className="w-5 h-5 sm:w-4 sm:h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <circle cx="12" cy="5" r="2" />
+                      <circle cx="12" cy="12" r="2" />
+                      <circle cx="12" cy="19" r="2" />
                     </svg>
                   </button>
                   {folderMenuId === folder.id && <FolderContextMenu folder={folder} />}
@@ -2360,7 +2349,7 @@ export default function DrivePage() {
             {sortedPhotos.map((photo, index) => (
               <div
                 key={photo.id}
-                className="flex items-center px-4 py-3 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_1fr_100px_100px_auto] sm:gap-3"
+                className="flex items-center px-4 py-3.5 sm:py-2.5 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_1fr_100px_100px_auto] sm:gap-3"
                 style={{
                   background: selectedIds.has(photo.id) ? 'var(--accent-primary-alpha)' : 'transparent',
                   borderBottom: '1px solid var(--border-light)'
@@ -2377,7 +2366,7 @@ export default function DrivePage() {
               >
                 {/* 체크박스 - 선택 모드일 때만 모바일에서 표시 */}
                 <div
-                  className={`mr-3 ${isSelecting ? 'block' : 'hidden sm:block'}`}
+                  className={`mr-3 sm:mr-0 ${isSelecting ? 'block' : 'hidden sm:block'}`}
                   onClick={(e) => toggleSelect(photo.id, e, index)}
                 >
                   <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
@@ -2393,13 +2382,16 @@ export default function DrivePage() {
                   </div>
                 </div>
                 {/* 썸네일 + 이름 */}
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0" style={{ background: 'var(--background-tertiary)' }}>
+                <div className="flex items-center gap-3.5 sm:gap-3 min-w-0 flex-1">
+                  {/* 모바일: 더 큰 썸네일 */}
+                  <div className="w-12 h-12 sm:w-10 sm:h-10 rounded-xl sm:rounded-lg overflow-hidden flex-shrink-0" style={{ background: 'var(--background-tertiary)' }}>
                     <img src={toProxyUrl(photo.thumbnail_url || photo.url)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium truncate">{photo.name || photo.url.split('/').pop()}</p>
-                    <p className="text-xs sm:hidden" style={{ color: 'var(--foreground-muted)' }}>{formatDate(photo.created_at)}</p>
+                    <p className="font-medium truncate text-[15px] sm:text-sm">{photo.name || photo.url.split('/').pop()}</p>
+                    <p className="text-xs sm:hidden mt-0.5" style={{ color: 'var(--foreground-muted)' }}>
+                      {photo.is_video ? '동영상' : '이미지'} · {formatDate(photo.created_at)}
+                    </p>
                   </div>
                 </div>
                 {/* 데스크톱 추가 컬럼 */}
