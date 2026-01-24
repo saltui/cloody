@@ -35,9 +35,9 @@ function MagicLinkContent() {
         }
 
         setStatus('success')
-        // 잠시 후 드라이브로 이동
+        // 잠시 후 드라이브로 이동 (전체 새로고침으로 UserProvider 재초기화)
         setTimeout(() => {
-          router.push('/drive')
+          window.location.href = '/drive'
         }, 1500)
       })
       .catch(() => {
