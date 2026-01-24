@@ -28,6 +28,7 @@
   --accent-tertiary: #1b64da;
   --accent-gradient: #3182f6;
   --accent-gradient-subtle: rgba(49, 130, 246, 0.08);
+  --accent-primary-alpha: rgba(49, 130, 246, 0.1);
   --accent-text: #ffffff;
 
   /* Glow Colors (minimal) */
@@ -89,6 +90,7 @@ html.dark {
   --accent-tertiary: #1b64da;
   --accent-gradient: #3182f6;
   --accent-gradient-subtle: rgba(49, 130, 246, 0.08);
+  --accent-primary-alpha: rgba(49, 130, 246, 0.15);
 
   /* Glow Colors - Dark Mode (minimal) */
   --glow-blue: rgba(49, 130, 246, 0.08);
@@ -977,40 +979,114 @@ body {
   opacity: 0.5;
 }
 
-/* ===== Selection Toolbar (Mobile) ===== */
+/* ===== Selection Toolbar ===== */
 
+/* 모바일: 하단 탭 위에 위치 */
 .selection-toolbar {
   position: fixed;
-  left: 1rem;
-  right: 1rem;
-  bottom: calc(4.5rem + env(safe-area-inset-bottom)); /* 하단 네비 위에 배치 */
+  left: 0;
+  right: 0;
+  bottom: calc(56px + env(safe-area-inset-bottom)); /* 하단 탭 위 */
   background: var(--background-elevated);
-  border: 1px solid var(--glass-border);
-  border-radius: 1rem;
-  box-shadow: var(--shadow-xl);
-  padding: 0.875rem 1rem;
+  border-top: 1px solid var(--glass-border);
+  border-bottom: 1px solid var(--glass-border);
+  padding: 10px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  animation: fadeInUp 0.25s cubic-bezier(0.22, 1, 0.36, 1);
-  z-index: 110; /* 하단 네비(100)보다 위에 */
+  gap: 12px;
+  animation: slideUp 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 110;
 }
 
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* 태블릿: 하단 탭 위에 중앙 플로팅 */
 @media (min-width: 640px) {
   .selection-toolbar {
-    left: auto;
-    right: 1.5rem;
-    bottom: 1.5rem;
-    max-width: 360px;
+    left: 50%;
+    right: auto;
+    bottom: calc(72px + env(safe-area-inset-bottom)); /* 하단 탭 위 */
+    transform: translateX(-50%);
+    max-width: 400px;
+    width: auto;
+    border: 1px solid var(--glass-border);
+    border-radius: 14px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    padding: 10px 16px;
+    animation: floatUp 0.25s cubic-bezier(0.22, 1, 0.36, 1);
   }
 }
 
+/* PC: 하단 탭 없으므로 화면 하단 */
 @media (min-width: 1280px) {
-  /* PC에서는 하단 네비가 없으므로 원래 위치 */
   .selection-toolbar {
-    bottom: 1.5rem;
+    bottom: 24px;
+    left: calc(50% + 128px); /* 사이드바 보정 */
   }
+}
+
+@keyframes floatUp {
+  from {
+    transform: translateX(-50%) translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+}
+
+.selection-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  transition: all 0.15s ease;
+  color: var(--foreground-secondary);
+}
+
+.selection-toolbar-btn:hover {
+  background: var(--background-secondary);
+}
+
+.selection-toolbar-btn:active {
+  transform: scale(0.95);
+}
+
+.selection-toolbar-btn.danger {
+  color: #ef4444;
+}
+
+.selection-toolbar-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.selection-toolbar-btn.success {
+  color: #22c55e;
+}
+
+.selection-toolbar-btn.success:hover {
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.selection-toolbar-btn.primary {
+  color: var(--accent-primary);
+}
+
+.selection-toolbar-btn.primary:hover {
+  background: var(--accent-primary-alpha);
 }
 
 /* ===== Storage Indicator ===== */

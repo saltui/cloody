@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, useMemo, DragEvent } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, DragEvent, memo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useTheme } from '@/lib/theme'
 import { useUpload } from '@/lib/upload-context'
 import { useDownload } from '@/lib/download-context'
 import { useUser } from '@/lib/user-context'
+import { useDataCache } from '@/lib/data-cache'
 import Sidebar, { FileCategory } from '@/components/Sidebar'
 import { Home, Image as ImageIcon, CloudUpload, Menu } from 'lucide-react'
 
@@ -243,6 +244,7 @@ export default function DrivePage() {
   const { uploading, uploadQueue, uploadProgress, showUploadPanel, setShowUploadPanel, addToQueue, updateQueueItem, removeFromQueue, clearCompleted, clearAll } = useUpload()
   const { startDownload } = useDownload()
   const { user, isLoading: userLoading } = useUser()
+  const dataCache = useDataCache()
   const [photos, setPhotos] = useState<Photo[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
   const [allFolders, setAllFolders] = useState<Folder[]>([])
@@ -349,14 +351,8 @@ export default function DrivePage() {
 
     setLoading(true)
 
-    // 현재 사용자의 폴더만 조회
-    const { data: allFoldersData } = await supabase
-      .from('folders')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true })
-
-    const fetchedFolders = allFoldersData || []
+    // 캐시에서 폴더 데이터 가져오기
+    const fetchedFolders = await dataCache.getFolders(user.id)
     setAllFolders(fetchedFolders)
 
     const childFolders = fetchedFolders.filter(f =>
@@ -366,55 +362,21 @@ export default function DrivePage() {
 
     await buildBreadcrumbs(folderId, fetchedFolders)
 
-    // 현재 사용자의 사진 조회
-    let query = supabase
-      .from('photos')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('order', { ascending: true })
-
     // 카테고리가 'all'이 아니면 모든 폴더의 파일을 가져옴 (필터링은 클라이언트에서)
     // 카테고리가 'all'이면 현재 폴더의 파일만 가져옴
     if (category === 'all') {
-      if (folderId) {
-        query = query.eq('folder_id', folderId)
-      } else {
-        query = query.is('folder_id', null)
-      }
+      // 캐시에서 현재 폴더의 사진 가져오기
+      const photosData = await dataCache.getPhotos(user.id, folderId)
+      setPhotos(photosData as Photo[])
     } else {
-      // category !== 'all'이면 전체 파일 가져옴 - 페이지네이션으로 1000개 limit 우회
-      const allPhotos: Photo[] = []
-      let from = 0
-      const pageSize = 1000
-
-      while (true) {
-        const { data: pageData } = await supabase
-          .from('photos')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('order', { ascending: true })
-          .range(from, from + pageSize - 1)
-
-        if (!pageData || pageData.length === 0) break
-        allPhotos.push(...(pageData as Photo[]))
-        if (pageData.length < pageSize) break
-        from += pageSize
-      }
-
-      // ID로 중복 제거 (duplicate key error 방지)
-      const uniquePhotos = [...new Map(allPhotos.map(p => [p.id, p])).values()]
-      setPhotos(uniquePhotos)
-      setLoading(false)
-      setIsInitialLoad(false)
-      return
+      // category !== 'all'이면 전체 파일 가져옴 (캐시 사용)
+      const allPhotos = await dataCache.getAllPhotos(user.id)
+      setPhotos(allPhotos as Photo[])
     }
-
-    const { data: photosData } = await query
-    if (photosData) setPhotos(photosData)
 
     setLoading(false)
     setIsInitialLoad(false)
-  }, [buildBreadcrumbs, user?.id])
+  }, [buildBreadcrumbs, user?.id, dataCache])
 
   const fetchStorageUsage = useCallback(async () => {
     try {
@@ -434,6 +396,9 @@ export default function DrivePage() {
     const folderId = searchParams.get('folder')
     const category = searchParams.get('category') || 'all'
     setCurrentFolderId(folderId)
+    // 페이지 이동/새로고침 시 선택 상태 초기화
+    setSelectedIds(new Set())
+    setSelectedFolderIds(new Set())
     fetchData(folderId, category)
     fetchStorageUsage()
   }, [searchParams, fetchData, fetchStorageUsage])
@@ -720,10 +685,13 @@ export default function DrivePage() {
           }
         }
 
+        dataCache.invalidateFolders()
+        dataCache.invalidatePhotos()
         await fetchData(currentFolderId, searchParams.get('category') || 'all')
         await fetchStorageUsage()
       } else {
         // 파일 없이 폴더만 드롭한 경우
+        dataCache.invalidateFolders()
         await fetchData(currentFolderId, searchParams.get('category') || 'all')
       }
     } else if (filesWithPath.length > 0) {
@@ -960,6 +928,7 @@ export default function DrivePage() {
     setPendingFiles([])
     setDuplicateFiles([])
     setNonDuplicateFiles([])
+    dataCache.invalidatePhotos()
     await fetchData(currentFolderId, searchParams.get('category') || 'all')
     await fetchStorageUsage()
   }
@@ -1112,6 +1081,8 @@ export default function DrivePage() {
 
       setSelectedIds(new Set())
       setSelectedFolderIds(new Set())
+      dataCache.invalidateFolders()
+      dataCache.invalidatePhotos()
       await fetchData(currentFolderId, searchParams.get('category') || 'all')
       await fetchStorageUsage()
     } catch (error) {
@@ -1169,6 +1140,8 @@ export default function DrivePage() {
       setShowMoveModal(false)
       setSelectedIds(new Set())
       setSelectedFolderIds(new Set())
+      dataCache.invalidateFolders()
+      dataCache.invalidatePhotos()
       await fetchData(currentFolderId, searchParams.get('category') || 'all')
     } catch (error) {
       console.error('Move error:', error)
@@ -1205,6 +1178,7 @@ export default function DrivePage() {
     })
     setNewFolderName('')
     setShowNewFolderInput(false)
+    dataCache.invalidateFolders()
     await fetchData(currentFolderId, searchParams.get('category') || 'all')
   }
 
@@ -1217,6 +1191,7 @@ export default function DrivePage() {
 
     setEditingFolder(null)
     setEditFolderName('')
+    dataCache.invalidateFolders()
     await fetchData(currentFolderId, searchParams.get('category') || 'all')
   }
 
@@ -1355,8 +1330,17 @@ export default function DrivePage() {
       }
     }
 
-    // 선택 모드에서 드래그 선택
+    // 선택 모드에서 드래그 선택 (일정 거리 이상 이동해야 시작)
     if (isSelecting && touchDragStart && touchDragStartItem) {
+      const dx = touch.clientX - touchDragStart.x
+      const dy = touch.clientY - touchDragStart.y
+      const distance = Math.sqrt(dx * dx + dy * dy)
+
+      // 20px 이상 이동해야 드래그 선택 시작 (탭과 구분)
+      if (distance < 20) {
+        return
+      }
+
       setIsTouchDragging(true)
       lastTouchPosRef.current = { x: touch.clientX, y: touch.clientY }
 
@@ -1568,6 +1552,8 @@ export default function DrivePage() {
 
     setDeleting(false)
     setDeleteStatus('')
+    dataCache.invalidateFolders()
+    dataCache.invalidatePhotos()
     await fetchData(currentFolderId, searchParams.get('category') || 'all')
     await fetchStorageUsage()
   }
@@ -1818,10 +1804,10 @@ export default function DrivePage() {
           <div className="header-content">
             {/* 왼쪽: 메뉴 버튼 + 타이틀 */}
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-              {/* 모바일 메뉴 버튼 */}
+              {/* 태블릿 메뉴 버튼 (모바일에선 하단탭 사용) */}
               <button
                 onClick={() => setIsSidebarOpen(true)}
-                className="xl:hidden p-2 -ml-2 rounded-xl transition-colors"
+                className="hidden sm:block xl:hidden p-2 -ml-2 rounded-xl transition-colors"
                 style={{ color: 'var(--foreground)' }}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1841,6 +1827,12 @@ export default function DrivePage() {
                   <div className="flex items-center gap-1.5 sm:gap-2">
                     <button
                       onClick={() => router.push('/drive')}
+                      onMouseEnter={() => {
+                        // 루트 폴더 사진 미리 로드
+                        if (user?.id) {
+                          dataCache.prefetchFolder(user.id, null)
+                        }
+                      }}
                       className="text-xs sm:text-sm hover:underline hidden sm:block"
                       style={{ color: 'var(--foreground-secondary)' }}
                     >
@@ -1956,26 +1948,42 @@ export default function DrivePage() {
           </div>
         </header>
 
-      {/* 선택 모드 툴바 - 모바일: 하단 고정, 데스크톱: 헤더 하단 */}
+      {/* 선택 모드 툴바 */}
       {isSelecting && (
-        <div className="selection-toolbar safe-area-bottom animate-fade-in-up">
+        <div className="selection-toolbar">
+          {/* 왼쪽: 닫기 & 선택 정보 */}
           <div className="flex items-center gap-2">
-            <span className="badge badge-primary">
-              {selectedIds.size + selectedFolderIds.size}개
+            <button
+              onClick={() => {
+                setSelectedIds(new Set())
+                setSelectedFolderIds(new Set())
+              }}
+              className="selection-toolbar-btn"
+              title="선택 취소"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <span className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>
+              {selectedIds.size + selectedFolderIds.size}개 선택
             </span>
             <button
               onClick={selectAll}
-              className="text-xs sm:text-sm font-medium opacity-70 hover:opacity-100 transition-opacity"
+              className="text-xs font-medium px-2.5 py-1 rounded-lg transition-colors hover:opacity-80"
+              style={{ color: 'var(--accent-primary)', background: 'var(--accent-primary-alpha)' }}
             >
               전체 선택
             </button>
           </div>
-          <div className="flex items-center gap-1">
-            {/* 다운로드 버튼 (사진만 선택했을 때) */}
+
+          {/* 오른쪽: 액션 버튼들 */}
+          <div className="flex items-center gap-0.5">
+            {/* 다운로드 */}
             {selectedIds.size > 0 && (
               <button
                 onClick={handleDownloadSelected}
-                className="btn btn-ghost !p-2 !text-green-500"
+                className="selection-toolbar-btn success"
                 title="다운로드"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1983,38 +1991,24 @@ export default function DrivePage() {
                 </svg>
               </button>
             )}
-            {/* 이동 버튼 */}
+            {/* 이동 */}
             <button
               onClick={() => setShowMoveModal(true)}
-              className="btn btn-ghost !p-2"
-              title="이동"
-              style={{ color: 'var(--accent-primary)' }}
+              className="selection-toolbar-btn primary"
+              title="폴더로 이동"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
               </svg>
             </button>
-            {/* 삭제 버튼 */}
+            {/* 삭제 */}
             <button
               onClick={handleDeleteSelected}
-              className="btn btn-ghost !p-2 !text-red-500"
+              className="selection-toolbar-btn danger"
               title="삭제"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-              </svg>
-            </button>
-            {/* 취소 버튼 */}
-            <button
-              onClick={() => {
-                setSelectedIds(new Set())
-                setSelectedFolderIds(new Set())
-              }}
-              className="btn btn-ghost !p-2 opacity-60"
-              title="취소"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
           </div>
@@ -2077,6 +2071,12 @@ export default function DrivePage() {
                           toggleFolderSelect(folder.id, e, folderIndex)
                         } else {
                           router.push(`/drive?folder=${folder.id}`)
+                        }
+                      }}
+                      onMouseEnter={() => {
+                        // 폴더 호버 시 해당 폴더의 사진을 미리 로드
+                        if (user?.id) {
+                          dataCache.prefetchFolder(user.id, folder.id)
                         }
                       }}
                       onTouchStart={(e) => handleItemTouchStart(e, folder.id, true, folderIndex, sortedFolders.length)}
@@ -2256,7 +2256,15 @@ export default function DrivePage() {
                     router.push(`/drive?folder=${folder.id}`)
                   }
                 }}
-                onMouseEnter={(e) => !selectedFolderIds.has(folder.id) && (e.currentTarget.style.background = 'var(--background-secondary)')}
+                onMouseEnter={(e) => {
+                  if (!selectedFolderIds.has(folder.id)) {
+                    e.currentTarget.style.background = 'var(--background-secondary)'
+                  }
+                  // 폴더 호버 시 해당 폴더의 사진을 미리 로드
+                  if (user?.id) {
+                    dataCache.prefetchFolder(user.id, folder.id)
+                  }
+                }}
                 onMouseLeave={(e) => !selectedFolderIds.has(folder.id) && (e.currentTarget.style.background = 'transparent')}
               >
                 <div

@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
 import { useDownload } from '@/lib/download-context'
 import { useUser } from '@/lib/user-context'
+import { useDataCache } from '@/lib/data-cache'
 
 // R2 URL을 프록시 URL로 즉시 변환
 function toProxyUrl(url: string): string {
@@ -59,6 +59,7 @@ export default function ViewerPage() {
   const searchParams = useSearchParams()
   const { startDownload } = useDownload()
   const { user } = useUser()
+  const dataCache = useDataCache()
 
   useEffect(() => {
     const fetchPhotos = async () => {
@@ -69,39 +70,15 @@ export default function ViewerPage() {
       const sortByParam = searchParams.get('sortBy') || 'name'
       const sortOrderParam = searchParams.get('sortOrder') || 'asc'
 
-      let query = supabase.from('photos').select('*').eq('user_id', user.id)
-
-      // 카테고리가 지정된 경우 (사진/동영상/문서 탭) - 전체 파일에서 필터
+      // 캐시에서 데이터 가져오기
       let allData: Photo[] = []
 
       if (categoryParam) {
-        // 페이지네이션으로 전체 파일 가져오기 (1000개 limit 우회)
-        let from = 0
-        const pageSize = 1000
-
-        while (true) {
-          const { data: pageData } = await supabase
-            .from('photos')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('order', { ascending: true })
-            .range(from, from + pageSize - 1)
-
-          if (!pageData || pageData.length === 0) break
-          allData.push(...(pageData as Photo[]))
-          if (pageData.length < pageSize) break
-          from += pageSize
-        }
-        // ID로 중복 제거 (duplicate key error 방지)
-        allData = [...new Map(allData.map(p => [p.id, p])).values()]
-      } else if (folderParam) {
-        query = query.eq('folder_id', folderParam)
-        const { data } = await query
-        allData = (data as Photo[]) || []
+        // 카테고리가 지정된 경우 전체 파일 가져오기 (캐시 사용)
+        allData = await dataCache.getAllPhotos(user.id) as Photo[]
       } else {
-        query = query.is('folder_id', null)
-        const { data } = await query
-        allData = (data as Photo[]) || []
+        // 특정 폴더의 파일 가져오기 (캐시 사용)
+        allData = await dataCache.getPhotos(user.id, folderParam) as Photo[]
       }
 
       if (allData.length > 0) {
@@ -145,7 +122,7 @@ export default function ViewerPage() {
     }
 
     fetchPhotos()
-  }, [searchParams, user])
+  }, [searchParams, user, dataCache])
 
   // 이미지 프리로드 (프록시 URL 사용)
   useEffect(() => {
