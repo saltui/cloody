@@ -2314,7 +2314,7 @@ export default function DrivePage() {
                 className="flex items-center px-4 py-3.5 sm:py-3 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_1fr_100px_100px_auto] sm:gap-3 sm:border-b"
                 style={{
                   background: selectedFolderIds.has(folder.id) ? 'var(--accent-primary-alpha)' : 'transparent',
-                  borderColor: 'var(--border-light)'
+                  borderColor: 'var(--border-default)'
                 }}
                 onClick={(e) => {
                   if (isSelecting) {
@@ -2395,7 +2395,7 @@ export default function DrivePage() {
                 className="flex items-center px-4 py-3.5 sm:py-2.5 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_1fr_100px_100px_auto] sm:gap-3 sm:border-b"
                 style={{
                   background: selectedIds.has(photo.id) ? 'var(--accent-primary-alpha)' : 'transparent',
-                  borderColor: 'var(--border-light)'
+                  borderColor: 'var(--border-default)'
                 }}
                 onClick={(e) => {
                   if (isSelecting) {
