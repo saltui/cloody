@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-const SESSION_TIMEOUT = 30 * 60 * 1000 // 30분
+const SESSION_TIMEOUT = 7 * 24 * 60 * 60 * 1000 // 7일
 
 // 클라이언트 IP 가져오기 (Edge 호환)
 function getClientIP(request: NextRequest): string {
@@ -38,6 +38,7 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
     "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Next.js 필요
     "style-src 'self' 'unsafe-inline'", // Tailwind 필요
     "img-src 'self' data: blob: https://*.r2.dev https://*.supabase.co",
+    "media-src 'self' blob: https://*.r2.dev", // 비디오 썸네일 + R2 미디어
     "font-src 'self' data:",
     "connect-src 'self' https://*.supabase.co https://*.r2.dev",
     "frame-ancestors 'none'",

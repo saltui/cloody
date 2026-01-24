@@ -32,6 +32,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (mounted) {
       document.documentElement.classList.remove('light', 'dark')
       document.documentElement.classList.add(theme)
+      document.documentElement.setAttribute('data-theme', theme)
       localStorage.setItem('gallery-theme', theme)
     }
   }, [theme, mounted])

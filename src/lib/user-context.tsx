@@ -35,6 +35,20 @@ export function UserProvider({ children }: { children: ReactNode }) {
         const data = await res.json()
         setUser(data.user)
         setError(null)
+      } else if (res.status === 401) {
+        setUser(null)
+        // 이미 로그인 페이지면 리다이렉트 불필요
+        const isAuthPage = window.location.pathname === '/login'
+          || window.location.pathname === '/'
+          || window.location.pathname.startsWith('/share')
+          || window.location.pathname.startsWith('/magic-link')
+          || window.location.pathname.startsWith('/verify-email')
+        if (!isAuthPage) {
+          // 세션 만료 시 로그아웃 API 호출하여 쿠키 삭제 후 로그인 페이지로 이동
+          await fetch('/api/auth/logout', { method: 'POST' })
+          window.location.href = '/login'
+        }
+        return
       } else {
         setUser(null)
       }

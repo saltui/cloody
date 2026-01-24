@@ -10,6 +10,7 @@ import {
 } from '@/lib/user-auth'
 import { logAudit } from '@/lib/audit'
 import { supabase } from '@/lib/supabase'
+import { ALLOWED_EMAILS } from '@/lib/whitelist'
 
 function getClientIP(request: NextRequest): string {
   const forwardedFor = request.headers.get('cf-connecting-ip')
@@ -46,6 +47,11 @@ export async function POST(request: NextRequest) {
 
     if (!password || typeof password !== 'string') {
       return NextResponse.json({ error: '비밀번호를 입력해주세요.' }, { status: 400 })
+    }
+
+    // 허용된 이메일인지 확인
+    if (!ALLOWED_EMAILS.has(email.toLowerCase())) {
+      return NextResponse.json({ error: '로그인이 허용되지 않은 이메일입니다.' }, { status: 403 })
     }
 
     // 사용자 조회
@@ -138,7 +144,7 @@ export async function POST(request: NextRequest) {
     }
 
     const token = createUserSessionToken(userForToken, ip, rememberMe)
-    const maxAge = rememberMe ? 30 * 24 * 60 * 60 : 24 * 60 * 60
+    const maxAge = rememberMe ? 30 * 24 * 60 * 60 : 7 * 24 * 60 * 60 // 기억하기: 30일, 기본: 7일
 
     const response = NextResponse.json({
       success: true,

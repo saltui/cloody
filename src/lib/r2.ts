@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command, GetObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID!
@@ -71,4 +71,25 @@ export async function getSignedImageUrl(fileName: string, expiresIn = 3600): Pro
   })
 
   return getSignedUrl(r2Client, command, { expiresIn })
+}
+
+// 객체 메타데이터 가져오기 (파일 크기, Content-Type 등)
+export async function getObjectMetadata(fileName: string) {
+  const command = new HeadObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: fileName,
+  })
+
+  return r2Client.send(command)
+}
+
+// Range 요청을 지원하는 객체 가져오기
+export async function getObjectWithRange(fileName: string, range?: string) {
+  const command = new GetObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: fileName,
+    Range: range,
+  })
+
+  return r2Client.send(command)
 }

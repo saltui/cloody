@@ -1,8 +1,8 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
 
 const SECRET_KEY = process.env.GALLERY_PASSWORD || 'fallback-secret-key'
-const TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000 // 7일 (밀리초)
-const SESSION_TIMEOUT = 30 * 60 * 1000 // 30분 비활동 시 타임아웃
+const TOKEN_EXPIRY = 30 * 24 * 60 * 60 * 1000 // 30일 (밀리초)
+const SESSION_TIMEOUT = 7 * 24 * 60 * 60 * 1000 // 7일 비활동 시 타임아웃
 
 interface SessionToken {
   sessionId: string

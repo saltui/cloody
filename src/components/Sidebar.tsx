@@ -36,7 +36,7 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
 
   const currentCategory = (searchParams.get('category') as FileCategory) || 'all'
 
-  const handleCategoryClick = (category: FileCategory) => {
+  const getCategoryUrl = (category: FileCategory) => {
     const params = new URLSearchParams(searchParams.toString())
     if (category === 'all') {
       params.delete('category')
@@ -47,7 +47,17 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
     params.delete('folder')
 
     const queryString = params.toString()
-    router.push(`/drive${queryString ? `?${queryString}` : ''}`)
+    return `/drive${queryString ? `?${queryString}` : ''}`
+  }
+
+  const handleCategoryClick = (e: React.MouseEvent, category: FileCategory) => {
+    const url = getCategoryUrl(category)
+    // cmd+click 또는 ctrl+click이면 새 탭에서 열기
+    if (e.metaKey || e.ctrlKey) {
+      window.open(url, '_blank')
+      return
+    }
+    router.push(url)
     onClose()
   }
 
@@ -92,7 +102,7 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
       {/* Backdrop */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 xl:hidden"
           onClick={onClose}
         />
       )}
@@ -102,22 +112,20 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
         className={`
           fixed top-0 left-0 bottom-0 w-64 z-50
           transform transition-transform duration-300 ease-out
-          lg:translate-x-0
+          xl:translate-x-0
           ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         `}
         style={{
-          background: 'var(--background-secondary)',
+          background: 'var(--background)',
           borderRight: '1px solid var(--glass-border)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)'
         }}
       >
         <div className="flex flex-col h-full">
           {/* Header */}
           <div className="p-4 border-b" style={{ borderColor: 'var(--glass-border)' }}>
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent-gradient-subtle)', border: '1px solid rgba(49, 130, 246, 0.3)' }}>
-                <svg className="w-4 h-4" style={{ color: 'var(--accent-tertiary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent-gradient-subtle)', border: '1px solid rgba(49, 130, 246, 0.15)' }}>
+                <svg className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
                 </svg>
               </div>
@@ -138,15 +146,19 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
                 return (
                   <button
                     key={category.id}
-                    onClick={() => handleCategoryClick(category.id)}
-                    className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-150"
+                    onClick={(e) => handleCategoryClick(e, category.id)}
+                    className={`
+                      sidebar-nav-item w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg
+                      transition-all duration-200 ease-out cursor-pointer
+                      ${isActive ? 'sidebar-nav-item-active' : ''}
+                    `}
                     style={{
                       background: isActive ? 'var(--accent-gradient-subtle)' : 'transparent',
-                      color: isActive ? 'var(--accent-tertiary)' : 'var(--foreground-secondary)',
+                      color: isActive ? 'var(--accent-primary)' : 'var(--foreground-secondary)',
                     }}
                   >
-                    <span style={{ opacity: isActive ? 1 : 0.7 }}>{getIcon(category.icon)}</span>
-                    <span className="text-sm">{category.label}</span>
+                    <span className="transition-transform duration-200" style={{ opacity: isActive ? 1 : 0.7 }}>{getIcon(category.icon)}</span>
+                    <span className="text-sm font-medium">{category.label}</span>
                   </button>
                 )
               })}
@@ -160,15 +172,21 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
             {/* Quick Actions */}
             <div className="space-y-0.5 mt-1">
               <button
-                onClick={() => router.push('/settings')}
-                className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-150"
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey) {
+                    window.open('/settings', '_blank')
+                    return
+                  }
+                  router.push('/settings')
+                }}
+                className="sidebar-nav-item w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-200 ease-out cursor-pointer"
                 style={{ color: 'var(--foreground-secondary)' }}
               >
-                <svg className="w-4 h-4" style={{ opacity: 0.7 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 transition-transform duration-200" style={{ opacity: 0.7 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
-                <span className="text-sm">환경설정</span>
+                <span className="text-sm font-medium">환경설정</span>
               </button>
             </div>
           </nav>
@@ -176,22 +194,22 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
           {/* Footer */}
           <div className="p-3 border-t" style={{ borderColor: 'var(--glass-border)' }}>
             {/* Storage */}
-            <div className="mb-3 p-2.5 rounded-lg" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+            <div className="sidebar-storage-card mb-3 p-2.5 rounded-lg transition-all duration-200" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
               <div className="flex justify-between text-xs mb-1.5">
                 <span style={{ color: 'var(--foreground-muted)' }}>저장공간</span>
-                <span style={{ color: 'var(--foreground-secondary)' }}>{formatBytes(storageUsed)}</span>
+                <span className="transition-colors duration-200" style={{ color: 'var(--foreground-secondary)' }}>{formatBytes(storageUsed)}</span>
               </div>
               <div className="progress-bar">
                 <div
-                  className="progress-bar-fill"
+                  className="progress-bar-fill transition-all duration-500 ease-out"
                   style={{ width: `${Math.min((storageUsed / (10 * 1024 * 1024 * 1024)) * 100, 100)}%` }}
                 />
               </div>
             </div>
 
             {/* User */}
-            <div className="flex items-center gap-2.5 p-2 rounded-lg" style={{ background: 'var(--glass-bg)' }}>
-              <div className="avatar avatar-sm">
+            <div className="sidebar-user-card flex items-center gap-2.5 p-2 rounded-lg transition-all duration-200" style={{ background: 'var(--glass-bg)' }}>
+              <div className="avatar avatar-sm transition-transform duration-200">
                 {user?.display_name?.[0] || user?.email?.[0] || 'U'}
               </div>
               <div className="flex-1 min-w-0">
@@ -204,11 +222,11 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
               </div>
               <button
                 onClick={handleLogout}
-                className="p-1.5 rounded-md transition-colors"
+                className="sidebar-logout-btn p-1.5 rounded-md transition-all duration-200"
                 style={{ color: 'var(--foreground-muted)' }}
                 title="로그아웃"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                 </svg>
               </button>

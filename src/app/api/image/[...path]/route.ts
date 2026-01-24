@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { r2Client, BUCKET_NAME } from '@/lib/r2'
-import { GetObjectCommand } from '@aws-sdk/client-s3'
+import { getObjectMetadata, getObjectWithRange } from '@/lib/r2'
 
-// 이미지 프록시 - R2에서 직접 가져와서 전달
+// 이미지/비디오 프록시 - Range 요청 지원
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
@@ -15,37 +14,77 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid path' }, { status: 400 })
     }
 
-    const command = new GetObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: fileName,
-    })
+    const rangeHeader = request.headers.get('range')
 
-    const response = await r2Client.send(command)
+    // Range 요청이 있는 경우 (동영상 스트리밍)
+    if (rangeHeader) {
+      // 먼저 파일 메타데이터 가져오기
+      const metadata = await getObjectMetadata(fileName)
+      const fileSize = metadata.ContentLength || 0
+      const contentType = metadata.ContentType || 'application/octet-stream'
+
+      // Range 헤더 파싱 (예: "bytes=0-1023")
+      const rangeMatch = rangeHeader.match(/bytes=(\d*)-(\d*)/)
+      if (!rangeMatch) {
+        return NextResponse.json({ error: 'Invalid range header' }, { status: 400 })
+      }
+
+      const start = rangeMatch[1] ? parseInt(rangeMatch[1], 10) : 0
+      const end = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : fileSize - 1
+
+      // 유효한 범위인지 확인
+      if (start >= fileSize || end >= fileSize || start > end) {
+        return new NextResponse(null, {
+          status: 416,
+          headers: {
+            'Content-Range': `bytes */${fileSize}`,
+          },
+        })
+      }
+
+      const chunkSize = end - start + 1
+
+      // Range 요청으로 파일 가져오기
+      const response = await getObjectWithRange(fileName, `bytes=${start}-${end}`)
+
+      if (!response.Body) {
+        return NextResponse.json({ error: 'File not found' }, { status: 404 })
+      }
+
+      // 스트림으로 직접 반환 (메모리 효율적)
+      const stream = response.Body.transformToWebStream()
+
+      return new NextResponse(stream, {
+        status: 206,
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': chunkSize.toString(),
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        },
+      })
+    }
+
+    // Range 요청이 없는 경우 (일반 이미지)
+    const response = await getObjectWithRange(fileName)
 
     if (!response.Body) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
 
-    // Stream을 ArrayBuffer로 변환
-    const chunks: Uint8Array[] = []
-    const reader = response.Body.transformToWebStream().getReader()
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      chunks.push(value)
-    }
-
-    const buffer = Buffer.concat(chunks)
-
-    // Content-Type 설정
     const contentType = response.ContentType || 'application/octet-stream'
+    const contentLength = response.ContentLength || 0
 
-    return new NextResponse(buffer, {
+    // 스트림으로 직접 반환
+    const stream = response.Body.transformToWebStream()
+
+    return new NextResponse(stream, {
       headers: {
         'Content-Type': contentType,
+        'Content-Length': contentLength.toString(),
+        'Accept-Ranges': 'bytes',
         'Cache-Control': 'public, max-age=31536000, immutable',
-        'Content-Length': buffer.length.toString(),
       },
     })
   } catch (error) {

@@ -54,7 +54,7 @@ function getEmailTemplate(content: { title: string; greeting: string; message: s
           </p>
 
           <!-- Button -->
-          <a href="${content.buttonUrl}" style="display: block; width: 100%; padding: 14px 0; background: linear-gradient(135deg, #1b64da 0%, #3182f6 50%, #58a6ff 100%); color: white; text-align: center; text-decoration: none; border-radius: 10px; font-weight: 500; font-size: 14px; margin-bottom: 20px; box-shadow: 0 0 20px rgba(49,130,246,0.3);">
+          <a href="${content.buttonUrl}" style="display: block; width: 100%; padding: 14px 0; background: #3182f6; color: white; text-align: center; text-decoration: none; border-radius: 10px; font-weight: 500; font-size: 14px; margin-bottom: 20px;">
             ${content.buttonText}
           </a>
 

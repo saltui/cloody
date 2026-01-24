@@ -7,8 +7,6 @@ type AuthStep = 'email' | 'sending' | 'sent'
 export default function LoginPage() {
   const [step, setStep] = useState<AuthStep>('email')
   const [email, setEmail] = useState('')
-  const [displayName, setDisplayName] = useState('')
-  const [isNewUser, setIsNewUser] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -24,36 +22,13 @@ export default function LoginPage() {
 
     setIsLoading(true)
     setError('')
+    setStep('sending')
 
     try {
-      const checkRes = await fetch('/api/auth/check-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      })
-
-      const checkData = await checkRes.json()
-
-      if (!checkRes.ok) {
-        setError(checkData.error || '오류가 발생했습니다.')
-        setIsLoading(false)
-        return
-      }
-
-      if (!checkData.exists) {
-        setIsNewUser(true)
-      }
-
-      setStep('sending')
-
       const res = await fetch('/api/auth/magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          displayName: displayName || undefined,
-          createIfNotExists: true
-        }),
+        body: JSON.stringify({ email }),
       })
 
       const data = await res.json()
@@ -100,158 +75,214 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4 safe-area-top safe-area-bottom relative overflow-hidden">
-      {/* Cosmic Background */}
-      <div className="cosmic-bg" />
-
-      {/* Decorative Orbs */}
-      <div className="orb orb-1" />
-      <div className="orb orb-2" />
-      <div className="orb orb-3" />
-
-      <div className="w-full max-w-sm relative z-10 animate-fade-in-up">
+    <main
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: '24px 20px',
+        background: 'var(--tds-color-background)',
+      }}
+    >
+      <div style={{ width: '100%', maxWidth: '360px' }}>
         {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-4 glass-strong" style={{ boxShadow: '0 0 30px rgba(49, 130, 246, 0.3)' }}>
-            <svg className="w-8 h-8" style={{ color: 'var(--accent-tertiary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+          <div
+            style={{
+              width: '72px',
+              height: '72px',
+              borderRadius: '20px',
+              background: 'linear-gradient(135deg, #3182f6 0%, #1b64da 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 16px',
+              boxShadow: '0 8px 24px rgba(49, 130, 246, 0.25)',
+            }}
+          >
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
             </svg>
           </div>
-          <h1 className="text-2xl font-semibold mb-1" style={{ color: 'var(--foreground)' }}>Cloody</h1>
-          <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>Your private cloud</p>
+          <h1 className="tds-text-headline" style={{ marginBottom: '4px' }}>Cloody</h1>
+          <p className="tds-text-body tds-text-tertiary">Jaden&apos;s Private Cloud</p>
         </div>
 
         {/* Card */}
-        <div className="card card-no-hover card-glow overflow-hidden">
-          <div className="p-6">
-            {/* Email Input Step */}
-            {(step === 'email' || step === 'sending') && (
-              <form onSubmit={handleSubmit} className="space-y-4 animate-fade-in">
-                <div className="text-center mb-2">
-                  <h2 className="text-lg font-medium" style={{ color: 'var(--foreground)' }}>
-                    로그인
-                  </h2>
-                </div>
+        <div className="tds-card tds-card-elevated" style={{ padding: '28px 24px' }}>
+          {/* Email Input Step */}
+          {(step === 'email' || step === 'sending') && (
+            <form onSubmit={handleSubmit}>
+              <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                <h2 className="tds-text-title">로그인</h2>
+              </div>
 
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--foreground-secondary)' }}>
-                    이메일
-                  </label>
-                  <input
-                    ref={emailRef}
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    className="input"
-                    required
-                    disabled={step === 'sending'}
-                  />
-                </div>
-
-                {isNewUser && (
-                  <div className="animate-fade-in-up">
-                    <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--foreground-secondary)' }}>
-                      이름 <span style={{ color: 'var(--foreground-muted)' }}>(선택)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="홍길동"
-                      className="input"
-                      disabled={step === 'sending'}
-                    />
-                  </div>
-                )}
-
-                {error && (
-                  <div className="p-3 rounded-lg animate-fade-in" style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                    <p className="text-xs" style={{ color: 'var(--error)' }}>{error}</p>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={isLoading || !email || step === 'sending'}
-                  className="btn btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
+              <div style={{ marginBottom: '20px' }}>
+                <label
+                  className="tds-text-label tds-text-secondary"
+                  style={{ display: 'block', marginBottom: '8px' }}
                 >
-                  {step === 'sending' ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      전송 중...
-                    </span>
-                  ) : (
-                    '계속하기'
-                  )}
-                </button>
+                  이메일
+                </label>
+                <input
+                  ref={emailRef}
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="tds-input"
+                  required
+                  disabled={step === 'sending'}
+                />
+              </div>
 
-                <p className="text-xs text-center" style={{ color: 'var(--foreground-muted)' }}>
-                  계정이 없으면 자동으로 생성됩니다
-                </p>
-              </form>
-            )}
-
-            {/* Magic Link Sent */}
-            {step === 'sent' && (
-              <div className="text-center py-2 animate-fade-in">
-                <div className="w-12 h-12 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.25)' }}>
-                  <svg className="w-6 h-6" style={{ color: 'var(--success)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <h2 className="text-lg font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-                  이메일을 확인하세요
-                </h2>
-                <p className="text-sm mb-4" style={{ color: 'var(--foreground-secondary)' }}>
-                  <span className="font-medium" style={{ color: 'var(--accent-tertiary)' }}>{email}</span>
-                  <br />로 로그인 링크를 보냈습니다
-                </p>
-
-                <div className="rounded-lg p-3 mb-4" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-                  <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
-                    링크는 15분 동안 유효합니다
+              {error && (
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: '12px',
+                    background: 'rgba(240, 68, 82, 0.08)',
+                    marginBottom: '20px',
+                  }}
+                >
+                  <p className="tds-text-caption" style={{ color: 'var(--tds-color-error)' }}>
+                    {error}
                   </p>
                 </div>
+              )}
 
-                {error && (
-                  <div className="p-3 rounded-lg mb-4 animate-fade-in" style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                    <p className="text-xs" style={{ color: 'var(--error)' }}>{error}</p>
-                  </div>
+              <button
+                type="submit"
+                disabled={isLoading || !email || step === 'sending'}
+                className="tds-btn tds-btn-primary tds-btn-block"
+              >
+                {step === 'sending' ? (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      style={{ animation: 'spin 1s linear infinite' }}
+                    >
+                      <circle cx="12" cy="12" r="10" opacity="0.25" />
+                      <path d="M12 2a10 10 0 0 1 10 10" />
+                    </svg>
+                    전송 중...
+                  </span>
+                ) : (
+                  '로그인 링크 받기'
                 )}
+              </button>
+            </form>
+          )}
 
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={handleRetry}
-                    disabled={isLoading}
-                    className="btn btn-secondary w-full text-sm"
-                  >
-                    {isLoading ? '전송 중...' : '다시 보내기'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStep('email')
-                      setEmail('')
-                      setDisplayName('')
-                      setIsNewUser(false)
-                      setError('')
-                    }}
-                    className="btn btn-ghost w-full text-sm"
-                  >
-                    다른 이메일 사용
-                  </button>
-                </div>
+          {/* Magic Link Sent */}
+          {step === 'sent' && (
+            <div style={{ textAlign: 'center' }}>
+              <div
+                style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '50%',
+                  background: 'rgba(0, 196, 113, 0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 16px',
+                }}
+              >
+                <svg
+                  width="28"
+                  height="28"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--tds-color-success)"
+                  strokeWidth="2"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
               </div>
-            )}
-          </div>
+
+              <h2 className="tds-text-title" style={{ marginBottom: '8px' }}>
+                이메일을 확인하세요
+              </h2>
+              <p className="tds-text-body tds-text-secondary" style={{ marginBottom: '20px' }}>
+                <span style={{ color: 'var(--tds-color-primary)', fontWeight: 600 }}>{email}</span>
+                <br />로 로그인 링크를 보냈습니다
+              </p>
+
+              <div
+                style={{
+                  padding: '12px 14px',
+                  borderRadius: '12px',
+                  background: 'var(--tds-color-background-secondary)',
+                  marginBottom: '20px',
+                }}
+              >
+                <p className="tds-text-caption tds-text-tertiary">
+                  링크는 15분 동안 유효합니다
+                </p>
+              </div>
+
+              {error && (
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: '12px',
+                    background: 'rgba(240, 68, 82, 0.08)',
+                    marginBottom: '20px',
+                  }}
+                >
+                  <p className="tds-text-caption" style={{ color: 'var(--tds-color-error)' }}>
+                    {error}
+                  </p>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={handleRetry}
+                  disabled={isLoading}
+                  className="tds-btn tds-btn-secondary tds-btn-block"
+                >
+                  {isLoading ? '전송 중...' : '다시 보내기'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep('email')
+                    setEmail('')
+                    setError('')
+                  }}
+                  className="tds-btn tds-btn-ghost tds-btn-block"
+                >
+                  다른 이메일 사용
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        <p className="text-center text-xs mt-6" style={{ color: 'var(--foreground-muted)' }}>
+        <p
+          className="tds-text-caption tds-text-tertiary"
+          style={{ textAlign: 'center', marginTop: '24px' }}
+        >
           Secure • Private • Simple
         </p>
       </div>
+
+      <style jsx global>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </main>
   )
 }

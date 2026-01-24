@@ -3,6 +3,7 @@ import { createUser, createUserSessionToken, checkRateLimit, recordFailedAttempt
 import { sendVerificationEmail } from '@/lib/email'
 import { logAudit } from '@/lib/audit'
 import { supabase } from '@/lib/supabase'
+import { ALLOWED_EMAILS } from '@/lib/whitelist'
 
 function getClientIP(request: NextRequest): string {
   const forwardedFor = request.headers.get('cf-connecting-ip')
@@ -36,6 +37,11 @@ export async function POST(request: NextRequest) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(email)) {
       return NextResponse.json({ error: '올바른 이메일 형식이 아닙니다.' }, { status: 400 })
+    }
+
+    // 허용된 이메일인지 확인
+    if (!ALLOWED_EMAILS.has(email.toLowerCase())) {
+      return NextResponse.json({ error: '가입이 허용되지 않은 이메일입니다.' }, { status: 403 })
     }
 
     if (!password || typeof password !== 'string' || password.length < 8) {

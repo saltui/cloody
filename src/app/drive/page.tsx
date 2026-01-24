@@ -1,14 +1,34 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, DragEvent } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, DragEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { useTheme } from '@/lib/theme'
 import { useUpload } from '@/lib/upload-context'
 import { useDownload } from '@/lib/download-context'
-import { useSignedUrl } from '@/lib/signed-url-context'
 import { useUser } from '@/lib/user-context'
 import Sidebar, { FileCategory } from '@/components/Sidebar'
+import { Home, Image as ImageIcon, CloudUpload, Menu } from 'lucide-react'
+
+// R2 URL을 프록시 URL로 즉시 변환
+function toProxyUrl(url: string): string {
+  if (url.includes('.r2.dev/')) {
+    const parts = url.split('.r2.dev/')
+    if (parts.length > 1) {
+      const fileName = parts[1].split('?')[0]
+      return `/api/image/${fileName}`
+    }
+  }
+  if (url.includes('.r2.cloudflarestorage.com/')) {
+    const urlObj = new URL(url)
+    const pathParts = urlObj.pathname.split('/')
+    if (pathParts.length > 2) {
+      const fileName = pathParts.slice(2).join('/')
+      return `/api/image/${fileName}`
+    }
+  }
+  return url
+}
 
 interface Photo {
   id: string
@@ -18,17 +38,139 @@ interface Photo {
   order: number
   folder_id: string | null
   created_at: string
+  // Video metadata
+  file_type?: string
+  file_size?: number
+  is_video?: boolean
+  duration?: number
+  width?: number
+  height?: number
+  hls_url?: string
+  hls_status?: 'not_applicable' | 'pending' | 'processing' | 'ready' | 'failed'
 }
 
-// 썸네일 생성 함수 (400px 리사이즈)
-const generateThumbnail = (file: File, maxSize: number = 400): Promise<Blob | null> => {
+// 비디오 썸네일 생성 함수
+const generateVideoThumbnail = (file: File, maxSize: number = 400): Promise<Blob | null> => {
   return new Promise((resolve) => {
-    // 비디오는 썸네일 생성 스킵
-    if (file.type.startsWith('video/')) {
-      resolve(null)
-      return
+    console.log('[VideoThumb] Starting:', file.name, file.type, file.size)
+
+    const video = document.createElement('video')
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+
+    video.preload = 'auto'
+    video.muted = true
+    video.playsInline = true
+    // blob URL에는 crossOrigin 불필요 (CORS 에러 유발)
+
+    const objectUrl = URL.createObjectURL(file)
+    console.log('[VideoThumb] Blob URL created')
+    let resolved = false
+
+    // 타임아웃 설정 (15초)
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true
+        cleanup()
+        console.log('[VideoThumb] TIMEOUT')
+        resolve(null)
+      }
+    }, 15000)
+
+    const cleanup = () => {
+      clearTimeout(timeout)
+      URL.revokeObjectURL(objectUrl)
+      video.pause()
+      video.src = ''
+      video.load()
+      video.remove()
     }
 
+    const captureFrame = () => {
+      if (resolved) return
+      console.log('[VideoThumb] Capturing frame, dimensions:', video.videoWidth, 'x', video.videoHeight)
+
+      try {
+        let { videoWidth: width, videoHeight: height } = video
+
+        if (width === 0 || height === 0) {
+          console.log('[VideoThumb] ERROR: dimensions 0')
+          resolved = true
+          cleanup()
+          resolve(null)
+          return
+        }
+
+        // 비율 유지하며 리사이즈
+        if (width > height) {
+          height = (height / width) * maxSize
+          width = maxSize
+        } else {
+          width = (width / height) * maxSize
+          height = maxSize
+        }
+
+        canvas.width = width
+        canvas.height = height
+        ctx?.drawImage(video, 0, 0, width, height)
+
+        canvas.toBlob(
+          (blob) => {
+            console.log('[VideoThumb] Blob result:', blob ? blob.size + ' bytes' : 'null')
+            if (!resolved) {
+              resolved = true
+              cleanup()
+              resolve(blob)
+            }
+          },
+          'image/webp',
+          0.8
+        )
+      } catch (e) {
+        console.log('[VideoThumb] Capture error:', e)
+        if (!resolved) {
+          resolved = true
+          cleanup()
+          resolve(null)
+        }
+      }
+    }
+
+    video.onloadedmetadata = () => {
+      console.log('[VideoThumb] Metadata loaded, duration:', video.duration, 'size:', video.videoWidth, 'x', video.videoHeight)
+    }
+
+    video.onloadeddata = () => {
+      if (resolved) return
+      console.log('[VideoThumb] Data loaded, seeking to 1s or 10%')
+      const seekTime = Math.min(1, (video.duration || 1) * 0.1)
+      video.currentTime = seekTime
+    }
+
+    video.onseeked = () => {
+      if (resolved) return
+      console.log('[VideoThumb] Seek complete')
+      setTimeout(captureFrame, 100)
+    }
+
+    video.onerror = () => {
+      console.log('[VideoThumb] ERROR:', video.error?.code, video.error?.message)
+      if (!resolved) {
+        resolved = true
+        cleanup()
+        resolve(null)
+      }
+    }
+
+    video.src = objectUrl
+    video.load()
+    console.log('[VideoThumb] Load started')
+  })
+}
+
+// 이미지 썸네일 생성 함수 (400px 리사이즈)
+const generateImageThumbnail = (file: File, maxSize: number = 400): Promise<Blob | null> => {
+  return new Promise((resolve) => {
     const img = new Image()
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')
@@ -67,6 +209,23 @@ const generateThumbnail = (file: File, maxSize: number = 400): Promise<Blob | nu
   })
 }
 
+// 통합 썸네일 생성 함수
+const generateThumbnail = (file: File, maxSize: number = 400): Promise<Blob | null> => {
+  if (file.type.startsWith('video/')) {
+    return generateVideoThumbnail(file, maxSize)
+  }
+  return generateImageThumbnail(file, maxSize)
+}
+
+// 바이트 포맷팅 함수
+const formatBytes = (bytes: number) => {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
 interface Folder {
   id: string
   name: string
@@ -81,24 +240,24 @@ interface DuplicateFile {
 
 export default function DrivePage() {
   const { theme, viewMode, setTheme, setViewMode } = useTheme()
-  const { uploading, uploadQueue, uploadProgress, setShowUploadPanel, addToQueue, updateQueueItem } = useUpload()
+  const { uploading, uploadQueue, uploadProgress, showUploadPanel, setShowUploadPanel, addToQueue, updateQueueItem, removeFromQueue, clearCompleted, clearAll } = useUpload()
   const { startDownload } = useDownload()
-  const { getSignedUrls } = useSignedUrl()
-  const { user } = useUser()
+  const { user, isLoading: userLoading } = useUser()
   const [photos, setPhotos] = useState<Photo[]>([])
-  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({})
   const [folders, setFolders] = useState<Folder[]>([])
   const [allFolders, setAllFolders] = useState<Folder[]>([])
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
   const [currentFolder, setCurrentFolder] = useState<Folder | null>(null)
   const [breadcrumbs, setBreadcrumbs] = useState<Folder[]>([])
   const [loading, setLoading] = useState(true)
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [selectedFolderIds, setSelectedFolderIds] = useState<Set<string>>(new Set())
   const [lastSelectedIndex, setLastSelectedIndex] = useState<{ type: 'photo' | 'folder', index: number } | null>(null)
   const [showNewFolderInput, setShowNewFolderInput] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [showMoreScreen, setShowMoreScreen] = useState(false)
 
   // 폴더 수정 관련
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null)
@@ -135,10 +294,27 @@ export default function DrivePage() {
   const [showMoveModal, setShowMoveModal] = useState(false)
   const [moving, setMoving] = useState(false)
 
-  // 모바일 FAB 메뉴 & 업로드 패널
+  // 모바일 FAB 메뉴
   const [showFabMenu, setShowFabMenu] = useState(false)
-  const [showUploadPanel, setShowUploadPanel] = useState(false)
   const fabFileInputRef = useRef<HTMLInputElement>(null)
+
+  // 드래그 선택 관련 (데스크톱)
+  const [dragSelectStart, setDragSelectStart] = useState<{ x: number; y: number } | null>(null)
+  const [dragSelectCurrent, setDragSelectCurrent] = useState<{ x: number; y: number } | null>(null)
+  const [isDragSelecting, setIsDragSelecting] = useState(false)
+  const gridContainerRef = useRef<HTMLDivElement>(null)
+
+  // 모바일 터치 선택 관련
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null)
+  const [isTouchDragging, setIsTouchDragging] = useState(false)
+  const [touchDragStart, setTouchDragStart] = useState<{ x: number; y: number } | null>(null)
+  const [touchDragStartItem, setTouchDragStartItem] = useState<{ id: string; isFolder: boolean; combinedIndex: number } | null>(null)
+  const autoScrollRef = useRef<NodeJS.Timeout | null>(null)
+  const lastTouchPosRef = useRef<{ x: number; y: number } | null>(null)
+  // 범위 선택을 위한 정렬된 배열 refs
+  const sortedFoldersRef = useRef<Folder[]>([])
+  const sortedPhotosRef = useRef<Photo[]>([])
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -165,15 +341,13 @@ export default function DrivePage() {
     setCurrentFolder(crumbs[crumbs.length - 1] || null)
   }, [])
 
-  const fetchData = useCallback(async (folderId: string | null) => {
-    // 사용자 ID가 없으면 빈 데이터 표시
+  const fetchData = useCallback(async (folderId: string | null, category: string = 'all') => {
+    // 사용자 ID가 없으면 로딩 유지 (사용자 로딩 완료될 때까지)
     if (!user?.id) {
-      setAllFolders([])
-      setFolders([])
-      setPhotos([])
-      setLoading(false)
       return
     }
+
+    setLoading(true)
 
     // 현재 사용자의 폴더만 조회
     const { data: allFoldersData } = await supabase
@@ -192,23 +366,54 @@ export default function DrivePage() {
 
     await buildBreadcrumbs(folderId, fetchedFolders)
 
-    // 현재 사용자의 사진만 조회
+    // 현재 사용자의 사진 조회
     let query = supabase
       .from('photos')
       .select('*')
       .eq('user_id', user.id)
       .order('order', { ascending: true })
 
-    if (folderId) {
-      query = query.eq('folder_id', folderId)
+    // 카테고리가 'all'이 아니면 모든 폴더의 파일을 가져옴 (필터링은 클라이언트에서)
+    // 카테고리가 'all'이면 현재 폴더의 파일만 가져옴
+    if (category === 'all') {
+      if (folderId) {
+        query = query.eq('folder_id', folderId)
+      } else {
+        query = query.is('folder_id', null)
+      }
     } else {
-      query = query.is('folder_id', null)
+      // category !== 'all'이면 전체 파일 가져옴 - 페이지네이션으로 1000개 limit 우회
+      const allPhotos: Photo[] = []
+      let from = 0
+      const pageSize = 1000
+
+      while (true) {
+        const { data: pageData } = await supabase
+          .from('photos')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('order', { ascending: true })
+          .range(from, from + pageSize - 1)
+
+        if (!pageData || pageData.length === 0) break
+        allPhotos.push(...(pageData as Photo[]))
+        if (pageData.length < pageSize) break
+        from += pageSize
+      }
+
+      // ID로 중복 제거 (duplicate key error 방지)
+      const uniquePhotos = [...new Map(allPhotos.map(p => [p.id, p])).values()]
+      setPhotos(uniquePhotos)
+      setLoading(false)
+      setIsInitialLoad(false)
+      return
     }
 
     const { data: photosData } = await query
     if (photosData) setPhotos(photosData)
 
     setLoading(false)
+    setIsInitialLoad(false)
   }, [buildBreadcrumbs, user?.id])
 
   const fetchStorageUsage = useCallback(async () => {
@@ -227,51 +432,23 @@ export default function DrivePage() {
 
   useEffect(() => {
     const folderId = searchParams.get('folder')
+    const category = searchParams.get('category') || 'all'
     setCurrentFolderId(folderId)
-    fetchData(folderId)
+    fetchData(folderId, category)
     fetchStorageUsage()
   }, [searchParams, fetchData, fetchStorageUsage])
 
-  // Signed URL 가져오기 (사진 로드 시)
+  // 모바일 터치 이벤트 정리
   useEffect(() => {
-    if (photos.length === 0) return
-
-    const fetchSignedUrls = async () => {
-      // 모든 URL 수집 (원본 + 썸네일)
-      const urlsToSign = new Set<string>()
-      photos.forEach(photo => {
-        if (photo.url) urlsToSign.add(photo.url)
-        if (photo.thumbnail_url) urlsToSign.add(photo.thumbnail_url)
-      })
-
-      const urls = Array.from(urlsToSign)
-      if (urls.length === 0) return
-
-      const signed = await getSignedUrls(urls)
-      setSignedUrls(prev => ({ ...prev, ...signed }))
+    return () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current)
+      }
+      if (autoScrollRef.current) {
+        clearInterval(autoScrollRef.current)
+      }
     }
-
-    fetchSignedUrls()
-  }, [photos, getSignedUrls])
-
-  // 이미지 프리로드 (signed URL 사용)
-  useEffect(() => {
-    if (photos.length === 0 || Object.keys(signedUrls).length === 0) return
-
-    const preloadImages = () => {
-      const imagesToPreload = photos.slice(0, 20)
-      imagesToPreload.forEach(photo => {
-        const url = signedUrls[photo.thumbnail_url || photo.url] || photo.thumbnail_url || photo.url
-        if (url.match(/\.(jpg|jpeg|png|gif|webp)$/i) || url.includes('X-Amz-Signature')) {
-          const img = new window.Image()
-          img.src = url
-        }
-      })
-    }
-
-    const timer = setTimeout(preloadImages, 100)
-    return () => clearTimeout(timer)
-  }, [photos, signedUrls])
+  }, [])
 
   // 파일 선택 시
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -412,7 +589,7 @@ export default function DrivePage() {
         // 병렬 업로드 (10개씩 동시 처리)
         const CONCURRENT_UPLOADS = 10
         let completedCount = 0
-        const uploadResults: { url: string, thumbnailUrl: string | null, name: string, folderId: string | null, index: number }[] = []
+        const uploadResults: { url: string, thumbnailUrl: string | null, name: string, folderId: string | null, index: number, fileType?: string, fileSize?: number, isVideo?: boolean }[] = []
 
         const uploadFile = async (index: number) => {
           const { file, folderPath } = filesWithPath[index]
@@ -462,7 +639,17 @@ export default function DrivePage() {
               }
             }
 
-            uploadResults.push({ url, thumbnailUrl, name: file.name, folderId: targetFolderId, index })
+            const isVideo = file.type.startsWith('video/')
+            uploadResults.push({
+              url,
+              thumbnailUrl,
+              name: file.name,
+              folderId: targetFolderId,
+              index,
+              fileType: file.type,
+              fileSize: file.size,
+              isVideo,
+            })
 
             // 현재 폴더에 업로드된 경우 즉시 화면에 표시
             const isSameFolder = (targetFolderId === null && currentFolderId === null) || targetFolderId === currentFolderId
@@ -523,17 +710,21 @@ export default function DrivePage() {
               order: baseOrder + idx + 1,
               folder_id: folderId,
               user_id: user?.id,
+              file_type: item.fileType,
+              file_size: item.fileSize,
+              is_video: item.isVideo,
+              hls_status: item.isVideo ? 'pending' : 'not_applicable',
             }))
 
             await supabase.from('photos').insert(insertData)
           }
         }
 
-        await fetchData(currentFolderId)
+        await fetchData(currentFolderId, searchParams.get('category') || 'all')
         await fetchStorageUsage()
       } else {
         // 파일 없이 폴더만 드롭한 경우
-        await fetchData(currentFolderId)
+        await fetchData(currentFolderId, searchParams.get('category') || 'all')
       }
     } else if (filesWithPath.length > 0) {
       // 폴더 없이 파일만 드롭한 경우: 기존 동작 (폴더 피커 표시)
@@ -645,7 +836,7 @@ export default function DrivePage() {
     // 병렬 업로드 (10개씩 동시 처리)
     const CONCURRENT_UPLOADS = 10
     let completedCount = 0
-    const uploadResults: { url: string, thumbnailUrl: string | null, name: string, index: number }[] = []
+    const uploadResults: { url: string, thumbnailUrl: string | null, name: string, index: number, fileType?: string, fileSize?: number, isVideo?: boolean }[] = []
 
     const uploadFile = async (index: number) => {
       const file = fileList[index]
@@ -691,7 +882,16 @@ export default function DrivePage() {
           }
         }
 
-        uploadResults.push({ url, thumbnailUrl, name: file.name, index })
+        const isVideo = file.type.startsWith('video/')
+        uploadResults.push({
+          url,
+          thumbnailUrl,
+          name: file.name,
+          index,
+          fileType: file.type,
+          fileSize: file.size,
+          isVideo,
+        })
 
         // 현재 폴더에 업로드된 경우 즉시 화면에 표시
         const isSameFolder = (targetFolderId === null && currentFolderId === null) || targetFolderId === currentFolderId
@@ -708,6 +908,7 @@ export default function DrivePage() {
               order: prev.length + 1,
               folder_id: targetFolderId,
               created_at: new Date().toISOString(),
+              is_video: isVideo,
             }]
           })
         }
@@ -747,6 +948,10 @@ export default function DrivePage() {
         order: baseOrder + idx + 1,
         folder_id: targetFolderId,
         user_id: user?.id,
+        file_type: item.fileType,
+        file_size: item.fileSize,
+        is_video: item.isVideo,
+        hls_status: item.isVideo ? 'pending' : 'not_applicable',
       }))
 
       await supabase.from('photos').insert(insertData)
@@ -755,7 +960,7 @@ export default function DrivePage() {
     setPendingFiles([])
     setDuplicateFiles([])
     setNonDuplicateFiles([])
-    await fetchData(currentFolderId)
+    await fetchData(currentFolderId, searchParams.get('category') || 'all')
     await fetchStorageUsage()
   }
 
@@ -799,110 +1004,123 @@ export default function DrivePage() {
 
     setDeleting(true)
 
-    // 폴더 삭제
-    const foldersToDelete = folders.filter(f => selectedFolderIds.has(f.id))
-    for (let i = 0; i < foldersToDelete.length; i++) {
-      const folder = foldersToDelete[i]
-      setDeleteStatus(`폴더 삭제 중... (${i + 1}/${foldersToDelete.length})`)
-
-      // 폴더 내 모든 항목 수집 및 삭제 (handleDeleteFolder 로직 재사용)
-      const collectItems = async (id: string): Promise<{ folders: string[], photos: { id: string, url: string, thumbnail_url: string | null }[] }> => {
-        const result = { folders: [id], photos: [] as { id: string, url: string, thumbnail_url: string | null }[] }
-        const { data: childFolders } = await supabase.from('folders').select('id').eq('parent_id', id)
-        if (childFolders) {
-          for (const child of childFolders) {
-            const childItems = await collectItems(child.id)
-            result.folders.push(...childItems.folders)
-            result.photos.push(...childItems.photos)
+    try {
+      // R2 파일 삭제 헬퍼 함수 (타임아웃 10초)
+      const deleteFileFromR2 = async (fileName: string) => {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 10000)
+        try {
+          const res = await fetch('/api/delete', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fileName }),
+            signal: controller.signal,
+          })
+          if (!res.ok) {
+            console.warn(`R2 delete failed for ${fileName}: ${res.status}`)
           }
+        } catch (e) {
+          console.warn(`R2 delete error for ${fileName}:`, e)
+        } finally {
+          clearTimeout(timeout)
         }
-        const { data: folderPhotos } = await supabase.from('photos').select('id, url, thumbnail_url').eq('folder_id', id)
-        if (folderPhotos) result.photos.push(...folderPhotos)
-        return result
       }
 
-      const items = await collectItems(folder.id)
+      // 폴더 삭제
+      const foldersToDelete = folders.filter(f => selectedFolderIds.has(f.id))
+      for (let i = 0; i < foldersToDelete.length; i++) {
+        const folder = foldersToDelete[i]
+        setDeleteStatus(`폴더 삭제 중... (${i + 1}/${foldersToDelete.length})`)
 
-      // R2 파일 삭제 (병렬) - 원본 + 썸네일
-      if (items.photos.length > 0) {
-        const deletePromises: Promise<Response | undefined>[] = []
-        items.photos.forEach(photo => {
+        // 폴더 내 모든 항목 수집 및 삭제 (handleDeleteFolder 로직 재사용)
+        const collectItems = async (id: string): Promise<{ folders: string[], photos: { id: string, url: string, thumbnail_url: string | null }[] }> => {
+          const result = { folders: [id], photos: [] as { id: string, url: string, thumbnail_url: string | null }[] }
+          const { data: childFolders } = await supabase.from('folders').select('id').eq('parent_id', id)
+          if (childFolders) {
+            for (const child of childFolders) {
+              const childItems = await collectItems(child.id)
+              result.folders.push(...childItems.folders)
+              result.photos.push(...childItems.photos)
+            }
+          }
+          const { data: folderPhotos } = await supabase.from('photos').select('id, url, thumbnail_url').eq('folder_id', id)
+          if (folderPhotos) result.photos.push(...folderPhotos)
+          return result
+        }
+
+        const items = await collectItems(folder.id)
+
+        // R2 파일 삭제 (병렬) - 원본 + 썸네일
+        if (items.photos.length > 0) {
+          const deletePromises: Promise<void>[] = []
+          items.photos.forEach(photo => {
+            // 원본 삭제
+            const fileName = photo.url.split('/').pop()
+            if (fileName) {
+              deletePromises.push(deleteFileFromR2(decodeURIComponent(fileName)))
+            }
+            // 썸네일 삭제
+            if (photo.thumbnail_url) {
+              const thumbName = photo.thumbnail_url.split('/').pop()
+              if (thumbName) {
+                deletePromises.push(deleteFileFromR2(decodeURIComponent(thumbName)))
+              }
+            }
+          })
+          await Promise.all(deletePromises)
+
+          // DB에서 사진 삭제 (배치) - 소유자 확인
+          const photoIds = items.photos.map(p => p.id)
+          const { error: dbError } = await supabase.from('photos').delete().in('id', photoIds).eq('user_id', user?.id)
+          if (dbError) console.error('DB delete error:', dbError)
+        }
+
+        // 폴더 삭제 (역순으로 - 하위 폴더부터) - 소유자 확인
+        for (let j = items.folders.length - 1; j >= 0; j--) {
+          await supabase.from('folders').delete().eq('id', items.folders[j]).eq('user_id', user?.id)
+        }
+      }
+
+      // 사진 삭제 (병렬 처리)
+      const photosToDelete = photos.filter(p => selectedIds.has(p.id))
+      if (photosToDelete.length > 0) {
+        setDeleteStatus(`파일 삭제 중... (${photosToDelete.length}개)`)
+
+        // R2 파일 삭제 (병렬)
+        const deletePromises: Promise<void>[] = []
+        photosToDelete.forEach(photo => {
           // 원본 삭제
           const fileName = photo.url.split('/').pop()
           if (fileName) {
-            deletePromises.push(fetch('/api/delete', {
-              method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ fileName }),
-            }))
+            deletePromises.push(deleteFileFromR2(decodeURIComponent(fileName)))
           }
           // 썸네일 삭제
           if (photo.thumbnail_url) {
             const thumbName = photo.thumbnail_url.split('/').pop()
             if (thumbName) {
-              deletePromises.push(fetch('/api/delete', {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ fileName: thumbName }),
-              }))
+              deletePromises.push(deleteFileFromR2(decodeURIComponent(thumbName)))
             }
           }
         })
         await Promise.all(deletePromises)
 
-        // DB에서 사진 삭제 (배치) - 소유자 확인
-        const photoIds = items.photos.map(p => p.id)
-        await supabase.from('photos').delete().in('id', photoIds).eq('user_id', user?.id)
+        // DB 삭제 (배치) - 소유자 확인
+        const photoIds = photosToDelete.map(p => p.id)
+        const { error: dbError } = await supabase.from('photos').delete().in('id', photoIds).eq('user_id', user?.id)
+        if (dbError) console.error('DB delete error:', dbError)
       }
 
-      // 폴더 삭제 (역순으로 - 하위 폴더부터) - 소유자 확인
-      for (let j = items.folders.length - 1; j >= 0; j--) {
-        await supabase.from('folders').delete().eq('id', items.folders[j]).eq('user_id', user?.id)
-      }
+      setSelectedIds(new Set())
+      setSelectedFolderIds(new Set())
+      await fetchData(currentFolderId, searchParams.get('category') || 'all')
+      await fetchStorageUsage()
+    } catch (error) {
+      console.error('Delete error:', error)
+      alert('삭제 중 오류가 발생했습니다.')
+    } finally {
+      setDeleting(false)
+      setDeleteStatus('')
     }
-
-    // 사진 삭제 (병렬 처리)
-    const photosToDelete = photos.filter(p => selectedIds.has(p.id))
-    if (photosToDelete.length > 0) {
-      setDeleteStatus(`사진 삭제 중... (${photosToDelete.length}개)`)
-
-      // R2 파일 삭제 (병렬) - 원본 + 썸네일
-      const deletePromises: Promise<Response | undefined>[] = []
-      photosToDelete.forEach(photo => {
-        // 원본 삭제
-        const fileName = photo.url.split('/').pop()
-        if (fileName) {
-          deletePromises.push(fetch('/api/delete', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fileName }),
-          }))
-        }
-        // 썸네일 삭제
-        if (photo.thumbnail_url) {
-          const thumbName = photo.thumbnail_url.split('/').pop()
-          if (thumbName) {
-            deletePromises.push(fetch('/api/delete', {
-              method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ fileName: thumbName }),
-            }))
-          }
-        }
-      })
-      await Promise.all(deletePromises)
-
-      // DB 삭제 (배치) - 소유자 확인
-      const photoIds = photosToDelete.map(p => p.id)
-      await supabase.from('photos').delete().in('id', photoIds).eq('user_id', user?.id)
-    }
-
-    setDeleting(false)
-    setDeleteStatus('')
-    setSelectedIds(new Set())
-    setSelectedFolderIds(new Set())
-    await fetchData(currentFolderId)
-    await fetchStorageUsage()
   }
 
   // 선택된 항목 이동
@@ -951,7 +1169,7 @@ export default function DrivePage() {
       setShowMoveModal(false)
       setSelectedIds(new Set())
       setSelectedFolderIds(new Set())
-      await fetchData(currentFolderId)
+      await fetchData(currentFolderId, searchParams.get('category') || 'all')
     } catch (error) {
       console.error('Move error:', error)
     } finally {
@@ -987,7 +1205,7 @@ export default function DrivePage() {
     })
     setNewFolderName('')
     setShowNewFolderInput(false)
-    await fetchData(currentFolderId)
+    await fetchData(currentFolderId, searchParams.get('category') || 'all')
   }
 
   const handleRenameFolder = async () => {
@@ -999,8 +1217,272 @@ export default function DrivePage() {
 
     setEditingFolder(null)
     setEditFolderName('')
-    await fetchData(currentFolderId)
+    await fetchData(currentFolderId, searchParams.get('category') || 'all')
   }
+
+  // 드래그 선택 핸들러
+  const handleDragSelectStart = (e: React.MouseEvent) => {
+    // 좌클릭만, 그리고 아이템 위에서 시작하지 않을 때만
+    if (e.button !== 0) return
+    const target = e.target as HTMLElement
+    if (target.closest('.image-item, .folder-item, button, input, .modal-backdrop')) return
+
+    const container = gridContainerRef.current
+    if (!container) return
+
+    const rect = container.getBoundingClientRect()
+    const x = e.clientX - rect.left + container.scrollLeft
+    const y = e.clientY - rect.top + container.scrollTop
+
+    setDragSelectStart({ x, y })
+    setDragSelectCurrent({ x, y })
+    setIsDragSelecting(true)
+
+    // 기존 선택 해제 (Shift 키 안 누르면)
+    if (!e.shiftKey) {
+      setSelectedIds(new Set())
+      setSelectedFolderIds(new Set())
+    }
+  }
+
+  const handleDragSelectMove = (e: React.MouseEvent) => {
+    if (!isDragSelecting || !dragSelectStart) return
+
+    const container = gridContainerRef.current
+    if (!container) return
+
+    const rect = container.getBoundingClientRect()
+    const x = e.clientX - rect.left + container.scrollLeft
+    const y = e.clientY - rect.top + container.scrollTop
+
+    setDragSelectCurrent({ x, y })
+
+    // 선택 박스 범위 계산
+    const left = Math.min(dragSelectStart.x, x)
+    const right = Math.max(dragSelectStart.x, x)
+    const top = Math.min(dragSelectStart.y, y)
+    const bottom = Math.max(dragSelectStart.y, y)
+
+    // 아이템들과 겹치는지 확인
+    const newSelectedIds = new Set<string>()
+    const newSelectedFolderIds = new Set<string>()
+
+    // 폴더 체크
+    container.querySelectorAll('.folder-item').forEach((el) => {
+      const itemRect = el.getBoundingClientRect()
+      const itemLeft = itemRect.left - rect.left + container.scrollLeft
+      const itemTop = itemRect.top - rect.top + container.scrollTop
+      const itemRight = itemLeft + itemRect.width
+      const itemBottom = itemTop + itemRect.height
+
+      // 겹치는지 확인
+      if (!(right < itemLeft || left > itemRight || bottom < itemTop || top > itemBottom)) {
+        const folderId = (el as HTMLElement).dataset.folderId
+        if (folderId) newSelectedFolderIds.add(folderId)
+      }
+    })
+
+    // 사진 체크
+    container.querySelectorAll('.image-item').forEach((el) => {
+      const itemRect = el.getBoundingClientRect()
+      const itemLeft = itemRect.left - rect.left + container.scrollLeft
+      const itemTop = itemRect.top - rect.top + container.scrollTop
+      const itemRight = itemLeft + itemRect.width
+      const itemBottom = itemTop + itemRect.height
+
+      // 겹치는지 확인
+      if (!(right < itemLeft || left > itemRight || bottom < itemTop || top > itemBottom)) {
+        const photoId = (el as HTMLElement).dataset.photoId
+        if (photoId) newSelectedIds.add(photoId)
+      }
+    })
+
+    setSelectedIds(newSelectedIds)
+    setSelectedFolderIds(newSelectedFolderIds)
+  }
+
+  const handleDragSelectEnd = () => {
+    setIsDragSelecting(false)
+    setDragSelectStart(null)
+    setDragSelectCurrent(null)
+  }
+
+  // 모바일: 길게 누르기로 선택 모드 진입
+  const handleLongPress = useCallback((itemId: string, isFolder: boolean) => {
+    // 햅틱 피드백 (지원되는 경우)
+    if (navigator.vibrate) {
+      navigator.vibrate(50)
+    }
+
+    if (isFolder) {
+      setSelectedFolderIds(new Set([itemId]))
+    } else {
+      setSelectedIds(new Set([itemId]))
+    }
+  }, [])
+
+  const handleItemTouchStart = useCallback((e: React.TouchEvent, itemId: string, isFolder: boolean, itemIndex: number, foldersCount: number) => {
+    const touch = e.touches[0]
+    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY }
+
+    // 이미 선택 모드면 드래그 선택 시작 준비
+    if (isSelecting) {
+      setTouchDragStart({ x: touch.clientX, y: touch.clientY })
+      lastTouchPosRef.current = { x: touch.clientX, y: touch.clientY }
+      // 시작 아이템 정보 저장 (범위 선택용)
+      const combinedIndex = isFolder ? itemIndex : foldersCount + itemIndex
+      setTouchDragStartItem({ id: itemId, isFolder, combinedIndex })
+      return
+    }
+
+    // 길게 누르기 타이머 시작 (500ms)
+    longPressTimerRef.current = setTimeout(() => {
+      handleLongPress(itemId, isFolder)
+      longPressTimerRef.current = null
+    }, 500)
+  }, [isSelecting, handleLongPress])
+
+  const handleItemTouchMove = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0]
+
+    // 길게 누르기 취소 (움직임 감지)
+    if (touchStartPosRef.current && longPressTimerRef.current) {
+      const dx = touch.clientX - touchStartPosRef.current.x
+      const dy = touch.clientY - touchStartPosRef.current.y
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+        clearTimeout(longPressTimerRef.current)
+        longPressTimerRef.current = null
+      }
+    }
+
+    // 선택 모드에서 드래그 선택
+    if (isSelecting && touchDragStart && touchDragStartItem) {
+      setIsTouchDragging(true)
+      lastTouchPosRef.current = { x: touch.clientX, y: touch.clientY }
+
+      // 터치 위치의 아이템 찾기
+      const element = document.elementFromPoint(touch.clientX, touch.clientY)
+      if (element) {
+        const itemEl = element.closest('[data-photo-id], [data-folder-id]') as HTMLElement | null
+        if (itemEl) {
+          const photoId = itemEl.dataset.photoId
+          const folderId = itemEl.dataset.folderId
+          const folders = sortedFoldersRef.current
+          const photos = sortedPhotosRef.current
+
+          // 현재 아이템의 combined index 계산
+          let currentCombinedIndex = -1
+          if (folderId) {
+            const folderIndex = folders.findIndex(f => f.id === folderId)
+            if (folderIndex !== -1) currentCombinedIndex = folderIndex
+          } else if (photoId) {
+            const photoIndex = photos.findIndex(p => p.id === photoId)
+            if (photoIndex !== -1) currentCombinedIndex = folders.length + photoIndex
+          }
+
+          // 범위 선택: 시작 인덱스부터 현재 인덱스까지 모든 아이템 선택
+          if (currentCombinedIndex !== -1) {
+            const startIndex = touchDragStartItem.combinedIndex
+            const minIndex = Math.min(startIndex, currentCombinedIndex)
+            const maxIndex = Math.max(startIndex, currentCombinedIndex)
+
+            const newFolderIds = new Set<string>()
+            const newPhotoIds = new Set<string>()
+
+            for (let i = minIndex; i <= maxIndex; i++) {
+              if (i < folders.length) {
+                // 폴더 영역
+                newFolderIds.add(folders[i].id)
+              } else {
+                // 사진 영역
+                const photoIndex = i - folders.length
+                if (photos[photoIndex]) {
+                  newPhotoIds.add(photos[photoIndex].id)
+                }
+              }
+            }
+
+            setSelectedFolderIds(newFolderIds)
+            setSelectedIds(newPhotoIds)
+          }
+        }
+      }
+
+      // 자동 스크롤 (화면 가장자리)
+      const container = gridContainerRef.current
+      if (container) {
+        const rect = container.getBoundingClientRect()
+        const scrollSpeed = 15
+        const edgeThreshold = 60
+
+        // 기존 자동 스크롤 중지
+        if (autoScrollRef.current) {
+          clearInterval(autoScrollRef.current)
+          autoScrollRef.current = null
+        }
+
+        // 상단/하단 가장자리 감지
+        if (touch.clientY < rect.top + edgeThreshold) {
+          // 위로 스크롤
+          autoScrollRef.current = setInterval(() => {
+            window.scrollBy(0, -scrollSpeed)
+          }, 16)
+        } else if (touch.clientY > rect.bottom - edgeThreshold) {
+          // 아래로 스크롤
+          autoScrollRef.current = setInterval(() => {
+            window.scrollBy(0, scrollSpeed)
+          }, 16)
+        }
+      }
+    }
+  }, [isSelecting, touchDragStart, touchDragStartItem])
+
+  const handleItemTouchEnd = useCallback(() => {
+    // 길게 누르기 타이머 정리
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+
+    // 자동 스크롤 정리
+    if (autoScrollRef.current) {
+      clearInterval(autoScrollRef.current)
+      autoScrollRef.current = null
+    }
+
+    // 터치 드래그 상태 리셋
+    setIsTouchDragging(false)
+    setTouchDragStart(null)
+    setTouchDragStartItem(null)
+    touchStartPosRef.current = null
+    lastTouchPosRef.current = null
+  }, [])
+
+  // 선택 모드에서 아이템 탭으로 선택 토글
+  const handleItemTap = useCallback((e: React.MouseEvent | React.TouchEvent, itemId: string, isFolder: boolean, index?: number) => {
+    // 터치 드래그 중이면 무시
+    if (isTouchDragging) return
+
+    if (isSelecting) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (isFolder) {
+        setSelectedFolderIds(prev => {
+          const next = new Set(prev)
+          if (next.has(itemId)) next.delete(itemId)
+          else next.add(itemId)
+          return next
+        })
+      } else {
+        setSelectedIds(prev => {
+          const next = new Set(prev)
+          if (next.has(itemId)) next.delete(itemId)
+          else next.add(itemId)
+          return next
+        })
+      }
+    }
+  }, [isSelecting, isTouchDragging])
 
   const handleDeleteFolder = async (folderId: string) => {
     setFolderMenuId(null)
@@ -1045,7 +1527,7 @@ export default function DrivePage() {
 
     // 사진 삭제 (병렬 처리) - 원본 + 썸네일
     if (totalPhotos > 0) {
-      setDeleteStatus(`사진 삭제 중... (${totalPhotos}개)`)
+      setDeleteStatus(`파일 삭제 중... (${totalPhotos}개)`)
 
       // R2 파일 삭제 (병렬)
       const deletePromises: Promise<Response | undefined>[] = []
@@ -1086,7 +1568,7 @@ export default function DrivePage() {
 
     setDeleting(false)
     setDeleteStatus('')
-    await fetchData(currentFolderId)
+    await fetchData(currentFolderId, searchParams.get('category') || 'all')
     await fetchStorageUsage()
   }
 
@@ -1168,33 +1650,65 @@ export default function DrivePage() {
     return date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' })
   }
 
+  // 카테고리 필터링
+  const currentCategory = (searchParams.get('category') as FileCategory) || 'all'
+
+  // 사진/동영상 카테고리는 무조건 그리드 뷰
+  const effectiveViewMode = (currentCategory === 'photos' || currentCategory === 'videos') ? 'grid' : viewMode
+
+  const filteredPhotos = useMemo(() => {
+    const result = photos.filter(photo => {
+      if (currentCategory === 'all') return true
+      const ext = photo.name?.split('.').pop()?.toLowerCase() || ''
+      const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif']
+      const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'm4v']
+      const docExts = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'rtf', 'csv']
+
+      if (currentCategory === 'photos') return imageExts.includes(ext)
+      if (currentCategory === 'videos') return videoExts.includes(ext)
+      if (currentCategory === 'documents') return docExts.includes(ext)
+      return true
+    })
+    return result
+  }, [photos, currentCategory])
+
   // 정렬된 사진 목록
-  const sortedPhotos = [...photos].sort((a, b) => {
-    if (sortBy === 'name') {
-      const nameA = (a.name || a.url.split('/').pop() || '').toLowerCase()
-      const nameB = (b.name || b.url.split('/').pop() || '').toLowerCase()
-      return sortOrder === 'asc'
-        ? nameA.localeCompare(nameB, 'ko')
-        : nameB.localeCompare(nameA, 'ko')
-    } else {
-      const dateA = new Date(a.created_at).getTime()
-      const dateB = new Date(b.created_at).getTime()
-      return sortOrder === 'asc' ? dateA - dateB : dateB - dateA
-    }
-  })
+  const sortedPhotos = useMemo(() => {
+    return [...filteredPhotos].sort((a, b) => {
+      if (sortBy === 'name') {
+        const nameA = (a.name || a.url.split('/').pop() || '').toLowerCase()
+        const nameB = (b.name || b.url.split('/').pop() || '').toLowerCase()
+        return sortOrder === 'asc'
+          ? nameA.localeCompare(nameB, 'ko')
+          : nameB.localeCompare(nameA, 'ko')
+      } else {
+        const dateA = new Date(a.created_at).getTime()
+        const dateB = new Date(b.created_at).getTime()
+        return sortOrder === 'asc' ? dateA - dateB : dateB - dateA
+      }
+    })
+  }, [filteredPhotos, sortBy, sortOrder])
 
   // 정렬된 폴더 목록
-  const sortedFolders = [...folders].sort((a, b) => {
-    if (sortBy === 'name') {
-      return sortOrder === 'asc'
-        ? a.name.localeCompare(b.name, 'ko')
-        : b.name.localeCompare(a.name, 'ko')
-    } else {
-      const dateA = new Date(a.created_at).getTime()
-      const dateB = new Date(b.created_at).getTime()
-      return sortOrder === 'asc' ? dateA - dateB : dateB - dateA
-    }
-  })
+  const sortedFolders = useMemo(() => {
+    return [...folders].sort((a, b) => {
+      if (sortBy === 'name') {
+        return sortOrder === 'asc'
+          ? a.name.localeCompare(b.name, 'ko')
+          : b.name.localeCompare(a.name, 'ko')
+      } else {
+        const dateA = new Date(a.created_at).getTime()
+        const dateB = new Date(b.created_at).getTime()
+        return sortOrder === 'asc' ? dateA - dateB : dateB - dateA
+      }
+    })
+  }, [folders, sortBy, sortOrder])
+
+  // refs 업데이트 (범위 선택용)
+  useEffect(() => {
+    sortedFoldersRef.current = sortedFolders
+    sortedPhotosRef.current = sortedPhotos
+  }, [sortedFolders, sortedPhotos])
 
   // 폴더 컨텍스트 메뉴 컴포넌트
   const FolderContextMenu = ({ folder }: { folder: Folder }) => (
@@ -1240,7 +1754,8 @@ export default function DrivePage() {
     </>
   )
 
-  if (loading) {
+  // 최초 로딩 시에만 전체 화면 로딩 표시
+  if (isInitialLoad && (loading || userLoading)) {
     return (
       <main className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background)' }}>
         <div className="flex flex-col items-center gap-4 animate-fade-in">
@@ -1251,22 +1766,6 @@ export default function DrivePage() {
       </main>
     )
   }
-
-  const currentCategory = (searchParams.get('category') as FileCategory) || 'all'
-
-  // 카테고리별 파일 필터링
-  const filteredPhotos = photos.filter(photo => {
-    if (currentCategory === 'all') return true
-    const ext = photo.name.split('.').pop()?.toLowerCase() || ''
-    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif']
-    const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'm4v']
-    const docExts = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'rtf', 'csv']
-
-    if (currentCategory === 'photos') return imageExts.includes(ext)
-    if (currentCategory === 'videos') return videoExts.includes(ext)
-    if (currentCategory === 'documents') return docExts.includes(ext)
-    return true
-  })
 
   return (
     <main
@@ -1282,6 +1781,18 @@ export default function DrivePage() {
         onClose={() => setIsSidebarOpen(false)}
         storageUsed={storageUsed}
       />
+
+      {/* 로딩 인디케이터 (비초기 로딩) */}
+      {!isInitialLoad && loading && (
+        <div className="fixed top-0 left-0 right-0 z-[300]">
+          <div className="h-0.5 w-full overflow-hidden" style={{ background: 'var(--background-secondary)' }}>
+            <div
+              className="h-full w-full origin-left animate-[loading_1s_ease-in-out_infinite]"
+              style={{ background: 'var(--accent-primary)' }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* 드래그 오버레이 */}
       {isDragging && (
@@ -1301,7 +1812,7 @@ export default function DrivePage() {
       )}
 
       {/* 메인 컨텐츠 (사이드바 여백 + 모바일 하단 탭 여백) */}
-      <div className="lg:pl-64 pb-20 lg:pb-0">
+      <div className="xl:pl-64 pb-20 xl:pb-0">
         {/* 헤더 */}
         <header className="header safe-area-top">
           <div className="header-content">
@@ -1310,7 +1821,7 @@ export default function DrivePage() {
               {/* 모바일 메뉴 버튼 */}
               <button
                 onClick={() => setIsSidebarOpen(true)}
-                className="lg:hidden p-2 -ml-2 rounded-xl transition-colors"
+                className="xl:hidden p-2 -ml-2 rounded-xl transition-colors"
                 style={{ color: 'var(--foreground)' }}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1348,14 +1859,14 @@ export default function DrivePage() {
               </div>
             </div>
 
-            {/* 오른쪽: 액션 버튼들 */}
-            <div className="flex items-center gap-1 sm:gap-2">
-              {/* 업로드 버튼 - 데스크톱만 (모바일은 FAB 사용) */}
-              <label className="btn btn-primary cursor-pointer !px-3 sm:!px-4 hidden sm:flex">
+            {/* 오른쪽: 데스크톱 액션 버튼들 - 1280px 이상에서만 표시 */}
+            <div className="hidden xl:flex items-center gap-2">
+              {/* 업로드 버튼 */}
+              <label className="btn btn-primary cursor-pointer">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
-                <span className="hidden sm:inline">업로드</span>
+                <span>업로드</span>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1367,43 +1878,45 @@ export default function DrivePage() {
                 />
               </label>
 
-              {/* 새 폴더 버튼 - 데스크톱만 (모바일은 FAB 사용) */}
+              {/* 새 폴더 버튼 */}
               <button
                 onClick={() => setShowNewFolderInput(true)}
-                className="btn btn-secondary hidden sm:flex"
+                className="btn btn-secondary"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
                 </svg>
-                <span className="hidden md:inline">새 폴더</span>
+                <span>새 폴더</span>
               </button>
 
-              {/* 뷰 모드 토글 - 데스크톱만 */}
-              <div className="hidden md:flex items-center rounded-lg p-0.5" style={{ background: 'var(--background-tertiary)' }}>
-                <button
-                  onClick={() => setViewMode('grid')}
-                  className="p-2 rounded-md transition-all"
-                  style={viewMode === 'grid' ? { background: 'var(--background)', boxShadow: 'var(--shadow-sm)' } : { opacity: 0.5 }}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setViewMode('list')}
-                  className="p-2 rounded-md transition-all"
-                  style={viewMode === 'list' ? { background: 'var(--background)', boxShadow: 'var(--shadow-sm)' } : { opacity: 0.5 }}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                  </svg>
-                </button>
-              </div>
+              {/* 뷰 모드 토글 - 사진/동영상 카테고리에서는 숨김 */}
+              {currentCategory === 'all' && (
+                <div className="flex items-center rounded-lg p-0.5" style={{ background: 'var(--background-tertiary)' }}>
+                  <button
+                    onClick={() => setViewMode('grid')}
+                    className="p-2 rounded-md transition-all"
+                    style={viewMode === 'grid' ? { background: 'var(--background)', boxShadow: 'var(--shadow-sm)' } : { opacity: 0.5 }}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setViewMode('list')}
+                    className="p-2 rounded-md transition-all"
+                    style={viewMode === 'list' ? { background: 'var(--background)', boxShadow: 'var(--shadow-sm)' } : { opacity: 0.5 }}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    </svg>
+                  </button>
+                </div>
+              )}
 
-              {/* 테마 토글 - 데스크톱만 */}
+              {/* 테마 토글 */}
               <button
                 onClick={() => setTheme(isDark ? 'light' : 'dark')}
-                className="btn btn-ghost !p-2 hidden sm:flex"
+                className="btn btn-ghost !p-2"
                 title={isDark ? '라이트 모드' : '다크 모드'}
               >
                 {isDark ? (
@@ -1417,10 +1930,10 @@ export default function DrivePage() {
                 )}
               </button>
 
-              {/* 설정 - 데스크톱만 */}
+              {/* 설정 */}
               <button
                 onClick={() => router.push('/settings')}
-                className="btn btn-ghost !p-2 hidden sm:flex"
+                className="btn btn-ghost !p-2"
                 title="설정"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1429,10 +1942,10 @@ export default function DrivePage() {
                 </svg>
               </button>
 
-              {/* 로그아웃 - 데스크톱만 */}
+              {/* 로그아웃 */}
               <button
                 onClick={handleLogout}
-                className="btn btn-ghost !p-2 hidden md:flex"
+                className="btn btn-ghost !p-2"
                 title="로그아웃"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1509,33 +2022,73 @@ export default function DrivePage() {
       )}
 
       {/* 메인 콘텐츠 */}
-      <div className="p-3 sm:p-4 md:p-6 pb-24 sm:pb-6">
+      <div
+        ref={gridContainerRef}
+        className="p-3 sm:p-4 md:p-6 pb-24 sm:pb-6 relative select-none"
+        onMouseDown={handleDragSelectStart}
+        onMouseMove={handleDragSelectMove}
+        onMouseUp={handleDragSelectEnd}
+        onMouseLeave={handleDragSelectEnd}
+      >
+        {/* 드래그 선택 박스 */}
+        {isDragSelecting && dragSelectStart && dragSelectCurrent && (
+          <div
+            className="absolute border-2 border-blue-500 bg-blue-500/10 pointer-events-none z-50"
+            style={{
+              left: Math.min(dragSelectStart.x, dragSelectCurrent.x),
+              top: Math.min(dragSelectStart.y, dragSelectCurrent.y),
+              width: Math.abs(dragSelectCurrent.x - dragSelectStart.x),
+              height: Math.abs(dragSelectCurrent.y - dragSelectStart.y),
+            }}
+          />
+        )}
+
+        {/* 스켈레톤 로딩 */}
+        {!isInitialLoad && loading && (
+          <div className="tds-image-grid pointer-events-none select-none">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div
+                key={i}
+                className="tds-image-grid-item rounded-xl overflow-hidden"
+                style={{ background: 'var(--background-secondary)' }}
+              >
+                <div className="w-full h-full animate-pulse" style={{ background: 'var(--background-tertiary)' }} />
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* 그리드 뷰 */}
-        {viewMode === 'grid' && (
+        {!loading && !userLoading && effectiveViewMode === 'grid' && (
           <>
-            {/* 폴더 섹션 */}
-            {sortedFolders.length > 0 && (
+            {/* 폴더 섹션 - 전체 보기에서만 표시 */}
+            {currentCategory === 'all' && sortedFolders.length > 0 && (
               <div className="mb-6 sm:mb-8 animate-fade-in">
                 <h2 className="text-xs sm:text-sm font-medium mb-3 sm:mb-4 uppercase tracking-wide" style={{ color: 'var(--foreground-muted)' }}>폴더</h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-2 sm:gap-3 md:gap-4">
                   {sortedFolders.map((folder, folderIndex) => (
                     <div
                       key={folder.id}
-                      className={`folder-item group relative ${selectedFolderIds.has(folder.id) ? 'selected' : ''}`}
+                      data-folder-id={folder.id}
+                      className={`folder-item group relative min-w-0 overflow-hidden ${selectedFolderIds.has(folder.id) ? 'selected' : ''}`}
                       onClick={(e) => {
+                        if (isTouchDragging) return
                         if (isSelecting) {
                           toggleFolderSelect(folder.id, e, folderIndex)
                         } else {
-                          router.push(`/gallery?folder=${folder.id}`)
+                          router.push(`/drive?folder=${folder.id}`)
                         }
                       }}
+                      onTouchStart={(e) => handleItemTouchStart(e, folder.id, true, folderIndex, sortedFolders.length)}
+                      onTouchMove={handleItemTouchMove}
+                      onTouchEnd={handleItemTouchEnd}
                     >
                       <div className="w-full aspect-[4/3] rounded-lg flex items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
                         <svg className="w-10 h-10 sm:w-12 sm:h-12" style={{ color: 'var(--accent-primary)', opacity: 0.6 }} fill="currentColor" viewBox="0 0 24 24">
                           <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z" />
                         </svg>
                       </div>
-                      <p className="font-medium truncate text-xs sm:text-sm mt-2">{folder.name}</p>
+                      <p className="font-medium truncate text-xs sm:text-sm mt-2" title={folder.name}>{folder.name}</p>
                       <p className="text-caption text-[10px] sm:text-xs mt-0.5">폴더</p>
 
                       {/* 선택 체크박스 */}
@@ -1581,24 +2134,29 @@ export default function DrivePage() {
             {/* 사진 그리드 */}
             {sortedPhotos.length > 0 && (
               <div className="animate-fade-in">
-                {sortedFolders.length > 0 && (
+                {currentCategory === 'all' && sortedFolders.length > 0 && (
                   <h2 className="text-xs sm:text-sm font-medium mb-3 sm:mb-4 uppercase tracking-wide" style={{ color: 'var(--foreground-muted)' }}>파일</h2>
                 )}
                 <div className="image-grid view-grid">
                   {sortedPhotos.map((photo, index) => (
                     <div
                       key={photo.id}
+                      data-photo-id={photo.id}
                       className={`image-item group ${selectedIds.has(photo.id) ? 'selected' : ''}`}
                       onClick={(e) => {
+                        if (isTouchDragging) return
                         if (isSelecting) {
                           toggleSelect(photo.id, e, index)
                         } else {
-                          router.push(`/viewer?index=${index}${currentFolderId ? `&folder=${currentFolderId}` : ''}&sortBy=${sortBy}&sortOrder=${sortOrder}`)
+                          router.push(`/viewer?index=${index}${currentFolderId ? `&folder=${currentFolderId}` : ''}${currentCategory !== 'all' ? `&category=${currentCategory}` : ''}&sortBy=${sortBy}&sortOrder=${sortOrder}`)
                         }
                       }}
+                      onTouchStart={(e) => handleItemTouchStart(e, photo.id, false, index, sortedFolders.length)}
+                      onTouchMove={handleItemTouchMove}
+                      onTouchEnd={handleItemTouchEnd}
                     >
                       <img
-                        src={signedUrls[photo.thumbnail_url || photo.url] || photo.thumbnail_url || photo.url}
+                        src={toProxyUrl(photo.thumbnail_url || photo.url)}
                         alt=""
                         className={`transition-transform duration-300 ${selectedIds.has(photo.id) ? 'scale-90' : ''}`}
                         draggable={false}
@@ -1637,7 +2195,7 @@ export default function DrivePage() {
         )}
 
         {/* 리스트 뷰 */}
-        {viewMode === 'list' && (
+        {!loading && !userLoading && effectiveViewMode === 'list' && (
           <div className="card overflow-hidden">
             {/* 테이블 헤더 */}
             <div className="grid grid-cols-[auto_1fr_100px_100px_auto] gap-3 px-4 py-3 text-xs font-medium uppercase tracking-wide" style={{ background: 'var(--background-secondary)', color: 'var(--foreground-muted)', borderBottom: '1px solid var(--border-default)' }}>
@@ -1682,8 +2240,8 @@ export default function DrivePage() {
               <div className="w-8" />
             </div>
 
-            {/* 폴더 목록 */}
-            {sortedFolders.map((folder, folderIndex) => (
+            {/* 폴더 목록 - 전체 보기에서만 표시 */}
+            {currentCategory === 'all' && sortedFolders.map((folder, folderIndex) => (
               <div
                 key={folder.id}
                 className="grid grid-cols-[auto_1fr_100px_100px_auto] gap-3 px-4 py-3 items-center cursor-pointer transition-colors group"
@@ -1695,7 +2253,7 @@ export default function DrivePage() {
                   if (isSelecting) {
                     toggleFolderSelect(folder.id, e, folderIndex)
                   } else {
-                    router.push(`/gallery?folder=${folder.id}`)
+                    router.push(`/drive?folder=${folder.id}`)
                   }
                 }}
                 onMouseEnter={(e) => !selectedFolderIds.has(folder.id) && (e.currentTarget.style.background = 'var(--background-secondary)')}
@@ -1755,7 +2313,7 @@ export default function DrivePage() {
                   if (isSelecting) {
                     toggleSelect(photo.id, e, index)
                   } else {
-                    router.push(`/viewer?index=${index}${currentFolderId ? `&folder=${currentFolderId}` : ''}&sortBy=${sortBy}&sortOrder=${sortOrder}`)
+                    router.push(`/viewer?index=${index}${currentFolderId ? `&folder=${currentFolderId}` : ''}${currentCategory !== 'all' ? `&category=${currentCategory}` : ''}&sortBy=${sortBy}&sortOrder=${sortOrder}`)
                   }
                 }}
                 onMouseEnter={(e) => !selectedIds.has(photo.id) && (e.currentTarget.style.background = 'var(--background-secondary)')}
@@ -1778,7 +2336,7 @@ export default function DrivePage() {
                 </div>
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0" style={{ background: 'var(--background-tertiary)' }}>
-                    <img src={signedUrls[photo.thumbnail_url || photo.url] || photo.thumbnail_url || photo.url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                    <img src={toProxyUrl(photo.thumbnail_url || photo.url)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                   </div>
                   <span className="truncate font-medium">
                     {photo.name || photo.url.split('/').pop()}
@@ -1799,14 +2357,17 @@ export default function DrivePage() {
                   </svg>
                 </div>
                 <p className="font-medium mb-1">아직 비어있어요</p>
-                <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>상단의 업로드 버튼 또는 드래그앤드롭으로 추가해보세요</p>
+                <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>
+                  <span className="xl:hidden">+ 버튼을 눌러 파일을 추가하세요</span>
+                  <span className="hidden xl:inline">업로드 버튼 또는 드래그앤드롭으로 추가해보세요</span>
+                </p>
               </div>
             )}
           </div>
         )}
 
         {/* 빈 상태 (그리드 뷰) */}
-        {viewMode === 'grid' && sortedPhotos.length === 0 && sortedFolders.length === 0 && (
+        {!loading && !userLoading && viewMode === 'grid' && sortedPhotos.length === 0 && sortedFolders.length === 0 && (
           <div className="empty-state h-[60vh] animate-fade-in">
             <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl flex items-center justify-center mb-4 sm:mb-6" style={{ background: 'var(--background-secondary)' }}>
               <svg className="empty-state-icon !w-10 !h-10 sm:!w-12 sm:!h-12 !mb-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1814,7 +2375,10 @@ export default function DrivePage() {
               </svg>
             </div>
             <p className="empty-state-title text-base sm:text-lg">아직 비어있어요</p>
-            <p className="empty-state-description text-xs sm:text-sm">상단의 업로드 버튼 또는 드래그앤드롭으로 추가해보세요</p>
+            <p className="empty-state-description text-xs sm:text-sm">
+              <span className="xl:hidden">+ 버튼을 눌러 파일을 추가하세요</span>
+              <span className="hidden xl:inline">업로드 버튼 또는 드래그앤드롭으로 추가해보세요</span>
+            </p>
           </div>
         )}
       </div>
@@ -1905,15 +2469,21 @@ export default function DrivePage() {
       {showFolderPicker && (
         <>
           <div className="modal-backdrop" onClick={() => { setShowFolderPicker(false); setPendingFiles([]) }} />
-          <div className="modal-content !max-h-[70vh] flex flex-col">
-            <div className="modal-header flex items-center justify-between">
-              <h2 className="text-title">업로드 위치 선택</h2>
+          <div className="modal-content !max-h-[80vh] !w-full !max-w-md flex flex-col" style={{ background: 'var(--background)' }}>
+            {/* 헤더 */}
+            <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--glass-border)' }}>
+              <div>
+                <h2 className="tds-text-title">폴더 선택</h2>
+                <p className="tds-text-caption tds-text-tertiary mt-0.5">
+                  {pendingFiles.length}개 파일을 업로드할 위치
+                </p>
+              </div>
               <button
                 onClick={() => {
                   setShowFolderPicker(false)
                   setPendingFiles([])
                 }}
-                className="btn btn-ghost !p-1.5"
+                className="tds-header-action"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1921,29 +2491,81 @@ export default function DrivePage() {
               </button>
             </div>
 
-            <div className="px-4 py-2 border-b" style={{ borderColor: 'var(--border-default)' }}>
-              <p className="text-small badge badge-primary">{pendingFiles.length}개 파일 선택됨</p>
+            {/* 폴더 목록 */}
+            <div className="flex-1 overflow-y-auto py-2">
+              {buildFolderTree(null).map(({ folder, depth }) => {
+                const isCurrentFolder = (folder?.id || null) === currentFolderId
+                const isRoot = !folder
+                return (
+                  <button
+                    key={folder?.id || 'root'}
+                    onClick={() => handleUploadToFolder(folder?.id || null)}
+                    className={`
+                      folder-picker-item w-full flex items-center gap-3 px-4 py-3
+                      transition-all duration-150 text-left
+                      ${isCurrentFolder ? 'folder-picker-item-active' : ''}
+                    `}
+                    style={{
+                      paddingLeft: `${16 + depth * 24}px`,
+                      background: isCurrentFolder ? 'var(--accent-gradient-subtle)' : 'transparent',
+                    }}
+                  >
+                    {/* 폴더 아이콘 */}
+                    <div
+                      className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 transition-transform duration-150"
+                      style={{
+                        background: isRoot
+                          ? 'var(--accent-gradient)'
+                          : isCurrentFolder
+                            ? 'rgba(49, 130, 246, 0.15)'
+                            : 'var(--background-tertiary)',
+                      }}
+                    >
+                      <svg
+                        className="w-5 h-5"
+                        style={{ color: isRoot ? 'white' : isCurrentFolder ? 'var(--accent-primary)' : 'var(--foreground-muted)' }}
+                        fill="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z" />
+                      </svg>
+                    </div>
+
+                    {/* 폴더 이름 */}
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className={`text-sm truncate ${isCurrentFolder ? 'font-semibold' : 'font-medium'}`}
+                        style={{ color: isCurrentFolder ? 'var(--accent-primary)' : 'var(--foreground)' }}
+                      >
+                        {folder ? folder.name : '홈'}
+                      </p>
+                      {isRoot && (
+                        <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>루트 폴더</p>
+                      )}
+                    </div>
+
+                    {/* 현재 위치 표시 */}
+                    {isCurrentFolder && (
+                      <span
+                        className="px-2 py-0.5 text-xs font-medium rounded-full flex-shrink-0"
+                        style={{
+                          background: 'var(--accent-primary)',
+                          color: 'white',
+                        }}
+                      >
+                        현재
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2">
-              {buildFolderTree(null).map(({ folder, depth }) => (
-                <button
-                  key={folder?.id || 'root'}
-                  onClick={() => handleUploadToFolder(folder?.id || null)}
-                  className="dropdown-item w-full rounded-lg"
-                  style={{ paddingLeft: `${12 + depth * 20}px` }}
-                >
-                  <svg className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z" />
-                  </svg>
-                  <span className="text-sm truncate flex-1">
-                    {folder ? folder.name : '홈 (루트)'}
-                  </span>
-                  {(folder?.id || null) === currentFolderId && (
-                    <span className="badge">현재 위치</span>
-                  )}
-                </button>
-              ))}
+            {/* 하단 안내 */}
+            <div className="p-4 border-t" style={{ borderColor: 'var(--glass-border)', background: 'var(--background-secondary)' }}>
+              <p className="tds-text-caption tds-text-tertiary text-center">
+                폴더를 선택하면 바로 업로드가 시작됩니다
+              </p>
             </div>
           </div>
         </>
@@ -1974,7 +2596,7 @@ export default function DrivePage() {
               {duplicateFiles.map((dup, idx) => (
                 <div key={idx} className={`flex items-center gap-3 px-5 py-3 ${isDark ? 'border-b border-zinc-800' : 'border-b border-gray-100'}`}>
                   <div className={`w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 ${isDark ? 'bg-zinc-700' : 'bg-gray-200'}`}>
-                    <img src={signedUrls[dup.existingPhoto.thumbnail_url || dup.existingPhoto.url] || dup.existingPhoto.thumbnail_url || dup.existingPhoto.url} alt="" className="w-full h-full object-cover" />
+                    <img src={toProxyUrl(dup.existingPhoto.thumbnail_url || dup.existingPhoto.url)} alt="" className="w-full h-full object-cover" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-medium truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>{dup.file.name}</p>
@@ -2123,100 +2745,89 @@ export default function DrivePage() {
 
       </div>{/* lg:pl-64 끝 */}
 
-      {/* 모바일 하단 탭 네비게이션 */}
-      <nav className="fixed bottom-0 left-0 right-0 lg:hidden safe-area-bottom z-40" style={{ background: 'var(--background)', borderTop: '1px solid var(--glass-border)' }}>
-        <div className="flex items-center justify-around h-14">
-          {/* 홈 */}
-          <button
-            onClick={() => {
-              setCurrentCategory('all')
-              router.push('/drive')
-            }}
-            className="flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors"
-            style={{ color: currentCategory === 'all' && !showUploadPanel ? 'var(--accent-primary)' : 'var(--foreground-muted)' }}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-            <span className="text-[10px] font-medium">홈</span>
-          </button>
+      {/* 모바일 하단 탭 네비게이션 - Toss Style */}
+      <nav className="tds-bottom-nav xl:hidden">
+        <button
+          onClick={() => {
+            setShowUploadPanel(false)
+            router.push('/drive')
+          }}
+          className={`tds-bottom-nav-item ${currentCategory === 'all' && !showUploadPanel ? 'active' : ''}`}
+        >
+          <Home
+            size={26}
+            strokeWidth={currentCategory === 'all' && !showUploadPanel ? 2.5 : 1.5}
+            fill={currentCategory === 'all' && !showUploadPanel ? 'currentColor' : 'none'}
+          />
+          <span>홈</span>
+        </button>
 
-          {/* 사진 */}
-          <button
-            onClick={() => {
-              setShowUploadPanel(false)
-              setCurrentCategory('photos')
-            }}
-            className="flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors"
-            style={{ color: currentCategory === 'photos' && !showUploadPanel ? 'var(--accent-primary)' : 'var(--foreground-muted)' }}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <span className="text-[10px] font-medium">사진</span>
-          </button>
+        <button
+          onClick={() => {
+            setShowUploadPanel(false)
+            router.push('/drive?category=photos')
+          }}
+          className={`tds-bottom-nav-item ${currentCategory === 'photos' && !showUploadPanel ? 'active' : ''}`}
+        >
+          <ImageIcon
+            size={26}
+            strokeWidth={currentCategory === 'photos' && !showUploadPanel ? 2.5 : 1.5}
+            fill={currentCategory === 'photos' && !showUploadPanel ? 'currentColor' : 'none'}
+          />
+          <span>사진</span>
+        </button>
 
-          {/* 업로드 현황 */}
-          <button
-            onClick={() => setShowUploadPanel(true)}
-            className="flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors relative"
-            style={{ color: showUploadPanel ? 'var(--accent-primary)' : 'var(--foreground-muted)' }}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
-            <span className="text-[10px] font-medium">업로드</span>
-            {/* 업로드 중 표시 */}
+        <button
+          onClick={() => setShowUploadPanel(true)}
+          className={`tds-bottom-nav-item ${showUploadPanel ? 'active' : ''}`}
+        >
+          <div className="relative">
+            <CloudUpload
+              size={26}
+              strokeWidth={showUploadPanel ? 2.5 : 1.5}
+              fill={showUploadPanel ? 'currentColor' : 'none'}
+            />
             {uploading && (
-              <span className="absolute top-1 right-1/4 w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)' }} />
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)' }} />
             )}
-          </button>
+          </div>
+          <span>업로드</span>
+        </button>
 
-          {/* 더보기/설정 */}
-          <button
-            onClick={() => setIsSidebarOpen(true)}
-            className="flex flex-col items-center justify-center flex-1 h-full gap-0.5 transition-colors"
-            style={{ color: 'var(--foreground-muted)' }}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-            <span className="text-[10px] font-medium">더보기</span>
-          </button>
-        </div>
+        <button
+          onClick={() => setShowMoreScreen(true)}
+          className="tds-bottom-nav-item"
+        >
+          <Menu size={26} strokeWidth={1.5} />
+          <span>전체</span>
+        </button>
       </nav>
 
-      {/* 모바일 FAB (플로팅 액션 버튼) */}
-      <div className="fixed right-4 bottom-20 lg:hidden z-50 safe-area-bottom">
-        {/* FAB 메뉴 */}
+      {/* 모바일 FAB (플로팅 액션 버튼) - TDS Style */}
+      <div className="xl:hidden">
+        {/* FAB 메뉴 배경 (딤 레이어) */}
         {showFabMenu && (
-          <>
-            <div className="fixed inset-0" onClick={() => setShowFabMenu(false)} />
-            <div className="absolute bottom-16 right-0 flex flex-col gap-3 items-end animate-fade-in">
-              {/* 새 폴더 */}
-              <button
-                onClick={() => {
-                  setShowFabMenu(false)
-                  setShowNewFolderInput(true)
-                }}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-full shadow-lg transition-transform active:scale-95"
-                style={{ background: 'var(--background)', border: '1px solid var(--glass-border)' }}
-              >
-                <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>새 폴더</span>
-                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
-                  <svg className="w-5 h-5" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                  </svg>
-                </div>
-              </button>
+          <div
+            className="tds-sheet-backdrop"
+            onClick={() => setShowFabMenu(false)}
+          />
+        )}
+
+        {/* FAB 메뉴 - TDS Action Sheet 스타일 */}
+        {showFabMenu && (
+          <div className="fixed right-4 bottom-28 w-48 z-[102] animate-fade-in-up">
+            <div className="tds-card tds-card-elevated">
               {/* 파일 업로드 */}
-              <label className="flex items-center gap-2 px-4 py-2.5 rounded-full shadow-lg cursor-pointer transition-transform active:scale-95" style={{ background: 'var(--background)', border: '1px solid var(--glass-border)' }}>
-                <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>파일 업로드</span>
-                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'var(--accent-gradient)' }}>
+              <label className="tds-list-item cursor-pointer">
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                  style={{ background: 'var(--accent-primary)' }}
+                >
                   <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
                 </div>
+                <span className="tds-text-body" style={{ fontWeight: 500 }}>파일 업로드</span>
                 <input
                   ref={fabFileInputRef}
                   type="file"
@@ -2230,29 +2841,257 @@ export default function DrivePage() {
                   className="hidden"
                 />
               </label>
+
+              <div className="tds-divider mx-4" />
+
+              {/* 새 폴더 */}
+              <button
+                onClick={() => {
+                  setShowFabMenu(false)
+                  setShowNewFolderInput(true)
+                }}
+                className="tds-list-item w-full"
+              >
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                  style={{ background: 'var(--background-tertiary)' }}
+                >
+                  <svg className="w-5 h-5" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                  </svg>
+                </div>
+                <span className="tds-text-body" style={{ fontWeight: 500 }}>새 폴더</span>
+              </button>
             </div>
-          </>
+          </div>
         )}
 
-        {/* FAB 버튼 */}
+        {/* FAB 버튼 - TDS Style */}
         <button
           onClick={() => setShowFabMenu(!showFabMenu)}
-          className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all active:scale-95"
+          className="tds-fab"
           style={{
-            background: showFabMenu ? 'var(--foreground)' : 'var(--accent-gradient)',
-            boxShadow: '0 4px 20px rgba(49, 130, 246, 0.4)',
-            transform: showFabMenu ? 'rotate(45deg)' : 'rotate(0deg)'
+            background: showFabMenu ? 'var(--foreground)' : undefined,
+            boxShadow: showFabMenu ? '0 4px 16px rgba(0, 0, 0, 0.2)' : undefined,
           }}
+          aria-label={showFabMenu ? '메뉴 닫기' : '새로 만들기'}
         >
-          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          <svg
+            className="transition-transform duration-200"
+            style={{ transform: showFabMenu ? 'rotate(45deg)' : 'rotate(0deg)' }}
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
           </svg>
         </button>
       </div>
 
+      {/* 더보기 화면 (모바일 전용 전체 화면) */}
+      {showMoreScreen && (
+        <div className="fixed inset-0 xl:hidden z-[60] animate-fade-in" style={{ background: 'var(--background)' }}>
+          {/* 헤더 */}
+          <div className="sticky top-0 z-10 safe-area-top" style={{ background: 'var(--background)', borderBottom: '1px solid var(--glass-border)' }}>
+            <div className="flex items-center h-14 px-4">
+              <button
+                onClick={() => setShowMoreScreen(false)}
+                className="p-2 -ml-2 rounded-lg transition-colors"
+                style={{ color: 'var(--foreground)' }}
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <h1 className="text-lg font-semibold ml-2" style={{ color: 'var(--foreground)' }}>더보기</h1>
+            </div>
+          </div>
+
+          {/* 내용 */}
+          <div className="overflow-y-auto pb-8" style={{ height: 'calc(100vh - 56px)' }}>
+            {/* 사용자 프로필 */}
+            <div className="p-4">
+              <div className="flex items-center gap-4 p-4 rounded-2xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                <div className="w-14 h-14 rounded-full flex items-center justify-center text-lg font-semibold" style={{ background: 'var(--accent-gradient-subtle)', color: 'var(--accent-primary)' }}>
+                  {user?.display_name?.[0] || user?.email?.[0] || 'U'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-base truncate" style={{ color: 'var(--foreground)' }}>
+                    {user?.display_name || '사용자'}
+                  </p>
+                  <p className="text-sm truncate" style={{ color: 'var(--foreground-muted)' }}>
+                    {user?.email}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 저장공간 */}
+            <div className="px-4 mb-6">
+              <div className="p-4 rounded-2xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>저장공간</span>
+                  <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>
+                    {formatBytes(storageUsed)} / 10 GB
+                  </span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--background-tertiary)' }}>
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${Math.min((storageUsed / (10 * 1024 * 1024 * 1024)) * 100, 100)}%`,
+                      background: 'var(--accent-primary)'
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* 카테고리 */}
+            <div className="px-4 mb-6">
+              <p className="text-xs font-medium uppercase tracking-wider mb-2 px-1" style={{ color: 'var(--foreground-muted)' }}>
+                파일
+              </p>
+              <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                {[
+                  { id: 'all', label: '모든 파일', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
+                  { id: 'photos', label: '사진', icon: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z' },
+                  { id: 'videos', label: '동영상', icon: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
+                ].map((category, index) => {
+                  const isActive = currentCategory === category.id
+                  return (
+                    <button
+                      key={category.id}
+                      onClick={() => {
+                        setShowMoreScreen(false)
+                        if (category.id === 'all') {
+                          router.push('/drive')
+                        } else {
+                          router.push(`/drive?category=${category.id}`)
+                        }
+                      }}
+                      className="w-full flex items-center gap-4 px-4 py-4 transition-colors active:bg-black/5"
+                      style={{
+                        borderTop: index > 0 ? '1px solid var(--glass-border)' : 'none',
+                        color: isActive ? 'var(--accent-primary)' : 'var(--foreground)'
+                      }}
+                    >
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center"
+                        style={{
+                          background: isActive ? 'var(--accent-gradient-subtle)' : 'var(--background-tertiary)',
+                        }}
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d={category.icon} />
+                        </svg>
+                      </div>
+                      <span className="text-[15px] font-medium">{category.label}</span>
+                      {isActive && (
+                        <svg className="w-5 h-5 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* 설정 */}
+            <div className="px-4 mb-6">
+              <p className="text-xs font-medium uppercase tracking-wider mb-2 px-1" style={{ color: 'var(--foreground-muted)' }}>
+                설정
+              </p>
+              <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                <button
+                  onClick={() => {
+                    setShowMoreScreen(false)
+                    router.push('/settings')
+                  }}
+                  className="w-full flex items-center gap-4 px-4 py-4 transition-colors active:bg-black/5"
+                  style={{ color: 'var(--foreground)' }}
+                >
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </div>
+                  <span className="text-[15px] font-medium">환경설정</span>
+                  <svg className="w-5 h-5 ml-auto" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+
+                <button
+                  onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                  className="w-full flex items-center gap-4 px-4 py-4 transition-colors active:bg-black/5"
+                  style={{ color: 'var(--foreground)', borderTop: '1px solid var(--glass-border)' }}
+                >
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
+                    {isDark ? (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                      </svg>
+                    )}
+                  </div>
+                  <span className="text-[15px] font-medium">{isDark ? '라이트 모드' : '다크 모드'}</span>
+                  <div
+                    className="ml-auto w-12 h-7 rounded-full p-1 transition-colors"
+                    style={{ background: isDark ? 'var(--accent-primary)' : 'var(--background-tertiary)' }}
+                  >
+                    <div
+                      className="w-5 h-5 rounded-full transition-transform"
+                      style={{
+                        background: 'white',
+                        transform: isDark ? 'translateX(20px)' : 'translateX(0)',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                      }}
+                    />
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* 로그아웃 */}
+            <div className="px-4">
+              <button
+                onClick={async () => {
+                  setShowMoreScreen(false)
+                  await fetch('/api/auth/logout', { method: 'POST' })
+                  router.push('/login')
+                }}
+                className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl transition-colors active:bg-red-500/10"
+                style={{ color: 'var(--error)', background: 'rgba(244, 67, 54, 0.08)', border: '1px solid rgba(244, 67, 54, 0.2)' }}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span className="text-[15px] font-medium">로그아웃</span>
+              </button>
+            </div>
+
+            {/* 앱 정보 */}
+            <div className="px-4 mt-8 text-center">
+              <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
+                Cloody v1.0.0
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'var(--foreground-muted)' }}>
+                Secure • Private • Simple
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 업로드 현황 패널 (모바일) */}
       {showUploadPanel && (
-        <div className="fixed inset-0 lg:hidden z-30" style={{ top: '56px', bottom: '56px' }}>
+        <div className="fixed inset-0 xl:hidden z-30" style={{ top: '56px', bottom: '56px' }}>
           <div className="h-full overflow-y-auto p-4" style={{ background: 'var(--background)' }}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>업로드 현황</h2>
@@ -2293,7 +3132,7 @@ export default function DrivePage() {
                         {item.status === 'uploading' && (
                           <div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
                         )}
-                        {item.status === 'completed' && (
+                        {item.status === 'done' && (
                           <svg className="w-5 h-5" style={{ color: 'var(--success)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                           </svg>
@@ -2314,20 +3153,20 @@ export default function DrivePage() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate" style={{ color: 'var(--foreground)' }}>{item.name}</p>
                         <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
-                          {item.status === 'uploading' && `${item.progress}% 업로드 중...`}
-                          {item.status === 'completed' && '완료'}
-                          {item.status === 'error' && (item.error || '업로드 실패')}
+                          {item.status === 'uploading' && '업로드 중...'}
+                          {item.status === 'done' && '완료'}
+                          {item.status === 'error' && '업로드 실패'}
                           {item.status === 'pending' && '대기 중'}
                         </p>
                       </div>
                     </div>
 
-                    {/* 진행 바 */}
+                    {/* 진행 바 - 전체 업로드 진행률 표시 */}
                     {item.status === 'uploading' && (
                       <div className="mt-2 h-1 rounded-full overflow-hidden" style={{ background: 'var(--glass-border)' }}>
                         <div
-                          className="h-full rounded-full transition-all"
-                          style={{ width: `${item.progress}%`, background: 'var(--accent-gradient)' }}
+                          className="h-full rounded-full transition-all animate-pulse"
+                          style={{ width: '100%', background: 'var(--accent-gradient)' }}
                         />
                       </div>
                     )}

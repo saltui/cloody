@@ -22,17 +22,17 @@
   --glass-border-strong: rgba(0, 0, 0, 0.1);
   --glass-border-subtle: rgba(0, 0, 0, 0.04);
 
-  /* Accent - Toss Blue */
+  /* Accent - Toss Blue (flat, no gradient) */
   --accent-primary: #3182f6;
   --accent-secondary: #4593fc;
   --accent-tertiary: #1b64da;
-  --accent-gradient: linear-gradient(135deg, #3182f6 0%, #4593fc 100%);
-  --accent-gradient-subtle: linear-gradient(135deg, rgba(49, 130, 246, 0.1) 0%, rgba(69, 147, 252, 0.1) 100%);
+  --accent-gradient: #3182f6;
+  --accent-gradient-subtle: rgba(49, 130, 246, 0.08);
   --accent-text: #ffffff;
 
-  /* Glow Colors */
-  --glow-blue: rgba(49, 130, 246, 0.25);
-  --glow-blue-strong: rgba(49, 130, 246, 0.4);
+  /* Glow Colors (minimal) */
+  --glow-blue: rgba(49, 130, 246, 0.1);
+  --glow-blue-strong: rgba(49, 130, 246, 0.15);
 
   /* Status Colors */
   --success: #00c853;
@@ -50,7 +50,7 @@
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
   --shadow-xl: 0 16px 40px rgba(0, 0, 0, 0.12);
-  --shadow-glow: 0 0 30px var(--glow-blue);
+  --shadow-glow: none;
 
   /* Card - Light Mode */
   --card-bg: #ffffff;
@@ -65,34 +65,34 @@
 
 /* Dark Mode */
 html.dark {
-  --background: #0d1117;
-  --background-secondary: #161b22;
-  --background-tertiary: #1c2128;
-  --background-elevated: #21262d;
+  --background: #17171c;
+  --background-secondary: #1f1f25;
+  --background-tertiary: #26262d;
+  --background-elevated: #2d2d35;
 
-  /* Foreground - Dark Mode */
-  --foreground: #f0f6fc;
-  --foreground-secondary: #8b949e;
-  --foreground-muted: #6e7681;
+  /* Foreground - Dark Mode (Toss Invest style) */
+  --foreground: #ececef;
+  --foreground-secondary: #8f959e;
+  --foreground-muted: #6b7178;
 
-  /* Glass Colors - Dark Mode */
-  --glass-bg: rgba(255, 255, 255, 0.03);
-  --glass-bg-strong: rgba(255, 255, 255, 0.06);
-  --glass-bg-subtle: rgba(255, 255, 255, 0.015);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-border-strong: rgba(255, 255, 255, 0.12);
-  --glass-border-subtle: rgba(255, 255, 255, 0.04);
+  /* Glass Colors - Dark Mode (solid, Toss style) */
+  --glass-bg: #1f1f25;
+  --glass-bg-strong: #26262d;
+  --glass-bg-subtle: #17171c;
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-border-strong: rgba(255, 255, 255, 0.1);
+  --glass-border-subtle: rgba(255, 255, 255, 0.03);
 
-  /* Accent - Toss Blue (brighter for dark mode) */
-  --accent-primary: #58a6ff;
-  --accent-secondary: #79b8ff;
-  --accent-tertiary: #388bfd;
-  --accent-gradient: linear-gradient(135deg, #388bfd 0%, #58a6ff 100%);
-  --accent-gradient-subtle: linear-gradient(135deg, rgba(56, 139, 253, 0.15) 0%, rgba(88, 166, 255, 0.15) 100%);
+  /* Accent - Toss Blue (flat) */
+  --accent-primary: #3182f6;
+  --accent-secondary: #4593fc;
+  --accent-tertiary: #1b64da;
+  --accent-gradient: #3182f6;
+  --accent-gradient-subtle: rgba(49, 130, 246, 0.08);
 
-  /* Glow Colors - Dark Mode */
-  --glow-blue: rgba(88, 166, 255, 0.3);
-  --glow-blue-strong: rgba(88, 166, 255, 0.5);
+  /* Glow Colors - Dark Mode (minimal) */
+  --glow-blue: rgba(49, 130, 246, 0.08);
+  --glow-blue-strong: rgba(49, 130, 246, 0.12);
 
   /* Borders - Dark Mode */
   --border-default: rgba(255, 255, 255, 0.08);
@@ -104,11 +104,11 @@ html.dark {
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
   --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.7);
-  --shadow-glow: 0 0 40px var(--glow-blue);
+  --shadow-glow: none;
 
-  /* Card - Dark Mode */
-  --card-bg: rgba(255, 255, 255, 0.02);
-  --card-bg-hover: rgba(255, 255, 255, 0.04);
+  /* Card - Dark Mode (solid, Toss style) */
+  --card-bg: #1f1f25;
+  --card-bg-hover: #26262d;
 }
 
 @theme inline {
@@ -156,13 +156,11 @@ body {
   transform: translate(-50%, -50%);
   background: radial-gradient(
     ellipse at center,
-    rgba(49, 130, 246, 0.12) 0%,
-    rgba(69, 147, 252, 0.06) 30%,
-    rgba(88, 166, 255, 0.03) 50%,
-    transparent 70%
+    rgba(49, 130, 246, 0.06) 0%,
+    rgba(69, 147, 252, 0.03) 30%,
+    transparent 60%
   );
-  filter: blur(60px);
-  animation: cosmic-pulse 8s ease-in-out infinite;
+  filter: blur(80px);
 }
 
 .cosmic-bg::after {
@@ -296,6 +294,12 @@ body {
   50% { border-color: rgba(49, 130, 246, 0.6); }
 }
 
+@keyframes loading {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(0%); }
+  100% { transform: translateX(100%); }
+}
+
 .animate-fade-in {
   animation: fadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -359,17 +363,14 @@ body {
 
 .card {
   background: var(--card-bg);
-  backdrop-filter: blur(var(--blur-md));
-  -webkit-backdrop-filter: blur(var(--blur-md));
   border: 1px solid var(--glass-border);
   border-radius: 1rem;
-  transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: all 0.2s ease;
 }
 
 .card:hover {
   background: var(--card-bg-hover);
   border-color: var(--glass-border-strong);
-  transform: translateY(-2px);
 }
 
 .card-interactive {
@@ -390,19 +391,8 @@ body {
 
 .card-glow {
   position: relative;
-}
-
-.card-glow::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(135deg, rgba(49, 130, 246, 0.3), rgba(69, 147, 252, 0.1), transparent);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
+  border-color: var(--accent-primary) !important;
+  border-width: 1px;
 }
 
 /* ===== Button Styles ===== */
@@ -433,26 +423,22 @@ body {
 }
 
 .btn-primary {
-  background: var(--accent-gradient);
+  background: var(--accent-primary);
   color: var(--accent-text);
-  box-shadow: 0 0 20px rgba(49, 130, 246, 0.3);
 }
 
 .btn-primary:hover {
-  box-shadow: 0 0 30px rgba(49, 130, 246, 0.5);
-  transform: translateY(-1px);
+  background: var(--accent-secondary);
 }
 
 .btn-secondary {
-  background: var(--glass-bg-strong);
-  backdrop-filter: blur(var(--blur-sm));
-  -webkit-backdrop-filter: blur(var(--blur-sm));
+  background: var(--background-tertiary);
   color: var(--foreground);
   border: 1px solid var(--glass-border);
 }
 
 .btn-secondary:hover {
-  background: var(--glass-bg);
+  background: var(--background-elevated);
   border-color: var(--glass-border-strong);
 }
 
@@ -507,7 +493,6 @@ body {
 
 .input:focus {
   border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(49, 130, 246, 0.15);
 }
 
 /* ===== Scrollbar ===== */
@@ -547,6 +532,11 @@ body {
 :focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
+}
+
+.input:focus-visible,
+.tds-input:focus-visible {
+  outline: none;
 }
 
 /* ===== Mobile Responsive ===== */
@@ -689,6 +679,14 @@ body {
   border: 1px solid var(--glass-border);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+}
+
+.folder-item p {
+  max-width: 100%;
+  word-break: break-all;
 }
 
 .folder-item:hover {
@@ -893,9 +891,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 40;
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--blur-lg));
-  -webkit-backdrop-filter: blur(var(--blur-lg));
+  background: var(--background);
   border-bottom: 1px solid var(--glass-border);
 }
 
@@ -931,9 +927,7 @@ body {
   left: 0;
   bottom: 0;
   width: 260px;
-  background: var(--glass-bg-strong);
-  backdrop-filter: blur(var(--blur-xl));
-  -webkit-backdrop-filter: blur(var(--blur-xl));
+  background: var(--background);
   border-right: 1px solid var(--glass-border);
   z-index: 50;
   transform: translateX(-100%);
@@ -989,7 +983,7 @@ body {
   position: fixed;
   left: 1rem;
   right: 1rem;
-  bottom: 1rem;
+  bottom: calc(4.5rem + env(safe-area-inset-bottom)); /* 하단 네비 위에 배치 */
   background: var(--background-elevated);
   border: 1px solid var(--glass-border);
   border-radius: 1rem;
@@ -1000,7 +994,7 @@ body {
   justify-content: space-between;
   gap: 0.75rem;
   animation: fadeInUp 0.25s cubic-bezier(0.22, 1, 0.36, 1);
-  z-index: 40;
+  z-index: 110; /* 하단 네비(100)보다 위에 */
 }
 
 @media (min-width: 640px) {
@@ -1009,6 +1003,13 @@ body {
     right: 1.5rem;
     bottom: 1.5rem;
     max-width: 360px;
+  }
+}
+
+@media (min-width: 1280px) {
+  /* PC에서는 하단 네비가 없으므로 원래 위치 */
+  .selection-toolbar {
+    bottom: 1.5rem;
   }
 }
 
@@ -1078,18 +1079,6 @@ body {
   z-index: 50;
 }
 
-.bottom-tab-nav::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: var(--background);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  z-index: -1;
-}
 
 .tab-item-active {
   color: var(--accent-primary);
@@ -1103,9 +1092,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent-gradient);
-  box-shadow: 0 4px 20px rgba(49, 130, 246, 0.4);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  background: var(--accent-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: transform 0.2s ease, background 0.2s ease;
 }
 
 .fab:active {
@@ -1113,7 +1102,7 @@ body {
 }
 
 .fab:hover {
-  box-shadow: 0 6px 24px rgba(49, 130, 246, 0.5);
+  background: var(--accent-secondary);
 }
 
 /* ===== Cosmic Orbs (Decorative) ===== */
@@ -1128,31 +1117,28 @@ body {
 .orb-1 {
   width: 600px;
   height: 600px;
-  background: radial-gradient(circle at center, rgba(49, 130, 246, 0.15) 0%, transparent 60%);
+  background: radial-gradient(circle at center, rgba(49, 130, 246, 0.08) 0%, transparent 60%);
   top: -200px;
   right: -200px;
-  filter: blur(80px);
-  animation: float 10s ease-in-out infinite;
+  filter: blur(100px);
 }
 
 .orb-2 {
   width: 500px;
   height: 500px;
-  background: radial-gradient(circle at center, rgba(69, 147, 252, 0.1) 0%, transparent 60%);
+  background: radial-gradient(circle at center, rgba(69, 147, 252, 0.06) 0%, transparent 60%);
   bottom: -150px;
   left: -150px;
-  filter: blur(80px);
-  animation: float 12s ease-in-out infinite reverse;
+  filter: blur(100px);
 }
 
 .orb-3 {
   width: 400px;
   height: 400px;
-  background: radial-gradient(circle at center, rgba(59, 130, 246, 0.1) 0%, transparent 60%);
+  background: radial-gradient(circle at center, rgba(59, 130, 246, 0.05) 0%, transparent 60%);
   top: 40%;
   left: 30%;
-  filter: blur(60px);
-  animation: float 8s ease-in-out infinite;
+  filter: blur(80px);
 }
 
 /* ===== Tab Styles ===== */

@@ -156,19 +156,19 @@ export default function SettingsPage() {
   ]
 
   return (
-    <main className="min-h-screen safe-area-top safe-area-bottom" style={{ background: 'var(--background)' }}>
-      {/* 헤더 */}
-      <header className="header">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center gap-3 sm:gap-4">
+    <main className="min-h-screen tds-safe-area-top tds-safe-area-bottom" style={{ background: 'var(--background)' }}>
+      {/* 헤더 - TDS 스타일 */}
+      <header className="tds-header">
+        <div className="max-w-4xl mx-auto w-full flex items-center gap-3 sm:gap-4">
           <button
             onClick={() => router.back()}
-            className="btn btn-ghost !p-2"
+            className="tds-header-action"
           >
-            <svg className="w-5 h-5" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <h1 className="text-lg sm:text-xl font-semibold">설정</h1>
+          <h1 className="tds-header-title">설정</h1>
         </div>
       </header>
 
@@ -181,9 +181,9 @@ export default function SettingsPage() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl whitespace-nowrap transition-all text-sm sm:text-base ${
+                  className={`settings-tab-item flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl whitespace-nowrap transition-all duration-200 text-sm sm:text-base ${
                     activeTab === tab.id
-                      ? 'text-white'
+                      ? 'text-white settings-tab-active'
                       : ''
                   }`}
                   style={activeTab === tab.id ? {
@@ -192,7 +192,7 @@ export default function SettingsPage() {
                     color: 'var(--foreground-secondary)',
                   }}
                 >
-                  {tab.icon}
+                  <span className="transition-transform duration-200">{tab.icon}</span>
                   <span className="font-medium">{tab.label}</span>
                 </button>
               ))}
@@ -217,8 +217,8 @@ export default function SettingsPage() {
             {activeTab === 'profile' && (
               <div className="space-y-4 sm:space-y-6 animate-fade-in">
                 {/* 아바타 섹션 */}
-                <div className="card p-4 sm:p-6">
-                  <h2 className="text-base sm:text-lg font-semibold mb-4">프로필 사진</h2>
+                <div className="tds-card p-4 sm:p-6">
+                  <h2 className="tds-text-title mb-4">프로필 사진</h2>
                   <div className="flex items-center gap-4 sm:gap-6">
                     <div className="relative">
                       <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden" style={{ background: 'var(--background-tertiary)' }}>
@@ -242,7 +242,7 @@ export default function SettingsPage() {
                     </div>
                     <button
                       onClick={() => fileInputRef.current?.click()}
-                      className="btn btn-secondary"
+                      className="tds-btn tds-btn-secondary"
                     >
                       사진 변경
                     </button>
@@ -250,11 +250,11 @@ export default function SettingsPage() {
                 </div>
 
                 {/* 기본 정보 */}
-                <div className="card p-4 sm:p-6">
-                  <h2 className="text-base sm:text-lg font-semibold mb-4">기본 정보</h2>
+                <div className="tds-card p-4 sm:p-6">
+                  <h2 className="tds-text-title mb-4">기본 정보</h2>
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground-secondary)' }}>
+                      <label className="tds-text-label tds-text-secondary block mb-2">
                         이름
                       </label>
                       <input
@@ -262,11 +262,11 @@ export default function SettingsPage() {
                         value={displayName}
                         onChange={(e) => setDisplayName(e.target.value)}
                         placeholder="이름을 입력하세요"
-                        className="input"
+                        className="tds-input"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium mb-2" style={{ color: 'var(--foreground-secondary)' }}>
+                      <label className="tds-text-label tds-text-secondary block mb-2">
                         이메일
                       </label>
                       <div className="flex items-center gap-2 sm:gap-3">
@@ -274,19 +274,19 @@ export default function SettingsPage() {
                           type="email"
                           value={user?.email || ''}
                           disabled
-                          className="input flex-1 opacity-60"
+                          className="tds-input flex-1"
                         />
                         {user?.email_verified ? (
-                          <span className="badge badge-success">인증됨</span>
+                          <span className="tds-badge tds-badge-success">인증됨</span>
                         ) : (
-                          <span className="badge badge-warning">미인증</span>
+                          <span className="tds-badge" style={{ background: 'rgba(251, 191, 36, 0.1)', color: '#f59e0b' }}>미인증</span>
                         )}
                       </div>
                     </div>
                     <button
                       onClick={handleProfileUpdate}
                       disabled={isLoading}
-                      className="btn btn-primary"
+                      className="tds-btn tds-btn-primary"
                     >
                       {isLoading ? '저장 중...' : '변경사항 저장'}
                     </button>
@@ -299,17 +299,17 @@ export default function SettingsPage() {
             {activeTab === 'account' && (
               <div className="space-y-4 sm:space-y-6 animate-fade-in">
                 {/* 로그인 방식 안내 */}
-                <div className="card p-4 sm:p-6">
-                  <h2 className="text-base sm:text-lg font-semibold mb-4">로그인 방식</h2>
-                  <div className="flex items-center gap-3 sm:gap-4">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center" style={{ background: 'rgba(99, 102, 241, 0.15)' }}>
+                <div className="tds-card p-4 sm:p-6">
+                  <h2 className="tds-text-title mb-4">로그인 방식</h2>
+                  <div className="tds-list-item !bg-transparent !p-0">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center" style={{ background: 'rgba(49, 130, 246, 0.1)' }}>
                       <svg className="w-5 h-5 sm:w-6 sm:h-6" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                       </svg>
                     </div>
                     <div>
-                      <p className="font-medium">Magic Link</p>
-                      <p className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>
+                      <p className="tds-text-body font-medium">Magic Link</p>
+                      <p className="tds-text-caption tds-text-secondary">
                         이메일로 로그인 링크를 받아 안전하게 로그인합니다
                       </p>
                     </div>
@@ -317,28 +317,28 @@ export default function SettingsPage() {
                 </div>
 
                 {/* 스토리지 */}
-                <div className="card p-4 sm:p-6">
-                  <h2 className="text-base sm:text-lg font-semibold mb-4">스토리지</h2>
+                <div className="tds-card p-4 sm:p-6">
+                  <h2 className="tds-text-title mb-4">스토리지</h2>
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center" style={{ background: 'rgba(59, 130, 246, 0.15)' }}>
-                      <svg className="w-5 h-5 sm:w-6 sm:h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center" style={{ background: 'rgba(49, 130, 246, 0.1)' }}>
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
                       </svg>
                     </div>
                     <div>
-                      <p className="text-xl sm:text-2xl font-semibold">{formatBytes(storageUsed)}</p>
-                      <p className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>사용 중</p>
+                      <p className="tds-text-headline">{formatBytes(storageUsed)}</p>
+                      <p className="tds-text-caption tds-text-secondary">사용 중</p>
                     </div>
                   </div>
                 </div>
 
                 {/* 계정 삭제 */}
-                <div className="p-4 sm:p-6 rounded-2xl" style={{ background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.15)' }}>
-                  <h2 className="text-base sm:text-lg font-semibold mb-2 text-red-500">위험 구역</h2>
-                  <p className="text-sm mb-4" style={{ color: 'var(--foreground-secondary)' }}>
+                <div className="tds-card p-4 sm:p-6" style={{ background: 'rgba(244, 67, 54, 0.05)', borderColor: 'rgba(244, 67, 54, 0.15)' }}>
+                  <h2 className="tds-text-title mb-2" style={{ color: 'var(--error)' }}>위험 구역</h2>
+                  <p className="tds-text-body tds-text-secondary mb-4">
                     계정을 삭제하면 모든 데이터가 영구적으로 삭제됩니다.
                   </p>
-                  <button className="btn btn-danger">
+                  <button className="tds-btn tds-badge-error" style={{ background: 'var(--error)', color: 'white' }}>
                     계정 삭제
                   </button>
                 </div>
@@ -349,34 +349,32 @@ export default function SettingsPage() {
             {activeTab === 'security' && (
               <div className="space-y-4 sm:space-y-6 animate-fade-in">
                 {/* 2FA */}
-                <div className="card p-4 sm:p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(99, 102, 241, 0.15)' }}>
-                        <svg className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <h2 className="font-semibold text-sm sm:text-base">2단계 인증</h2>
-                        <p className="text-xs sm:text-sm" style={{ color: 'var(--foreground-secondary)' }}>
-                          {twoFASetup?.enabled ? '활성화됨' : '비활성화됨'}
-                        </p>
-                      </div>
+                <div className="tds-card p-4 sm:p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(49, 130, 246, 0.1)' }}>
+                      <svg className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
                     </div>
-                    <span className={`badge ${twoFASetup?.enabled ? 'badge-success' : ''}`}>
-                      {twoFASetup?.enabled ? 'ON' : 'OFF'}
-                    </span>
+                    <div>
+                      <h2 className="tds-text-body font-semibold">2단계 인증 (TOTP)</h2>
+                      <p className="tds-text-caption tds-text-secondary">
+                        인증 앱으로 로그인 보안 강화
+                      </p>
+                    </div>
                   </div>
 
                   {twoFASetup?.qrCode && (
                     <div className="space-y-4">
+                      <p className="tds-text-body tds-text-secondary">
+                        Google Authenticator, Authy 등의 인증 앱에서 아래 QR 코드를 스캔하세요.
+                      </p>
                       <div className="flex flex-col items-center">
-                        <div className="p-3 sm:p-4 rounded-xl" style={{ background: '#fff', border: '1px solid var(--border-default)' }}>
+                        <div className="p-3 sm:p-4 rounded-xl bg-white" style={{ border: '1px solid var(--border-default)' }}>
                           <img src={twoFASetup.qrCode} alt="2FA QR Code" className="w-32 h-32 sm:w-40 sm:h-40" />
                         </div>
                         {twoFASetup.secret && (
-                          <p className="mt-3 text-xs font-mono" style={{ color: 'var(--foreground-muted)' }}>
+                          <p className="mt-3 tds-text-caption font-mono tds-text-tertiary">
                             {twoFASetup.secret}
                           </p>
                         )}
@@ -390,13 +388,13 @@ export default function SettingsPage() {
                           maxLength={6}
                           value={totpCode}
                           onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
-                          placeholder="6자리 코드"
-                          className="input flex-1 text-center font-mono text-base sm:text-lg tracking-widest"
+                          placeholder="6자리 코드 입력"
+                          className="tds-input flex-1 text-center font-mono text-base sm:text-lg tracking-widest"
                         />
                         <button
                           onClick={handle2FAVerify}
                           disabled={totpCode.length !== 6 || isLoading}
-                          className="btn btn-primary"
+                          className="tds-btn tds-btn-primary"
                         >
                           확인
                         </button>
@@ -405,36 +403,18 @@ export default function SettingsPage() {
                   )}
                 </div>
 
-                {/* 보안 기능 목록 */}
-                <div className="card p-4 sm:p-6">
-                  <h2 className="text-base sm:text-lg font-semibold mb-4">보안 기능</h2>
-                  <div className="space-y-2 sm:space-y-3">
-                    {[
-                      { label: 'IP 바인딩', enabled: true },
-                      { label: '세션 타임아웃 (30분)', enabled: true },
-                      { label: '파일 검증 (Magic Bytes)', enabled: true },
-                      { label: 'Rate Limiting', enabled: true },
-                      { label: '감사 로그', enabled: true },
-                    ].map((feature) => (
-                      <div key={feature.label} className="flex items-center justify-between py-1.5 sm:py-2">
-                        <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>{feature.label}</span>
-                        <span className="badge badge-success text-xs">활성</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               </div>
             )}
 
             {/* 환경설정 탭 */}
             {activeTab === 'preferences' && (
               <div className="space-y-4 sm:space-y-6 animate-fade-in">
-                <div className="card p-4 sm:p-6">
-                  <h2 className="text-base sm:text-lg font-semibold mb-4">외관</h2>
+                <div className="tds-card p-4 sm:p-6">
+                  <h2 className="tds-text-title mb-4">외관</h2>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium">테마</p>
-                      <p className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>
+                      <p className="tds-text-body font-medium">테마</p>
+                      <p className="tds-text-caption tds-text-secondary">
                         {theme === 'dark' ? '다크 모드' : '라이트 모드'}
                       </p>
                     </div>
@@ -451,13 +431,11 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="card p-4 sm:p-6">
-                  <h2 className="text-base sm:text-lg font-semibold mb-4">언어</h2>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xl sm:text-2xl">🇰🇷</span>
-                      <span>한국어</span>
-                    </div>
+                <div className="tds-card p-4 sm:p-6">
+                  <h2 className="tds-text-title mb-4">언어</h2>
+                  <div className="tds-list-item !bg-transparent !p-0">
+                    <span className="text-xl sm:text-2xl">🇰🇷</span>
+                    <span className="tds-text-body flex-1">한국어</span>
                     <svg className="w-5 h-5" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
@@ -467,10 +445,11 @@ export default function SettingsPage() {
                 {/* 로그아웃 */}
                 <button
                   onClick={logout}
-                  className="w-full card p-4 font-medium text-left flex items-center justify-between text-red-500 hover:border-red-500/30 transition-colors"
+                  className="settings-logout-btn w-full tds-card p-4 tds-text-body font-medium text-left flex items-center justify-between transition-all duration-200"
+                  style={{ color: 'var(--error)' }}
                 >
                   <span>로그아웃</span>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                   </svg>
                 </button>
