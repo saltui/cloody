@@ -1633,7 +1633,13 @@ export default function DrivePage() {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
-    return date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' })
+    const now = new Date()
+    const isThisYear = date.getFullYear() === now.getFullYear()
+
+    if (isThisYear) {
+      return date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
+    }
+    return date.toLocaleDateString('ko-KR', { year: '2-digit', month: 'short', day: 'numeric' })
   }
 
   // 카테고리 필터링
@@ -2241,7 +2247,7 @@ export default function DrivePage() {
         {!loading && !userLoading && effectiveViewMode === 'list' && (
           <div className="sm:card overflow-hidden">
             {/* 테이블 헤더 - 데스크톱만 */}
-            <div className="hidden sm:grid grid-cols-[auto_1fr_100px_100px_auto] gap-3 px-4 py-3 text-xs font-medium uppercase tracking-wide" style={{ background: 'var(--background-secondary)', color: 'var(--foreground-muted)', borderBottom: '1px solid var(--border-default)' }}>
+            <div className="hidden sm:grid grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] gap-4 px-4 py-2.5 text-xs font-medium uppercase tracking-wide" style={{ background: 'var(--background-secondary)', color: 'var(--foreground-muted)', borderBottom: '1px solid var(--border-default)' }}>
               <div className="w-5" />
               <button
                 onClick={() => {
@@ -2273,7 +2279,7 @@ export default function DrivePage() {
                 }}
                 className="flex items-center gap-1.5 hover:opacity-80 transition-opacity text-left"
               >
-                날짜
+                수정일
                 {sortBy === 'date' && (
                   <span style={{ color: 'var(--accent-primary)' }}>
                     {sortOrder === 'asc' ? '↑' : '↓'}
@@ -2311,7 +2317,7 @@ export default function DrivePage() {
             {currentCategory === 'all' && sortedFolders.map((folder, folderIndex) => (
               <div
                 key={folder.id}
-                className="flex items-center px-4 py-3.5 sm:py-3 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_1fr_100px_100px_auto] sm:gap-3 sm:border-b"
+                className="flex items-center px-4 py-3.5 sm:py-2.5 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] sm:gap-4 sm:border-b"
                 style={{
                   background: selectedFolderIds.has(folder.id) ? 'var(--accent-primary-alpha)' : 'transparent',
                   borderColor: 'var(--border-default)'
@@ -2392,7 +2398,7 @@ export default function DrivePage() {
             {sortedPhotos.map((photo, index) => (
               <div
                 key={photo.id}
-                className="flex items-center px-4 py-3.5 sm:py-2.5 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_1fr_100px_100px_auto] sm:gap-3 sm:border-b"
+                className="flex items-center px-4 py-3.5 sm:py-2 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] sm:gap-4 sm:border-b"
                 style={{
                   background: selectedIds.has(photo.id) ? 'var(--accent-primary-alpha)' : 'transparent',
                   borderColor: 'var(--border-default)'

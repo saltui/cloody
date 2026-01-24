@@ -152,12 +152,12 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
                     key={category.id}
                     onClick={(e) => handleCategoryClick(e, category.id)}
                     className={`
-                      sidebar-nav-item w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg
+                      w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg
                       transition-all duration-200 ease-out cursor-pointer
-                      ${isActive ? 'sidebar-nav-item-active' : ''}
+                      ${isActive ? '' : 'hover:bg-black/5 dark:hover:bg-white/5'}
                     `}
                     style={{
-                      background: isActive ? 'var(--accent-gradient-subtle)' : 'transparent',
+                      background: isActive ? 'var(--accent-gradient-subtle)' : undefined,
                       color: isActive ? 'var(--accent-primary)' : 'var(--foreground-secondary)',
                     }}
                   >
@@ -183,7 +183,7 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
                   }
                   router.push('/settings')
                 }}
-                className="sidebar-nav-item w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-200 ease-out cursor-pointer"
+                className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-200 ease-out cursor-pointer hover:bg-black/5 dark:hover:bg-white/5"
                 style={{ color: 'var(--foreground-secondary)' }}
               >
                 <svg className="w-4 h-4 transition-transform duration-200" style={{ opacity: 0.7 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
