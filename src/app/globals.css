@@ -921,6 +921,13 @@ body {
   }
 }
 
+@media (min-width: 1280px) {
+  .header-content {
+    height: 65px;
+    padding: 0 1.5rem;
+  }
+}
+
 /* ===== Sidebar ===== */
 
 .sidebar {

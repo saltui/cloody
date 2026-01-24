@@ -121,18 +121,22 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
         }}
       >
         <div className="flex flex-col h-full">
-          {/* Header */}
-          <div className="p-4 border-b" style={{ borderColor: 'var(--glass-border)' }}>
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent-gradient-subtle)', border: '1px solid rgba(49, 130, 246, 0.15)' }}>
-                <svg className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          {/* Header - 높이 65px로 메인 헤더와 맞춤 */}
+          <div className="h-[65px] px-4 flex items-center border-b" style={{ borderColor: 'var(--glass-border)' }}>
+            <button
+              onClick={() => {
+                router.push('/drive')
+                onClose()
+              }}
+              className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
+            >
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'var(--accent-gradient-subtle)', border: '1px solid rgba(49, 130, 246, 0.15)' }}>
+                <svg className="w-4.5 h-4.5" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
                 </svg>
               </div>
-              <div>
-                <h1 className="font-medium text-sm" style={{ color: 'var(--foreground)' }}>Cloody</h1>
-              </div>
-            </div>
+              <span className="font-semibold text-base" style={{ color: 'var(--foreground)' }}>Cloody</span>
+            </button>
           </div>
 
           {/* Navigation */}
