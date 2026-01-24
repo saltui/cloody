@@ -924,7 +924,8 @@ body {
 @media (min-width: 1280px) {
   .header-content {
     height: 64px;
-    padding: 0 1rem;
+    padding: 0 0.75rem;
+    max-width: none;
   }
 }
 

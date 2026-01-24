@@ -2317,7 +2317,7 @@ export default function DrivePage() {
             {currentCategory === 'all' && sortedFolders.map((folder, folderIndex) => (
               <div
                 key={folder.id}
-                className="flex items-center px-4 py-3.5 sm:py-2.5 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] sm:gap-4 sm:border-b"
+                className="flex items-center px-4 py-3.5 sm:py-2 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] sm:gap-4 sm:border-b"
                 style={{
                   background: selectedFolderIds.has(folder.id) ? 'var(--accent-primary-alpha)' : 'transparent',
                   borderColor: 'var(--border-default)'
