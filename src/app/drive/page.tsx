@@ -1802,8 +1802,24 @@ export default function DrivePage() {
         {/* 헤더 */}
         <header className="header safe-area-top">
           <div className="header-content">
-            {/* 왼쪽: 메뉴 버튼 + 타이틀 */}
+            {/* 왼쪽: 뒤로가기/메뉴 버튼 + 타이틀 */}
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+              {/* 모바일 뒤로가기 버튼 (폴더 안에 있을 때) */}
+              {breadcrumbs.length > 0 && (
+                <button
+                  onClick={() => {
+                    const parentId = breadcrumbs.length > 1 ? breadcrumbs[breadcrumbs.length - 2].id : null
+                    router.push(parentId ? `/drive?folder=${parentId}` : '/drive')
+                  }}
+                  className="sm:hidden p-2 -ml-2 rounded-xl transition-colors active:bg-black/5 dark:active:bg-white/5"
+                  style={{ color: 'var(--foreground)' }}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+              )}
+
               {/* 태블릿 메뉴 버튼 (모바일에선 하단탭 사용) */}
               <button
                 onClick={() => setIsSidebarOpen(true)}
@@ -1849,6 +1865,33 @@ export default function DrivePage() {
                   <h1 className="font-semibold text-base sm:text-lg whitespace-nowrap" style={{ color: 'var(--foreground)' }}>내 드라이브</h1>
                 )}
               </div>
+            </div>
+
+            {/* 모바일 오른쪽: 보기 옵션 */}
+            <div className="flex xl:hidden items-center gap-1">
+              {/* 뷰 모드 토글 */}
+              {currentCategory === 'all' && (
+                <div className="flex items-center rounded-lg p-0.5" style={{ background: 'var(--background-tertiary)' }}>
+                  <button
+                    onClick={() => setViewMode('grid')}
+                    className="p-1.5 rounded-md transition-all"
+                    style={viewMode === 'grid' ? { background: 'var(--background)', boxShadow: 'var(--shadow-sm)' } : { opacity: 0.5 }}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setViewMode('list')}
+                    className="p-1.5 rounded-md transition-all"
+                    style={viewMode === 'list' ? { background: 'var(--background)', boxShadow: 'var(--shadow-sm)' } : { opacity: 0.5 }}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* 오른쪽: 데스크톱 액션 버튼들 - 1280px 이상에서만 표시 */}
@@ -2196,7 +2239,7 @@ export default function DrivePage() {
 
         {/* 리스트 뷰 */}
         {!loading && !userLoading && effectiveViewMode === 'list' && (
-          <div className="card overflow-hidden">
+          <div className="sm:card overflow-hidden">
             {/* 테이블 헤더 - 데스크톱만 */}
             <div className="hidden sm:grid grid-cols-[auto_1fr_100px_100px_auto] gap-3 px-4 py-3 text-xs font-medium uppercase tracking-wide" style={{ background: 'var(--background-secondary)', color: 'var(--foreground-muted)', borderBottom: '1px solid var(--border-default)' }}>
               <div className="w-5" />
@@ -2241,7 +2284,7 @@ export default function DrivePage() {
             </div>
 
             {/* 모바일 정렬 헤더 */}
-            <div className="sm:hidden flex items-center gap-2 px-4 py-2" style={{ borderBottom: '1px solid var(--border-light)' }}>
+            <div className="sm:hidden flex items-center gap-2 px-4 py-2.5">
               <button
                 onClick={() => {
                   if (sortBy === 'name') {
@@ -2251,27 +2294,27 @@ export default function DrivePage() {
                     setSortOrder('asc')
                   }
                 }}
-                className="flex items-center gap-1 text-sm"
+                className="flex items-center gap-1.5 text-sm font-medium"
                 style={{ color: 'var(--foreground-secondary)' }}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={sortOrder === 'asc' ? "M3 4h13M3 8h9M3 12h5m4 0l4-4m0 0l4 4m-4-4v12" : "M3 4h13M3 8h9M3 12h9m4 0l4 4m0 0l-4 4m4-4H9"} />
                 </svg>
-                {sortBy === 'name' ? '이름' : '날짜'}
+                {sortBy === 'name' ? '이름순' : '날짜순'}
+                <svg className="w-3 h-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
               </button>
-              <svg className="w-4 h-4" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
             </div>
 
             {/* 폴더 목록 - 전체 보기에서만 표시 */}
             {currentCategory === 'all' && sortedFolders.map((folder, folderIndex) => (
               <div
                 key={folder.id}
-                className="flex items-center px-4 py-3.5 sm:py-3 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_1fr_100px_100px_auto] sm:gap-3"
+                className="flex items-center px-4 py-3.5 sm:py-3 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_1fr_100px_100px_auto] sm:gap-3 sm:border-b"
                 style={{
                   background: selectedFolderIds.has(folder.id) ? 'var(--accent-primary-alpha)' : 'transparent',
-                  borderBottom: '1px solid var(--border-light)'
+                  borderColor: 'var(--border-light)'
                 }}
                 onClick={(e) => {
                   if (isSelecting) {
@@ -2349,10 +2392,10 @@ export default function DrivePage() {
             {sortedPhotos.map((photo, index) => (
               <div
                 key={photo.id}
-                className="flex items-center px-4 py-3.5 sm:py-2.5 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_1fr_100px_100px_auto] sm:gap-3"
+                className="flex items-center px-4 py-3.5 sm:py-2.5 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_1fr_100px_100px_auto] sm:gap-3 sm:border-b"
                 style={{
                   background: selectedIds.has(photo.id) ? 'var(--accent-primary-alpha)' : 'transparent',
-                  borderBottom: '1px solid var(--border-light)'
+                  borderColor: 'var(--border-light)'
                 }}
                 onClick={(e) => {
                   if (isSelecting) {
