@@ -923,8 +923,8 @@ body {
 
 @media (min-width: 1280px) {
   .header-content {
-    height: 65px;
-    padding: 0 1.5rem;
+    height: 64px;
+    padding: 0 1rem;
   }
 }
 
