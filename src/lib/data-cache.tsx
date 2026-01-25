@@ -264,6 +264,8 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
   ): Promise<PaginatedResult<Photo>> => {
     const { category = 'all', folderId, cursor = 0, limit = 40 } = options
 
+    // Supabase range는 inclusive이므로 limit개를 가져오려면 cursor ~ cursor+limit-1
+    // hasMore 체크를 위해 1개 더 요청 (limit+1개)
     let query = supabase
       .from('photos')
       .select('*')

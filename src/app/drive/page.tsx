@@ -429,6 +429,10 @@ export default function DrivePage() {
     setCurrentFolder(crumbs[crumbs.length - 1] || null)
   }, [])
 
+  // isInitialLoad를 ref로 추적 (useCallback 의존성에서 제외하여 무한 재호출 방지)
+  const isInitialLoadRef = useRef(isInitialLoad)
+  isInitialLoadRef.current = isInitialLoad
+
   const fetchData = useCallback(async (folderId: string | null, category: string = 'all') => {
     // 사용자 ID가 없으면 로딩 유지 (사용자 로딩 완료될 때까지)
     if (!user?.id) {
@@ -436,7 +440,7 @@ export default function DrivePage() {
     }
 
     // 초기 로딩일 때만 로딩 표시 (캐시 데이터가 있으면 바로 표시)
-    if (isInitialLoad) {
+    if (isInitialLoadRef.current) {
       setLoading(true)
     }
 
@@ -481,7 +485,7 @@ export default function DrivePage() {
 
     setLoading(false)
     setIsInitialLoad(false)
-  }, [buildBreadcrumbs, user?.id, dataCache, isInitialLoad])
+  }, [buildBreadcrumbs, user?.id, dataCache])
 
   // 무한 스크롤: 더 불러오기
   const loadMore = useCallback(async () => {
