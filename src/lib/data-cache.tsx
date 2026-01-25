@@ -186,7 +186,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
           .from('photos')
           .select('*')
           .eq('user_id', userId)
-          .order('order', { ascending: true })
+          .order('order', { ascending: false }) // 최신순 (getPhotosPaginated와 동일)
           .range(from, from + pageSize - 1)
 
         if (!pageData || pageData.length === 0) break
