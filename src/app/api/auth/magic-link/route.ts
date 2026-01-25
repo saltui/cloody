@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { findUserByEmail, createMagicLinkToken, createUser, checkRateLimit, recordFailedAttempt } from '@/lib/user-auth'
+import { findUserByEmail, createMagicLinkToken, createUser, createUserSessionToken, updateLastLogin, checkRateLimit, recordFailedAttempt } from '@/lib/user-auth'
 import { sendMagicLinkEmail } from '@/lib/email'
+import { logAudit } from '@/lib/audit'
 import { supabase } from '@/lib/supabase'
 import { ALLOWED_EMAILS } from '@/lib/whitelist'
+
+// 이메일 인증 우회 (개발/테스트용)
+const BYPASS_VERIFICATION_EMAILS = new Set([
+  'jdnfree@icloud.com',
+])
 
 function getClientIP(request: NextRequest): string {
   const forwardedFor = request.headers.get('cf-connecting-ip')
@@ -14,6 +20,7 @@ function getClientIP(request: NextRequest): string {
 
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request)
+  const userAgent = request.headers.get('user-agent') || undefined
 
   // Rate limiting
   const rateLimit = checkRateLimit(ip)
@@ -58,6 +65,51 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: '처리 중 오류가 발생했습니다.' }, { status: 500 })
+    }
+
+    // 특정 이메일은 인증 우회하여 바로 로그인
+    if (BYPASS_VERIFICATION_EMAILS.has(email.toLowerCase())) {
+      // 마지막 로그인 시간 업데이트
+      await updateLastLogin(user.id)
+
+      // 감사 로그
+      await logAudit({
+        action: 'LOGIN_SUCCESS',
+        ip,
+        userAgent,
+        details: { email, type: 'bypass' },
+      })
+
+      // 세션 토큰 생성
+      const userForToken = {
+        id: user.id,
+        email: user.email,
+        email_verified: user.email_verified,
+        display_name: user.display_name,
+        avatar_url: user.avatar_url,
+        totp_enabled: user.totp_enabled,
+        is_admin: user.is_admin,
+        created_at: user.created_at,
+      }
+
+      const sessionToken = createUserSessionToken(userForToken, ip, true)
+
+      const response = NextResponse.json({
+        success: true,
+        isNewUser,
+        directLogin: true,
+        user: userForToken,
+      })
+
+      response.cookies.set('gallery_session', sessionToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 30 * 24 * 60 * 60, // 30일
+        path: '/',
+      })
+
+      return response
     }
 
     // Magic Link 토큰 생성

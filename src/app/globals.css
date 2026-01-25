@@ -1459,32 +1459,16 @@ body {
 
 /* ===== Image Viewer Swipe Animations ===== */
 
-@keyframes slideInFromLeft {
+@keyframes fadeInImage {
   from {
-    transform: translateX(30%);
     opacity: 0;
   }
   to {
-    transform: translateX(0);
     opacity: 1;
   }
 }
 
-@keyframes slideInFromRight {
-  from {
-    transform: translateX(-30%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-.animate-slide-in-left {
-  animation: slideInFromLeft 0.25s ease-out forwards;
-}
-
+.animate-slide-in-left,
 .animate-slide-in-right {
-  animation: slideInFromRight 0.25s ease-out forwards;
+  animation: fadeInImage 0.2s ease-out forwards;
 }

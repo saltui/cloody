@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 
 type AuthStep = 'email' | 'sending' | 'sent'
 
@@ -9,6 +10,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const router = useRouter()
 
   const emailRef = useRef<HTMLInputElement>(null)
 
@@ -36,6 +38,12 @@ export default function LoginPage() {
       if (!res.ok) {
         setError(data.error || '요청에 실패했습니다.')
         setStep('email')
+        return
+      }
+
+      // 인증 우회로 바로 로그인된 경우
+      if (data.directLogin) {
+        router.push('/drive')
         return
       }
 

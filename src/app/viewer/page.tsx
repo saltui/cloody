@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useDownload } from '@/lib/download-context'
 import { useUser } from '@/lib/user-context'
@@ -197,62 +197,209 @@ export default function ViewerPage() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [goNext, goPrev, goBack])
 
-  // 터치/스와이프 지원 (애니메이션 포함)
-  const [touchStart, setTouchStart] = useState<number | null>(null)
-  const [touchCurrent, setTouchCurrent] = useState<number | null>(null)
+  // 터치/스와이프/줌 상태
   const [isAnimating, setIsAnimating] = useState(false)
   const [enterDirection, setEnterDirection] = useState<'left' | 'right' | null>(null)
 
+  // 줌 상태
+  const [scale, setScale] = useState(1)
+  const [position, setPosition] = useState({ x: 0, y: 0 })
+
+  // 터치 추적용 refs
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+  const lastTouchRef = useRef<{ x: number; y: number } | null>(null)
+  const initialDistanceRef = useRef<number | null>(null)
+  const initialScaleRef = useRef(1)
+  const initialPositionRef = useRef({ x: 0, y: 0 })
+  const pinchCenterRef = useRef<{ x: number; y: number } | null>(null)
+  const lastTapRef = useRef<number>(0)
+  const isPinchingRef = useRef(false)
+  const isPanningRef = useRef(false)
+  const dragOffsetRef = useRef(0)
+  const [dragOffset, setDragOffset] = useState(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // 이미지 변경 시 줌 리셋
+  useEffect(() => {
+    setScale(1)
+    setPosition({ x: 0, y: 0 })
+    dragOffsetRef.current = 0
+    setDragOffset(0)
+  }, [currentIndex])
+
+  // 두 손가락 거리 계산
+  const getDistance = (touches: React.TouchList) => {
+    const dx = touches[0].clientX - touches[1].clientX
+    const dy = touches[0].clientY - touches[1].clientY
+    return Math.sqrt(dx * dx + dy * dy)
+  }
+
+  // 두 손가락 중심점 계산
+  const getCenter = (touches: React.TouchList) => {
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2,
+      y: (touches[0].clientY + touches[1].clientY) / 2,
+    }
+  }
+
   const handleTouchStart = (e: React.TouchEvent) => {
     if (isAnimating) return
-    setTouchStart(e.touches[0].clientX)
-    setTouchCurrent(e.touches[0].clientX)
+
+    const now = Date.now()
+
+    if (e.touches.length === 1) {
+      const touch = e.touches[0]
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY }
+      lastTouchRef.current = { x: touch.clientX, y: touch.clientY }
+      isPinchingRef.current = false
+      isPanningRef.current = scale > 1 // 확대 상태면 패닝 모드
+
+      // 더블탭 감지
+      if (now - lastTapRef.current < 300) {
+        // 더블탭: 줌 토글
+        if (scale > 1) {
+          setScale(1)
+          setPosition({ x: 0, y: 0 })
+        } else {
+          // 화면 중앙 기준으로 2배 확대 (위치 변경 없이)
+          setScale(2.5)
+          setPosition({ x: 0, y: 0 })
+        }
+        lastTapRef.current = 0 // 리셋
+      } else {
+        lastTapRef.current = now
+      }
+    } else if (e.touches.length === 2) {
+      // 핀치 시작
+      isPinchingRef.current = true
+      isPanningRef.current = false
+      initialDistanceRef.current = getDistance(e.touches)
+      initialScaleRef.current = scale
+      initialPositionRef.current = { ...position }
+
+      // 핀치 중심점 저장 (화면 기준)
+      const center = getCenter(e.touches)
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect()
+        pinchCenterRef.current = {
+          x: center.x - rect.left - rect.width / 2,
+          y: center.y - rect.top - rect.height / 2,
+        }
+      }
+    }
   }
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (touchStart === null || isAnimating) return
-    setTouchCurrent(e.touches[0].clientX)
+    if (isAnimating) return
+
+    if (e.touches.length === 2 && initialDistanceRef.current !== null) {
+      // 핀치 줌
+      e.preventDefault()
+      const currentDistance = getDistance(e.touches)
+      const scaleChange = currentDistance / initialDistanceRef.current
+      const newScale = Math.max(1, Math.min(4, initialScaleRef.current * scaleChange))
+
+      // 핀치 중심점 기준으로 위치 조정
+      if (pinchCenterRef.current && newScale > 1) {
+        const scaleRatio = newScale / initialScaleRef.current
+        // 중심점으로부터의 거리를 스케일에 비례하여 조정
+        const newX = initialPositionRef.current.x * scaleRatio
+        const newY = initialPositionRef.current.y * scaleRatio
+        setPosition({ x: newX, y: newY })
+      }
+
+      setScale(newScale)
+
+      // 줌이 1이 되면 위치 리셋
+      if (newScale <= 1) {
+        setPosition({ x: 0, y: 0 })
+      }
+    } else if (e.touches.length === 1 && touchStartRef.current && lastTouchRef.current) {
+      const touch = e.touches[0]
+
+      if (scale > 1 && !isPinchingRef.current) {
+        // 확대 상태: 패닝
+        e.preventDefault()
+        isPanningRef.current = true
+        const dx = touch.clientX - lastTouchRef.current.x
+        const dy = touch.clientY - lastTouchRef.current.y
+        setPosition(prev => ({
+          x: prev.x + dx,
+          y: prev.y + dy,
+        }))
+        lastTouchRef.current = { x: touch.clientX, y: touch.clientY }
+      } else if (scale === 1 && !isPinchingRef.current) {
+        // 축소 상태: 스와이프 (수평 이동만)
+        const dx = touch.clientX - touchStartRef.current.x
+        const dy = touch.clientY - touchStartRef.current.y
+
+        // 수평 이동이 수직보다 크면 스와이프로 간주
+        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
+          const maxOffset = typeof window !== 'undefined' ? window.innerWidth * 0.3 : 100
+          dragOffsetRef.current = Math.max(-maxOffset, Math.min(maxOffset, dx))
+          setDragOffset(dragOffsetRef.current)
+        }
+        lastTouchRef.current = { x: touch.clientX, y: touch.clientY }
+      }
+    }
   }
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchStart === null || isAnimating) return
+    if (isAnimating) return
 
-    const touchEnd = e.changedTouches[0].clientX
-    const diff = touchStart - touchEnd
+    // 핀치가 끝났을 때
+    if (isPinchingRef.current) {
+      isPinchingRef.current = false
+      initialDistanceRef.current = null
+      pinchCenterRef.current = null
+      // 스케일이 1 이하면 1로 리셋 (부드럽게)
+      if (scale <= 1.1) {
+        setScale(1)
+        setPosition({ x: 0, y: 0 })
+      }
+      return
+    }
 
-    if (Math.abs(diff) > 50) {
-      if (diff > 0 && currentIndex < photos.length - 1) {
-        // 왼쪽으로 스와이프 -> 다음 이미지
-        setIsAnimating(true)
-        setEnterDirection('left')
-        // 바로 다음 이미지로 전환하고 애니메이션 적용
-        setCurrentIndex(prev => prev + 1)
-        setTimeout(() => {
-          setEnterDirection(null)
-          setIsAnimating(false)
-        }, 250)
-      } else if (diff < 0 && currentIndex > 0) {
-        // 오른쪽으로 스와이프 -> 이전 이미지
-        setIsAnimating(true)
-        setEnterDirection('right')
-        setCurrentIndex(prev => prev - 1)
-        setTimeout(() => {
-          setEnterDirection(null)
-          setIsAnimating(false)
-        }, 250)
+    // 패닝이 끝났을 때
+    if (isPanningRef.current) {
+      isPanningRef.current = false
+      touchStartRef.current = null
+      lastTouchRef.current = null
+      return
+    }
+
+    // 스와이프 처리 (축소 상태에서만)
+    if (scale === 1 && touchStartRef.current && e.changedTouches.length > 0) {
+      const touchEnd = e.changedTouches[0].clientX
+      const diff = touchStartRef.current.x - touchEnd
+
+      if (Math.abs(diff) > 50) {
+        const goingNext = diff > 0 && currentIndex < photos.length - 1
+        const goingPrev = diff < 0 && currentIndex > 0
+
+        if (goingNext || goingPrev) {
+          // 즉시 상태 리셋
+          setIsAnimating(true)
+          setEnterDirection(goingNext ? 'left' : 'right')
+          setPosition({ x: 0, y: 0 })
+          setScale(1)
+          dragOffsetRef.current = 0
+          setDragOffset(0)
+          setCurrentIndex(prev => goingNext ? prev + 1 : prev - 1)
+
+          setTimeout(() => {
+            setEnterDirection(null)
+            setIsAnimating(false)
+          }, 200)
+        }
       }
     }
 
-    setTouchStart(null)
-    setTouchCurrent(null)
+    touchStartRef.current = null
+    lastTouchRef.current = null
+    dragOffsetRef.current = 0
+    setDragOffset(0)
   }
-
-  // 드래그 오프셋 계산 (최대 화면 너비의 30%까지)
-  const rawOffset = touchStart !== null && touchCurrent !== null && !isAnimating
-    ? touchCurrent - touchStart
-    : 0
-  const maxOffset = typeof window !== 'undefined' ? window.innerWidth * 0.3 : 100
-  const dragOffset = Math.max(-maxOffset, Math.min(maxOffset, rawOffset))
 
   const handleImageLoad = () => {
     const currentUrl = photos[currentIndex]?.url
@@ -320,7 +467,7 @@ export default function ViewerPage() {
 
   if (loading) {
     return (
-      <main className="h-screen bg-black flex items-center justify-center safe-area-top safe-area-bottom overflow-hidden fixed inset-0">
+      <main className="h-screen bg-black flex items-center justify-center overflow-hidden fixed inset-0">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-primary)' }}>
             <div className="w-6 h-6 border-2 border-black/20 border-t-black/60 rounded-full animate-spin" />
@@ -332,7 +479,7 @@ export default function ViewerPage() {
 
   if (photos.length === 0) {
     return (
-      <main className="h-screen bg-black flex items-center justify-center safe-area-top safe-area-bottom overflow-hidden fixed inset-0">
+      <main className="h-screen bg-black flex items-center justify-center overflow-hidden fixed inset-0">
         <div className="text-center animate-fade-in">
           <div className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center bg-zinc-800/50">
             <svg className="w-8 h-8 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -350,14 +497,14 @@ export default function ViewerPage() {
 
   return (
     <main
-      className="h-screen bg-black flex flex-col safe-area-top safe-area-bottom overflow-hidden fixed inset-0"
+      className="h-screen bg-black overflow-hidden fixed inset-0"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* 헤더 */}
+      {/* 헤더 - 이미지 위에 오버레이 */}
       <header
-        className={`fixed top-0 left-0 right-0 z-10 transition-all duration-300 safe-area-top ${
+        className={`fixed top-0 left-0 right-0 z-20 transition-all duration-300 safe-area-top ${
           showUI ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full pointer-events-none'
         }`}
       >
@@ -417,9 +564,10 @@ export default function ViewerPage() {
         </div>
       </header>
 
-      {/* 이미지 영역 */}
+      {/* 이미지 영역 - 화면 중앙에 절대 위치 */}
       <div
-        className="flex-1 flex items-center justify-center relative"
+        ref={containerRef}
+        className="absolute inset-0 flex items-center justify-center z-10"
         onClick={() => setShowUI(!showUI)}
       >
         {/* 이전 버튼 - 데스크탑 */}
@@ -450,11 +598,13 @@ export default function ViewerPage() {
         {/* 이미지/비디오 */}
         <div
           className={`flex items-center justify-center ${
-            enterDirection === 'left' ? 'animate-slide-in-left' :
-            enterDirection === 'right' ? 'animate-slide-in-right' : ''
+            enterDirection ? 'animate-slide-in-left' : ''
           }`}
           style={{
-            transform: !enterDirection ? `translateX(${dragOffset}px)` : undefined,
+            transform: `translateX(${dragOffset + position.x}px) translateY(${position.y}px) scale(${scale})`,
+            transition: isAnimating || isPanningRef.current || isPinchingRef.current ? 'none' : 'transform 0.2s cubic-bezier(0.25, 0.1, 0.25, 1)',
+            touchAction: scale > 1 ? 'none' : 'pan-y',
+            willChange: 'transform',
           }}
         >
           {currentPhoto.is_video || currentPhoto.name.match(/\.(mp4|webm|mov|avi|mkv)$/i) ? (
@@ -502,7 +652,7 @@ export default function ViewerPage() {
       {/* 하단 컨트롤 - 여러 개일 때만 표시 */}
       {photos.length > 1 && (
         <div
-          className={`fixed bottom-0 left-0 right-0 transition-all duration-300 safe-area-bottom ${
+          className={`fixed bottom-0 left-0 right-0 z-20 transition-all duration-300 safe-area-bottom ${
             showUI ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-full pointer-events-none'
           }`}
         >

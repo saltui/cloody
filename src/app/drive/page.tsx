@@ -1448,147 +1448,41 @@ export default function DrivePage() {
     }
   }, [])
 
-  const handleItemTouchStart = useCallback((e: React.TouchEvent, itemId: string, isFolder: boolean, itemIndex: number, foldersCount: number) => {
-    const touch = e.touches[0]
-    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY }
-    touchMovedRef.current = false // 새 터치 시작 시 이동 플래그 리셋
-
-    // 이미 선택 모드면 드래그 선택 시작 준비
-    if (isSelecting) {
-      setTouchDragStart({ x: touch.clientX, y: touch.clientY })
-      lastTouchPosRef.current = { x: touch.clientX, y: touch.clientY }
-      // 시작 아이템 정보 저장 (범위 선택용)
-      const combinedIndex = isFolder ? itemIndex : foldersCount + itemIndex
-      setTouchDragStartItem({ id: itemId, isFolder, combinedIndex })
-      return
-    }
-
-    // 길게 누르기 타이머 시작 (500ms)
-    longPressTimerRef.current = setTimeout(() => {
-      handleLongPress(itemId, isFolder)
-      longPressTimerRef.current = null
-    }, 500)
-  }, [isSelecting, handleLongPress])
-
   // 터치 이동 여부 추적 (스크롤 vs 탭 구분용)
   const touchMovedRef = useRef(false)
+
+  // 모바일: 꾹 누르면 선택 모드 진입, 드래그 선택은 제거
+  const handleItemTouchStart = useCallback((e: React.TouchEvent, itemId: string, isFolder: boolean) => {
+    const touch = e.touches[0]
+    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY }
+    touchMovedRef.current = false
+
+    // 선택 모드가 아닐 때만 길게 누르기 타이머 시작
+    if (!isSelecting) {
+      longPressTimerRef.current = setTimeout(() => {
+        handleLongPress(itemId, isFolder)
+        longPressTimerRef.current = null
+      }, 500)
+    }
+  }, [isSelecting, handleLongPress])
 
   const handleItemTouchMove = useCallback((e: React.TouchEvent) => {
     const touch = e.touches[0]
 
-    // 길게 누르기 취소 (움직임 감지)
-    if (touchStartPosRef.current && longPressTimerRef.current) {
+    // 움직임 감지 - 스크롤로 간주
+    if (touchStartPosRef.current) {
       const dx = touch.clientX - touchStartPosRef.current.x
       const dy = touch.clientY - touchStartPosRef.current.y
       if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-        clearTimeout(longPressTimerRef.current)
-        longPressTimerRef.current = null
-        touchMovedRef.current = true // 이동했음을 표시
-      }
-    }
-
-    // 일반 스크롤 감지 (선택 모드가 아닐 때)
-    if (!isSelecting && touchStartPosRef.current) {
-      const dx = touch.clientX - touchStartPosRef.current.x
-      const dy = touch.clientY - touchStartPosRef.current.y
-      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-        touchMovedRef.current = true
-      }
-    }
-
-    // 선택 모드에서 드래그 선택 (일정 거리 이상 이동해야 시작)
-    if (isSelecting && touchDragStart && touchDragStartItem) {
-      const dx = touch.clientX - touchDragStart.x
-      const dy = touch.clientY - touchDragStart.y
-      const distance = Math.sqrt(dx * dx + dy * dy)
-
-      // 이동을 시작하면 스크롤 방지 (드래그 선택 준비)
-      if (distance > 5) {
-        e.preventDefault()
-        touchMovedRef.current = true
-      }
-
-      // 20px 이상 이동해야 실제 드래그 선택 시작 (탭과 구분)
-      if (distance < 20) {
-        return
-      }
-
-      setIsTouchDragging(true)
-      lastTouchPosRef.current = { x: touch.clientX, y: touch.clientY }
-
-      // 터치 위치의 아이템 찾기
-      const element = document.elementFromPoint(touch.clientX, touch.clientY)
-      if (element) {
-        const itemEl = element.closest('[data-photo-id], [data-folder-id]') as HTMLElement | null
-        if (itemEl) {
-          const photoId = itemEl.dataset.photoId
-          const folderId = itemEl.dataset.folderId
-          const folders = sortedFoldersRef.current
-          const photos = sortedPhotosRef.current
-
-          // 현재 아이템의 combined index 계산
-          let currentCombinedIndex = -1
-          if (folderId) {
-            const folderIndex = folders.findIndex(f => f.id === folderId)
-            if (folderIndex !== -1) currentCombinedIndex = folderIndex
-          } else if (photoId) {
-            const photoIndex = photos.findIndex(p => p.id === photoId)
-            if (photoIndex !== -1) currentCombinedIndex = folders.length + photoIndex
-          }
-
-          // 범위 선택: 시작 인덱스부터 현재 인덱스까지 모든 아이템 선택
-          if (currentCombinedIndex !== -1) {
-            const startIndex = touchDragStartItem.combinedIndex
-            const minIndex = Math.min(startIndex, currentCombinedIndex)
-            const maxIndex = Math.max(startIndex, currentCombinedIndex)
-
-            const newFolderIds = new Set<string>()
-            const newPhotoIds = new Set<string>()
-
-            for (let i = minIndex; i <= maxIndex; i++) {
-              if (i < folders.length) {
-                // 폴더 영역
-                newFolderIds.add(folders[i].id)
-              } else {
-                // 사진 영역
-                const photoIndex = i - folders.length
-                if (photos[photoIndex]) {
-                  newPhotoIds.add(photos[photoIndex].id)
-                }
-              }
-            }
-
-            setSelectedFolderIds(newFolderIds)
-            setSelectedIds(newPhotoIds)
-          }
+        // 길게 누르기 취소
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current)
+          longPressTimerRef.current = null
         }
-      }
-
-      // 자동 스크롤 (화면 가장자리 - 뷰포트 기준)
-      const viewportHeight = window.innerHeight
-      const scrollSpeed = 15
-      const edgeThreshold = 80 // 상단/하단 80px 영역
-
-      // 기존 자동 스크롤 중지
-      if (autoScrollRef.current) {
-        clearInterval(autoScrollRef.current)
-        autoScrollRef.current = null
-      }
-
-      // 상단/하단 가장자리 감지 (뷰포트 기준)
-      if (touch.clientY < edgeThreshold) {
-        // 위로 스크롤 (상단 가장자리)
-        autoScrollRef.current = setInterval(() => {
-          window.scrollBy(0, -scrollSpeed)
-        }, 16)
-      } else if (touch.clientY > viewportHeight - edgeThreshold - 68) {
-        // 아래로 스크롤 (하단 가장자리, 하단 탭바 68px 고려)
-        autoScrollRef.current = setInterval(() => {
-          window.scrollBy(0, scrollSpeed)
-        }, 16)
+        touchMovedRef.current = true
       }
     }
-  }, [isSelecting, touchDragStart, touchDragStartItem])
+  }, [])
 
   const handleItemTouchEnd = useCallback(() => {
     // 길게 누르기 타이머 정리
@@ -1597,18 +1491,7 @@ export default function DrivePage() {
       longPressTimerRef.current = null
     }
 
-    // 자동 스크롤 정리
-    if (autoScrollRef.current) {
-      clearInterval(autoScrollRef.current)
-      autoScrollRef.current = null
-    }
-
-    // 터치 드래그 상태 리셋
-    setIsTouchDragging(false)
-    setTouchDragStart(null)
-    setTouchDragStartItem(null)
     touchStartPosRef.current = null
-    lastTouchPosRef.current = null
 
     // 터치 이동 플래그는 약간의 지연 후 리셋 (onClick보다 늦게)
     setTimeout(() => {
@@ -2508,7 +2391,7 @@ export default function DrivePage() {
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  accept="image/*,video/*"
+                  accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.hwp,.hwpx,.zip,.rar"
                   onChange={handleFileSelect}
                   disabled={uploading}
                   className="hidden"
@@ -2710,7 +2593,7 @@ export default function DrivePage() {
                           dataCache.prefetchFolder(user.id, folder.id)
                         }
                       }}
-                      onTouchStart={(e) => handleItemTouchStart(e, folder.id, true, folderIndex, sortedFolders.length)}
+                      onTouchStart={(e) => handleItemTouchStart(e, folder.id, true)}
                       onTouchMove={handleItemTouchMove}
                       onTouchEnd={handleItemTouchEnd}
                     >
@@ -2790,7 +2673,7 @@ export default function DrivePage() {
                           router.push(`/viewer?index=${index}${currentFolderId ? `&folder=${currentFolderId}` : ''}${currentCategory !== 'all' ? `&category=${currentCategory}` : ''}&sortBy=${sortBy}&sortOrder=${sortOrder}`)
                         }
                       }}
-                      onTouchStart={(e) => handleItemTouchStart(e, photo.id, false, index, sortedFolders.length)}
+                      onTouchStart={(e) => handleItemTouchStart(e, photo.id, false)}
                       onTouchMove={handleItemTouchMove}
                       onTouchEnd={handleItemTouchEnd}
                     >
@@ -2963,7 +2846,7 @@ export default function DrivePage() {
                     router.push(`/drive?folder=${folder.id}`)
                   }
                 }}
-                onTouchStart={(e) => handleItemTouchStart(e, folder.id, true, folderIndex, sortedFolders.length)}
+                onTouchStart={(e) => handleItemTouchStart(e, folder.id, true)}
                 onTouchMove={handleItemTouchMove}
                 onTouchEnd={handleItemTouchEnd}
                 onMouseEnter={(e) => {
@@ -3057,7 +2940,7 @@ export default function DrivePage() {
                     router.push(`/viewer?index=${index}${currentFolderId ? `&folder=${currentFolderId}` : ''}${currentCategory !== 'all' ? `&category=${currentCategory}` : ''}&sortBy=${sortBy}&sortOrder=${sortOrder}`)
                   }
                 }}
-                onTouchStart={(e) => handleItemTouchStart(e, photo.id, false, index, sortedFolders.length)}
+                onTouchStart={(e) => handleItemTouchStart(e, photo.id, false)}
                 onTouchMove={handleItemTouchMove}
                 onTouchEnd={handleItemTouchEnd}
                 onMouseEnter={(e) => !selectedIds.has(photo.id) && (e.currentTarget.style.background = 'var(--background-secondary)')}
@@ -3762,6 +3645,9 @@ export default function DrivePage() {
           onClick={() => {
             setShowUploadPanel(false)
             setShowMoreScreen(false)
+            // 탭 전환 시 선택 해제
+            setSelectedIds(new Set())
+            setSelectedFolderIds(new Set())
             router.push('/drive')
           }}
           className={`tds-bottom-nav-item ${currentCategory === 'all' && !showUploadPanel && !showMoreScreen ? 'active' : ''}`}
@@ -3778,6 +3664,9 @@ export default function DrivePage() {
           onClick={() => {
             setShowUploadPanel(false)
             setShowMoreScreen(false)
+            // 탭 전환 시 선택 해제
+            setSelectedIds(new Set())
+            setSelectedFolderIds(new Set())
             router.push('/drive?category=photos')
           }}
           className={`tds-bottom-nav-item ${currentCategory === 'photos' && !showUploadPanel && !showMoreScreen ? 'active' : ''}`}
@@ -3794,6 +3683,9 @@ export default function DrivePage() {
           onClick={() => {
             setShowMoreScreen(false)
             setShowUploadPanel(true)
+            // 탭 전환 시 선택 해제
+            setSelectedIds(new Set())
+            setSelectedFolderIds(new Set())
           }}
           className={`tds-bottom-nav-item ${showUploadPanel && !showMoreScreen ? 'active' : ''}`}
         >
@@ -3811,7 +3703,14 @@ export default function DrivePage() {
         </button>
 
         <button
-          onClick={() => setShowMoreScreen(!showMoreScreen)}
+          onClick={() => {
+            // 더보기 탭 클릭 시 업로드 패널 숨김
+            setShowUploadPanel(false)
+            setShowMoreScreen(!showMoreScreen)
+            // 탭 전환 시 선택 해제
+            setSelectedIds(new Set())
+            setSelectedFolderIds(new Set())
+          }}
           className={`tds-bottom-nav-item ${showMoreScreen ? 'active' : ''}`}
         >
           <Menu size={26} strokeWidth={showMoreScreen ? 2.5 : 1.5} />
@@ -3850,7 +3749,7 @@ export default function DrivePage() {
                   ref={fabFileInputRef}
                   type="file"
                   multiple
-                  accept="image/*,video/*"
+                  accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.hwp,.hwpx,.zip,.rar"
                   onChange={(e) => {
                     setShowFabMenu(false)
                     handleFileSelect(e)
@@ -4099,8 +3998,8 @@ export default function DrivePage() {
         </div>
       )}
 
-      {/* 업로드 현황 패널 (모바일 탭) */}
-      {showUploadPanel && (
+      {/* 업로드 현황 패널 (모바일 탭) - 더보기 화면에서는 숨김 */}
+      {showUploadPanel && !showMoreScreen && (
         <div className="xl:hidden min-h-screen pb-20" style={{ background: 'var(--background)' }}>
           {/* 헤더 */}
           <div className="sticky top-0 z-10 safe-area-top" style={{ background: 'var(--background)', borderBottom: '1px solid var(--glass-border)' }}>

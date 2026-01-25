@@ -28,6 +28,10 @@ const FILE_SIGNATURES: Record<string, { bytes: number[]; offset?: number }[]> = 
   'video/webm': [{ bytes: [0x1A, 0x45, 0xDF, 0xA3] }],
   'video/x-msvideo': [{ bytes: [0x52, 0x49, 0x46, 0x46] }], // AVI
   'video/x-matroska': [{ bytes: [0x1A, 0x45, 0xDF, 0xA3] }], // MKV
+
+  // 문서
+  'application/pdf': [{ bytes: [0x25, 0x50, 0x44, 0x46] }], // %PDF
+  'application/zip': [{ bytes: [0x50, 0x4B, 0x03, 0x04] }], // PK (ZIP, DOCX, XLSX, PPTX 등)
 }
 
 // ftyp 기반 파일 타입 감지 (HEIC vs MP4/MOV 구분)
@@ -53,6 +57,7 @@ function detectFtypType(buffer: Buffer): string | null {
 
 // 허용된 MIME 타입
 const ALLOWED_TYPES = new Set([
+  // 이미지
   'image/jpeg',
   'image/png',
   'image/gif',
@@ -60,11 +65,29 @@ const ALLOWED_TYPES = new Set([
   'image/bmp',
   'image/heic',
   'image/heif',
+  // 비디오
   'video/mp4',
   'video/quicktime',
   'video/webm',
   'video/x-msvideo',
   'video/x-matroska',
+  // 문서
+  'application/pdf',
+  'application/msword', // .doc
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+  'application/vnd.ms-excel', // .xls
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+  'application/vnd.ms-powerpoint', // .ppt
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+  'text/plain', // .txt
+  'text/csv', // .csv
+  'application/x-hwp', // .hwp
+  'application/haansofthwp', // .hwp (alternative)
+  'application/vnd.hancom.hwp', // .hwp (another alternative)
+  'application/zip', // .zip
+  'application/x-rar-compressed', // .rar
+  'application/vnd.rar', // .rar (alternative)
+  'application/octet-stream', // 일부 브라우저에서 문서 파일을 이 타입으로 보냄
 ])
 
 // Magic bytes 검증
