@@ -1451,6 +1451,7 @@ export default function DrivePage() {
   const handleItemTouchStart = useCallback((e: React.TouchEvent, itemId: string, isFolder: boolean, itemIndex: number, foldersCount: number) => {
     const touch = e.touches[0]
     touchStartPosRef.current = { x: touch.clientX, y: touch.clientY }
+    touchMovedRef.current = false // 새 터치 시작 시 이동 플래그 리셋
 
     // 이미 선택 모드면 드래그 선택 시작 준비
     if (isSelecting) {
@@ -1469,6 +1470,9 @@ export default function DrivePage() {
     }, 500)
   }, [isSelecting, handleLongPress])
 
+  // 터치 이동 여부 추적 (스크롤 vs 탭 구분용)
+  const touchMovedRef = useRef(false)
+
   const handleItemTouchMove = useCallback((e: React.TouchEvent) => {
     const touch = e.touches[0]
 
@@ -1479,6 +1483,16 @@ export default function DrivePage() {
       if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
         clearTimeout(longPressTimerRef.current)
         longPressTimerRef.current = null
+        touchMovedRef.current = true // 이동했음을 표시
+      }
+    }
+
+    // 일반 스크롤 감지 (선택 모드가 아닐 때)
+    if (!isSelecting && touchStartPosRef.current) {
+      const dx = touch.clientX - touchStartPosRef.current.x
+      const dy = touch.clientY - touchStartPosRef.current.y
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+        touchMovedRef.current = true
       }
     }
 
@@ -1488,13 +1502,17 @@ export default function DrivePage() {
       const dy = touch.clientY - touchDragStart.y
       const distance = Math.sqrt(dx * dx + dy * dy)
 
-      // 20px 이상 이동해야 드래그 선택 시작 (탭과 구분)
+      // 이동을 시작하면 스크롤 방지 (드래그 선택 준비)
+      if (distance > 5) {
+        e.preventDefault()
+        touchMovedRef.current = true
+      }
+
+      // 20px 이상 이동해야 실제 드래그 선택 시작 (탭과 구분)
       if (distance < 20) {
         return
       }
 
-      // 드래그 선택 중 스크롤 방지
-      e.preventDefault()
       setIsTouchDragging(true)
       lastTouchPosRef.current = { x: touch.clientX, y: touch.clientY }
 
@@ -1591,6 +1609,11 @@ export default function DrivePage() {
     setTouchDragStartItem(null)
     touchStartPosRef.current = null
     lastTouchPosRef.current = null
+
+    // 터치 이동 플래그는 약간의 지연 후 리셋 (onClick보다 늦게)
+    setTimeout(() => {
+      touchMovedRef.current = false
+    }, 100)
   }, [])
 
   // 터치 드래그 중 body 스크롤 방지
@@ -1610,8 +1633,8 @@ export default function DrivePage() {
 
   // 선택 모드에서 아이템 탭으로 선택 토글
   const handleItemTap = useCallback((e: React.MouseEvent | React.TouchEvent, itemId: string, isFolder: boolean, index?: number) => {
-    // 터치 드래그 중이면 무시
-    if (isTouchDragging) return
+    // 터치 드래그 중이거나 스크롤 중이면 무시
+    if (isTouchDragging || touchMovedRef.current) return
 
     if (isSelecting) {
       e.preventDefault()
@@ -2673,7 +2696,8 @@ export default function DrivePage() {
                       data-folder-id={folder.id}
                       className={`folder-item group relative min-w-0 ${selectedFolderIds.has(folder.id) ? 'selected' : ''}`}
                       onClick={(e) => {
-                        if (isTouchDragging) return
+                        // 터치로 스크롤하다가 클릭된 경우 무시
+                        if (isTouchDragging || touchMovedRef.current) return
                         if (isSelecting) {
                           toggleFolderSelect(folder.id, e, folderIndex)
                         } else {
@@ -2758,7 +2782,8 @@ export default function DrivePage() {
                       data-photo-id={photo.id}
                       className={`image-item group ${selectedIds.has(photo.id) ? 'selected' : ''}`}
                       onClick={(e) => {
-                        if (isTouchDragging) return
+                        // 터치로 스크롤하다가 클릭된 경우 무시
+                        if (isTouchDragging || touchMovedRef.current) return
                         if (isSelecting) {
                           toggleSelect(photo.id, e, index)
                         } else {
@@ -2930,12 +2955,17 @@ export default function DrivePage() {
                   borderColor: 'var(--border-default)'
                 }}
                 onClick={(e) => {
+                  // 터치로 스크롤하다가 클릭된 경우 무시
+                  if (isTouchDragging || touchMovedRef.current) return
                   if (isSelecting) {
                     toggleFolderSelect(folder.id, e, folderIndex)
                   } else {
                     router.push(`/drive?folder=${folder.id}`)
                   }
                 }}
+                onTouchStart={(e) => handleItemTouchStart(e, folder.id, true, folderIndex, sortedFolders.length)}
+                onTouchMove={handleItemTouchMove}
+                onTouchEnd={handleItemTouchEnd}
                 onMouseEnter={(e) => {
                   if (!selectedFolderIds.has(folder.id)) {
                     e.currentTarget.style.background = 'var(--background-secondary)'
@@ -3019,12 +3049,17 @@ export default function DrivePage() {
                   borderColor: 'var(--border-default)'
                 }}
                 onClick={(e) => {
+                  // 터치로 스크롤하다가 클릭된 경우 무시
+                  if (isTouchDragging || touchMovedRef.current) return
                   if (isSelecting) {
                     toggleSelect(photo.id, e, index)
                   } else {
                     router.push(`/viewer?index=${index}${currentFolderId ? `&folder=${currentFolderId}` : ''}${currentCategory !== 'all' ? `&category=${currentCategory}` : ''}&sortBy=${sortBy}&sortOrder=${sortOrder}`)
                   }
                 }}
+                onTouchStart={(e) => handleItemTouchStart(e, photo.id, false, index, sortedFolders.length)}
+                onTouchMove={handleItemTouchMove}
+                onTouchEnd={handleItemTouchEnd}
                 onMouseEnter={(e) => !selectedIds.has(photo.id) && (e.currentTarget.style.background = 'var(--background-secondary)')}
                 onMouseLeave={(e) => !selectedIds.has(photo.id) && (e.currentTarget.style.background = 'transparent')}
               >
