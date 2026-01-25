@@ -98,19 +98,23 @@ export default function ViewerPage() {
           })
         }
 
-        const sortedData = [...filteredData].sort((a, b) => {
-          if (sortByParam === 'name') {
-            const nameA = (a.name || a.url.split('/').pop() || '').toLowerCase()
-            const nameB = (b.name || b.url.split('/').pop() || '').toLowerCase()
-            return sortOrderParam === 'asc'
-              ? nameA.localeCompare(nameB, 'ko')
-              : nameB.localeCompare(nameA, 'ko')
-          } else {
-            const dateA = new Date(a.created_at).getTime()
-            const dateB = new Date(b.created_at).getTime()
-            return sortOrderParam === 'asc' ? dateA - dateB : dateB - dateA
-          }
-        })
+        // photos/videos 카테고리는 페이지네이션 사용 - DB 순서 유지 (재정렬 안함)
+        let sortedData = filteredData
+        if (categoryParam !== 'photos' && categoryParam !== 'videos') {
+          sortedData = [...filteredData].sort((a, b) => {
+            if (sortByParam === 'name') {
+              const nameA = (a.name || a.url.split('/').pop() || '').toLowerCase()
+              const nameB = (b.name || b.url.split('/').pop() || '').toLowerCase()
+              return sortOrderParam === 'asc'
+                ? nameA.localeCompare(nameB, 'ko')
+                : nameB.localeCompare(nameA, 'ko')
+            } else {
+              const dateA = new Date(a.created_at).getTime()
+              const dateB = new Date(b.created_at).getTime()
+              return sortOrderParam === 'asc' ? dateA - dateB : dateB - dateA
+            }
+          })
+        }
 
         setPhotos(sortedData)
         const indexParam = searchParams.get('index')
@@ -193,29 +197,62 @@ export default function ViewerPage() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [goNext, goPrev, goBack])
 
-  // 터치/스와이프 지원
+  // 터치/스와이프 지원 (애니메이션 포함)
   const [touchStart, setTouchStart] = useState<number | null>(null)
+  const [touchCurrent, setTouchCurrent] = useState<number | null>(null)
+  const [isAnimating, setIsAnimating] = useState(false)
+  const [enterDirection, setEnterDirection] = useState<'left' | 'right' | null>(null)
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (isAnimating) return
     setTouchStart(e.touches[0].clientX)
+    setTouchCurrent(e.touches[0].clientX)
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStart === null || isAnimating) return
+    setTouchCurrent(e.touches[0].clientX)
   }
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchStart === null) return
+    if (touchStart === null || isAnimating) return
 
     const touchEnd = e.changedTouches[0].clientX
     const diff = touchStart - touchEnd
 
     if (Math.abs(diff) > 50) {
-      if (diff > 0) {
-        goNext()
-      } else {
-        goPrev()
+      if (diff > 0 && currentIndex < photos.length - 1) {
+        // 왼쪽으로 스와이프 -> 다음 이미지
+        setIsAnimating(true)
+        setEnterDirection('left')
+        // 바로 다음 이미지로 전환하고 애니메이션 적용
+        setCurrentIndex(prev => prev + 1)
+        setTimeout(() => {
+          setEnterDirection(null)
+          setIsAnimating(false)
+        }, 250)
+      } else if (diff < 0 && currentIndex > 0) {
+        // 오른쪽으로 스와이프 -> 이전 이미지
+        setIsAnimating(true)
+        setEnterDirection('right')
+        setCurrentIndex(prev => prev - 1)
+        setTimeout(() => {
+          setEnterDirection(null)
+          setIsAnimating(false)
+        }, 250)
       }
     }
 
     setTouchStart(null)
+    setTouchCurrent(null)
   }
+
+  // 드래그 오프셋 계산 (최대 화면 너비의 30%까지)
+  const rawOffset = touchStart !== null && touchCurrent !== null && !isAnimating
+    ? touchCurrent - touchStart
+    : 0
+  const maxOffset = typeof window !== 'undefined' ? window.innerWidth * 0.3 : 100
+  const dragOffset = Math.max(-maxOffset, Math.min(maxOffset, rawOffset))
 
   const handleImageLoad = () => {
     const currentUrl = photos[currentIndex]?.url
@@ -283,7 +320,7 @@ export default function ViewerPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-black flex items-center justify-center safe-area-top safe-area-bottom">
+      <main className="h-screen bg-black flex items-center justify-center safe-area-top safe-area-bottom overflow-hidden fixed inset-0">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
           <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-primary)' }}>
             <div className="w-6 h-6 border-2 border-black/20 border-t-black/60 rounded-full animate-spin" />
@@ -295,7 +332,7 @@ export default function ViewerPage() {
 
   if (photos.length === 0) {
     return (
-      <main className="min-h-screen bg-black flex items-center justify-center safe-area-top safe-area-bottom">
+      <main className="h-screen bg-black flex items-center justify-center safe-area-top safe-area-bottom overflow-hidden fixed inset-0">
         <div className="text-center animate-fade-in">
           <div className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center bg-zinc-800/50">
             <svg className="w-8 h-8 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -313,8 +350,9 @@ export default function ViewerPage() {
 
   return (
     <main
-      className="min-h-screen bg-black flex flex-col safe-area-top safe-area-bottom"
+      className="h-screen bg-black flex flex-col safe-area-top safe-area-bottom overflow-hidden fixed inset-0"
       onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
       {/* 헤더 */}
@@ -410,29 +448,39 @@ export default function ViewerPage() {
         )}
 
         {/* 이미지/비디오 */}
-        {currentPhoto.is_video || currentPhoto.name.match(/\.(mp4|webm|mov|avi|mkv)$/i) ? (
-          <video
-            key={currentPhoto.url}
-            src={currentSignedUrl}
-            controls
-            autoPlay
-            playsInline
-            className="max-h-screen max-w-full object-contain"
-            onLoadedData={() => setImageLoading(false)}
-            onCanPlay={() => setImageLoading(false)}
-          />
-        ) : (
-          <img
-            key={currentPhoto.url}
-            src={currentSignedUrl}
-            alt=""
-            className={`max-h-screen max-w-full object-contain select-none transition-opacity duration-300 ${
-              imageLoading ? 'opacity-0' : 'opacity-100'
-            }`}
-            draggable={false}
-            onLoad={handleImageLoad}
-          />
-        )}
+        <div
+          className={`flex items-center justify-center ${
+            enterDirection === 'left' ? 'animate-slide-in-left' :
+            enterDirection === 'right' ? 'animate-slide-in-right' : ''
+          }`}
+          style={{
+            transform: !enterDirection ? `translateX(${dragOffset}px)` : undefined,
+          }}
+        >
+          {currentPhoto.is_video || currentPhoto.name.match(/\.(mp4|webm|mov|avi|mkv)$/i) ? (
+            <video
+              key={currentPhoto.url}
+              src={currentSignedUrl}
+              controls
+              autoPlay
+              playsInline
+              className="max-h-screen max-w-full object-contain"
+              onLoadedData={() => setImageLoading(false)}
+              onCanPlay={() => setImageLoading(false)}
+            />
+          ) : (
+            <img
+              key={currentPhoto.url}
+              src={currentSignedUrl}
+              alt=""
+              className={`max-h-screen max-w-full object-contain select-none transition-opacity duration-300 ${
+                imageLoading ? 'opacity-0' : 'opacity-100'
+              }`}
+              draggable={false}
+              onLoad={handleImageLoad}
+            />
+          )}
+        </div>
 
         {/* 다음 버튼 - 데스크탑 */}
         <button

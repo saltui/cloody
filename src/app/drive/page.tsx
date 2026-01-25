@@ -1493,6 +1493,8 @@ export default function DrivePage() {
         return
       }
 
+      // 드래그 선택 중 스크롤 방지
+      e.preventDefault()
       setIsTouchDragging(true)
       lastTouchPosRef.current = { x: touch.clientX, y: touch.clientY }
 
@@ -1544,31 +1546,28 @@ export default function DrivePage() {
         }
       }
 
-      // 자동 스크롤 (화면 가장자리)
-      const container = gridContainerRef.current
-      if (container) {
-        const rect = container.getBoundingClientRect()
-        const scrollSpeed = 15
-        const edgeThreshold = 60
+      // 자동 스크롤 (화면 가장자리 - 뷰포트 기준)
+      const viewportHeight = window.innerHeight
+      const scrollSpeed = 15
+      const edgeThreshold = 80 // 상단/하단 80px 영역
 
-        // 기존 자동 스크롤 중지
-        if (autoScrollRef.current) {
-          clearInterval(autoScrollRef.current)
-          autoScrollRef.current = null
-        }
+      // 기존 자동 스크롤 중지
+      if (autoScrollRef.current) {
+        clearInterval(autoScrollRef.current)
+        autoScrollRef.current = null
+      }
 
-        // 상단/하단 가장자리 감지
-        if (touch.clientY < rect.top + edgeThreshold) {
-          // 위로 스크롤
-          autoScrollRef.current = setInterval(() => {
-            window.scrollBy(0, -scrollSpeed)
-          }, 16)
-        } else if (touch.clientY > rect.bottom - edgeThreshold) {
-          // 아래로 스크롤
-          autoScrollRef.current = setInterval(() => {
-            window.scrollBy(0, scrollSpeed)
-          }, 16)
-        }
+      // 상단/하단 가장자리 감지 (뷰포트 기준)
+      if (touch.clientY < edgeThreshold) {
+        // 위로 스크롤 (상단 가장자리)
+        autoScrollRef.current = setInterval(() => {
+          window.scrollBy(0, -scrollSpeed)
+        }, 16)
+      } else if (touch.clientY > viewportHeight - edgeThreshold - 68) {
+        // 아래로 스크롤 (하단 가장자리, 하단 탭바 68px 고려)
+        autoScrollRef.current = setInterval(() => {
+          window.scrollBy(0, scrollSpeed)
+        }, 16)
       }
     }
   }, [isSelecting, touchDragStart, touchDragStartItem])
@@ -1593,6 +1592,21 @@ export default function DrivePage() {
     touchStartPosRef.current = null
     lastTouchPosRef.current = null
   }, [])
+
+  // 터치 드래그 중 body 스크롤 방지
+  useEffect(() => {
+    if (isTouchDragging) {
+      document.body.style.overflow = 'hidden'
+      document.body.style.touchAction = 'none'
+    } else {
+      document.body.style.overflow = ''
+      document.body.style.touchAction = ''
+    }
+    return () => {
+      document.body.style.overflow = ''
+      document.body.style.touchAction = ''
+    }
+  }, [isTouchDragging])
 
   // 선택 모드에서 아이템 탭으로 선택 토글
   const handleItemTap = useCallback((e: React.MouseEvent | React.TouchEvent, itemId: string, isFolder: boolean, index?: number) => {
@@ -3771,6 +3785,8 @@ export default function DrivePage() {
       </nav>
 
       {/* 모바일 FAB (플로팅 액션 버튼) - TDS Style */}
+      {/* 더보기/업로드 탭에서는 숨김 */}
+      {!showMoreScreen && !showUploadPanel && (
       <div className="xl:hidden">
         {/* FAB 메뉴 배경 (딤 레이어) */}
         {showFabMenu && (
@@ -3854,6 +3870,7 @@ export default function DrivePage() {
           </svg>
         </button>
       </div>
+      )}
 
       {/* 더보기 화면 (모바일 전용 탭) */}
       {showMoreScreen && (
@@ -4057,20 +4074,17 @@ export default function DrivePage() {
             </div>
           </div>
           <div className="p-4" style={{ background: 'var(--background)' }}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>업로드 현황</h2>
-              {uploadQueue.length > 0 && (
+            {uploadQueue.length > 0 && (
+              <div className="flex items-center justify-end mb-4">
                 <button
-                  onClick={() => {
-                    // 완료된 항목만 삭제하는 로직 필요
-                  }}
+                  onClick={clearCompleted}
                   className="text-sm"
                   style={{ color: 'var(--foreground-muted)' }}
                 >
                   완료 항목 삭제
                 </button>
-              )}
-            </div>
+              </div>
+            )}
 
             {uploadQueue.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16">

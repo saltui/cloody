@@ -1456,3 +1456,35 @@ body {
   border: 1px solid var(--glass-border);
   border-radius: 0.25rem;
 }
+
+/* ===== Image Viewer Swipe Animations ===== */
+
+@keyframes slideInFromLeft {
+  from {
+    transform: translateX(30%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(-30%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-left {
+  animation: slideInFromLeft 0.25s ease-out forwards;
+}
+
+.animate-slide-in-right {
+  animation: slideInFromRight 0.25s ease-out forwards;
+}
