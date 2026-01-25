@@ -8,6 +8,7 @@ import { useUpload } from '@/lib/upload-context'
 import { useDownload } from '@/lib/download-context'
 import { useUser } from '@/lib/user-context'
 import { useDataCache, type CategoryFilter } from '@/lib/data-cache'
+import { useToast } from '@/components/Toast'
 import Sidebar, { FileCategory } from '@/components/Sidebar'
 import { Home, Image as ImageIcon, CloudUpload, Menu } from 'lucide-react'
 import { FileThumbnail, isMediaFile, getFileTypeLabel } from '@/lib/file-icons'
@@ -289,6 +290,7 @@ export default function DrivePage() {
   const { uploading, uploadQueue, uploadProgress, showUploadPanel, setShowUploadPanel, addToQueue, updateQueueItem, removeFromQueue, clearCompleted, clearAll } = useUpload()
   const { startDownload, startZipDownload } = useDownload()
   const { user, isLoading: userLoading } = useUser()
+  const { showToast } = useToast()
   const dataCache = useDataCache()
   const [photos, setPhotos] = useState<Photo[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
@@ -754,7 +756,7 @@ export default function DrivePage() {
 
     // 건너뛴 파일 알림
     if (skippedFiles.length > 0) {
-      alert(`다음 ${skippedFiles.length}개 파일을 준비할 수 없습니다.\n(타임아웃 또는 접근 불가)\n\n${skippedFiles.slice(0, 5).join('\n')}${skippedFiles.length > 5 ? `\n... 외 ${skippedFiles.length - 5}개` : ''}`)
+      showToast(`${skippedFiles.length}개 파일을 준비할 수 없습니다. (타임아웃 또는 접근 불가)`, 'error')
     }
 
     if (validFiles.length > 0) {
@@ -911,7 +913,7 @@ export default function DrivePage() {
 
       // iCloud 등에서 다운로드되지 않은 파일 경고
       if (skippedFiles.length > 0) {
-        alert(`다음 ${skippedFiles.length}개 파일을 업로드할 수 없습니다.\niCloud에서 기기로 다운로드 후 다시 시도해주세요.\n\n${skippedFiles.slice(0, 5).join('\n')}${skippedFiles.length > 5 ? `\n... 외 ${skippedFiles.length - 5}개` : ''}`)
+        showToast(`${skippedFiles.length}개 파일을 업로드할 수 없습니다. iCloud에서 다운로드 후 다시 시도해주세요.`, 'error')
       }
 
       // 파일이 있으면 바로 업로드 (폴더 피커 없이)
@@ -1404,7 +1406,7 @@ export default function DrivePage() {
       await fetchData(currentFolderId, searchParams.get('category') || 'all')
     } catch (error) {
       console.error('Delete error:', error)
-      alert('삭제 중 오류가 발생했습니다.')
+      showToast('삭제 중 오류가 발생했습니다.', 'error')
     } finally {
       setDeleting(false)
       setDeleteStatus('')
@@ -1858,7 +1860,7 @@ export default function DrivePage() {
       await fetchData(currentFolderId, searchParams.get('category') || 'all')
     } catch (error) {
       console.error('Delete error:', error)
-      alert('삭제 중 오류가 발생했습니다.')
+      showToast('삭제 중 오류가 발생했습니다.', 'error')
     } finally {
       setDeleting(false)
       setDeleteStatus('')
@@ -2201,7 +2203,7 @@ export default function DrivePage() {
               // 폴더 공유 링크 복사 (현재 URL 기반)
               const shareUrl = `${window.location.origin}/drive?folder=${folder.id}`
               await navigator.clipboard.writeText(shareUrl)
-              alert('링크가 복사되었습니다')
+              showToast('링크가 복사되었습니다', 'success')
             }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
             style={{ color: 'var(--foreground)' }}
@@ -2397,7 +2399,7 @@ export default function DrivePage() {
               // 이미지 URL 복사
               const imageUrl = `${window.location.origin}${toProxyUrl(photo.url)}`
               await navigator.clipboard.writeText(imageUrl)
-              alert('링크가 복사되었습니다')
+              showToast('링크가 복사되었습니다', 'success')
             }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
             style={{ color: 'var(--foreground)' }}
@@ -2422,7 +2424,7 @@ export default function DrivePage() {
                   const data = await res.json()
                   const shareUrl = `${window.location.origin}/share/${data.token}`
                   await navigator.clipboard.writeText(shareUrl)
-                  alert('공유 링크가 복사되었습니다')
+                  showToast('공유 링크가 복사되었습니다', 'success')
                 }
               } catch (error) {
                 console.error('Share error:', error)
@@ -2488,7 +2490,7 @@ export default function DrivePage() {
                 if (res.ok) {
                   const data = await res.json()
                   setPhotos(prev => [...prev, data.photo])
-                  alert('파일이 복사되었습니다')
+                  showToast('파일이 복사되었습니다', 'success')
                 }
               } catch (error) {
                 console.error('Copy error:', error)

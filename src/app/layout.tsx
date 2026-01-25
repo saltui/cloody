@@ -6,6 +6,7 @@ import { SignedUrlProvider } from "@/lib/signed-url-context";
 import { UserProvider } from "@/lib/user-context";
 import { TdsProvider } from "@/lib/tds-provider";
 import { DataCacheProvider } from "@/lib/data-cache";
+import { ToastProvider } from "@/components/Toast";
 import UploadPanel from "@/components/UploadPanel";
 import DownloadPanel from "@/components/DownloadPanel";
 import NavigationBlocker from "@/components/NavigationBlocker";
@@ -39,20 +40,22 @@ export default function RootLayout({
       <body>
         <ThemeProvider>
           <TdsProvider>
-            <UserProvider>
-              <DataCacheProvider>
-                <SignedUrlProvider>
-                  <UploadProvider>
-                    <DownloadProvider>
-                      <NavigationBlocker />
-                      {children}
-                      <UploadPanel />
-                      <DownloadPanel />
-                    </DownloadProvider>
-                  </UploadProvider>
-                </SignedUrlProvider>
-              </DataCacheProvider>
-            </UserProvider>
+            <ToastProvider>
+              <UserProvider>
+                <DataCacheProvider>
+                  <SignedUrlProvider>
+                    <UploadProvider>
+                      <DownloadProvider>
+                        <NavigationBlocker />
+                        {children}
+                        <UploadPanel />
+                        <DownloadPanel />
+                      </DownloadProvider>
+                    </UploadProvider>
+                  </SignedUrlProvider>
+                </DataCacheProvider>
+              </UserProvider>
+            </ToastProvider>
           </TdsProvider>
         </ThemeProvider>
       </body>

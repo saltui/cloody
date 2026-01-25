@@ -123,8 +123,11 @@ export function middleware(request: NextRequest) {
   const isImageApi = pathname.startsWith('/api/image/')  // 이미지 프록시는 공개
   const isApi = pathname.startsWith('/api/')
 
+  // 패스키 인증 API (로그인 시 사용)
+  const isPasskeyAuthApi = pathname === '/api/passkey/authenticate'
+
   // API 인증 경로는 통과
-  if (isAuthApi || isSessionRefreshApi || isShareApi || isImageApi) {
+  if (isAuthApi || isSessionRefreshApi || isShareApi || isImageApi || isPasskeyAuthApi) {
     return addSecurityHeaders(NextResponse.next())
   }
 

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useDownload } from '@/lib/download-context'
 import { useUser } from '@/lib/user-context'
 import { useDataCache } from '@/lib/data-cache'
+import { useToast } from '@/components/Toast'
 
 // R2 URL을 프록시 URL로 즉시 변환
 function toProxyUrl(url: string): string {
@@ -59,6 +60,7 @@ export default function ViewerPage() {
   const searchParams = useSearchParams()
   const { startDownload } = useDownload()
   const { user } = useUser()
+  const { showToast } = useToast()
   const dataCache = useDataCache()
 
   useEffect(() => {
@@ -449,7 +451,7 @@ export default function ViewerPage() {
       setShowShareModal(true)
     } catch (error) {
       console.error('Share error:', error)
-      alert('공유 링크 생성에 실패했습니다.')
+      showToast('공유 링크 생성에 실패했습니다.', 'error')
     } finally {
       setSharing(false)
     }

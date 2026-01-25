@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { FileThumbnail, isMediaFile, getFileTypeLabel } from '@/lib/file-icons'
+import { useToast } from '@/components/Toast'
 
 interface SharedPhoto {
   id: string
@@ -48,6 +49,7 @@ function toProxyUrl(originalUrl: string): string {
 export default function SharePage() {
   const params = useParams()
   const token = params.token as string
+  const { showToast } = useToast()
 
   const [photo, setPhoto] = useState<SharedPhoto | null>(null)
   const [loading, setLoading] = useState(true)
@@ -106,7 +108,7 @@ export default function SharePage() {
       URL.revokeObjectURL(url)
     } catch (err) {
       console.error('Download error:', err)
-      alert('다운로드에 실패했습니다.')
+      showToast('다운로드에 실패했습니다.', 'error')
     } finally {
       setDownloading(false)
     }

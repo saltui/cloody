@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
 import { useUser } from '@/lib/user-context'
+import { useToast } from '@/components/Toast'
 
 type SettingsTab = 'profile' | 'account' | 'security' | 'preferences'
 
@@ -13,15 +14,23 @@ interface TwoFASetup {
   qrCode?: string
 }
 
+interface Passkey {
+  id: string
+  name: string
+  device_type: string
+  backed_up: boolean
+  created_at: string
+  last_used_at: string | null
+}
+
 export default function SettingsPage() {
   const router = useRouter()
   const { theme, toggleTheme } = useTheme()
   const { user, logout, updateUser } = useUser()
+  const { showToast } = useToast()
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile')
   const [isLoading, setIsLoading] = useState(false)
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
 
   // 프로필 상태
   const [displayName, setDisplayName] = useState('')
@@ -32,6 +41,10 @@ export default function SettingsPage() {
   // 2FA 상태
   const [twoFASetup, setTwoFASetup] = useState<TwoFASetup | null>(null)
   const [totpCode, setTotpCode] = useState('')
+
+  // 패스키 상태
+  const [passkeys, setPasskeys] = useState<Passkey[]>([])
+  const [isRegisteringPasskey, setIsRegisteringPasskey] = useState(false)
 
   // 스토리지 사용량
   const [storageUsed, setStorageUsed] = useState<number>(0)
@@ -55,7 +68,91 @@ export default function SettingsPage() {
       .then(res => res.json())
       .then(data => setTwoFASetup(data))
       .catch(() => {})
+
+    // 패스키 목록 가져오기
+    fetchPasskeys()
   }, [])
+
+  const fetchPasskeys = async () => {
+    try {
+      const res = await fetch('/api/passkey')
+      if (res.ok) {
+        const data = await res.json()
+        setPasskeys(data.passkeys || [])
+      }
+    } catch {
+      // 패스키 조회 실패 (무시)
+    }
+  }
+
+  // 패스키 등록
+  const handleRegisterPasskey = async () => {
+    if (!('PublicKeyCredential' in window)) {
+      showToast('이 브라우저는 패스키를 지원하지 않습니다.', 'error')
+      return
+    }
+
+    setIsRegisteringPasskey(true)
+
+    try {
+      // 1. 등록 옵션 가져오기
+      const optionsRes = await fetch('/api/passkey/register')
+      if (!optionsRes.ok) {
+        throw new Error('패스키 등록 옵션을 가져올 수 없습니다.')
+      }
+      const options = await optionsRes.json()
+
+      // 2. WebAuthn API 호출
+      const { startRegistration } = await import('@simplewebauthn/browser')
+      const credential = await startRegistration({ optionsJSON: options })
+
+      // 3. 서버에 검증 요청
+      const verifyRes = await fetch('/api/passkey/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response: credential }),
+      })
+
+      if (!verifyRes.ok) {
+        const data = await verifyRes.json()
+        throw new Error(data.error || '패스키 등록에 실패했습니다.')
+      }
+
+      showToast('패스키가 등록되었습니다!', 'success')
+      fetchPasskeys()
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') {
+        showToast('패스키 등록이 취소되었습니다.', 'error')
+      } else {
+        showToast(err instanceof Error ? err.message : '패스키 등록에 실패했습니다.', 'error')
+      }
+    } finally {
+      setIsRegisteringPasskey(false)
+    }
+  }
+
+  // 패스키 삭제
+  const handleDeletePasskey = async (passkeyId: string) => {
+    if (!confirm('이 패스키를 삭제하시겠습니까?')) return
+
+    try {
+      const res = await fetch('/api/passkey/register', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passkeyId }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error)
+      }
+
+      showToast('패스키가 삭제되었습니다.', 'success')
+      fetchPasskeys()
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '패스키 삭제에 실패했습니다.', 'error')
+    }
+  }
 
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 B'
@@ -68,8 +165,6 @@ export default function SettingsPage() {
   // 프로필 업데이트
   const handleProfileUpdate = async () => {
     setIsLoading(true)
-    setError('')
-    setMessage('')
 
     try {
       const res = await fetch('/api/user/profile', {
@@ -84,9 +179,9 @@ export default function SettingsPage() {
       }
 
       updateUser({ display_name: displayName })
-      setMessage('프로필이 업데이트되었습니다.')
+      showToast('프로필이 업데이트되었습니다.', 'success')
     } catch (err) {
-      setError(err instanceof Error ? err.message : '오류가 발생했습니다.')
+      showToast(err instanceof Error ? err.message : '오류가 발생했습니다.', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -106,7 +201,6 @@ export default function SettingsPage() {
     if (totpCode.length !== 6) return
 
     setIsLoading(true)
-    setError('')
 
     try {
       const res = await fetch('/api/2fa/setup', {
@@ -118,14 +212,14 @@ export default function SettingsPage() {
       const data = await res.json()
 
       if (data.success) {
-        setMessage('2FA 인증이 확인되었습니다.')
+        showToast('2FA 인증이 확인되었습니다.', 'success')
         setTotpCode('')
       } else {
-        setError(data.error || '잘못된 코드입니다.')
+        showToast(data.error || '잘못된 코드입니다.', 'error')
         setTotpCode('')
       }
     } catch {
-      setError('확인에 실패했습니다.')
+      showToast('확인에 실패했습니다.', 'error')
     } finally {
       setIsLoading(false)
     }
@@ -201,18 +295,6 @@ export default function SettingsPage() {
 
           {/* 메인 콘텐츠 */}
           <div className="flex-1 space-y-4 sm:space-y-6">
-            {/* 메시지 표시 */}
-            {message && (
-              <div className="p-3 sm:p-4 rounded-xl animate-fade-in" style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)' }}>
-                <p className="text-sm text-green-500">{message}</p>
-              </div>
-            )}
-            {error && (
-              <div className="p-3 sm:p-4 rounded-xl animate-fade-in" style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                <p className="text-sm text-red-500">{error}</p>
-              </div>
-            )}
-
             {/* 프로필 탭 */}
             {activeTab === 'profile' && (
               <div className="space-y-4 sm:space-y-6 animate-fade-in">
@@ -348,6 +430,89 @@ export default function SettingsPage() {
             {/* 보안 탭 */}
             {activeTab === 'security' && (
               <div className="space-y-4 sm:space-y-6 animate-fade-in">
+                {/* 패스키 */}
+                <div className="tds-card p-4 sm:p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(34, 197, 94, 0.1)' }}>
+                      <svg className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: '#22c55e' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 className="tds-text-body font-semibold">패스키</h2>
+                      <p className="tds-text-caption tds-text-secondary">
+                        Face ID, Touch ID로 비밀번호 없이 로그인
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 등록된 패스키 목록 */}
+                  {passkeys.length > 0 && (
+                    <div className="space-y-2 mb-4">
+                      {passkeys.map((passkey) => (
+                        <div
+                          key={passkey.id}
+                          className="flex items-center gap-3 p-3 rounded-xl"
+                          style={{ background: 'var(--background-secondary)' }}
+                        >
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
+                            <svg className="w-4 h-4" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                            </svg>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="tds-text-body font-medium truncate">{passkey.name}</p>
+                            <p className="tds-text-caption tds-text-tertiary">
+                              {passkey.last_used_at
+                                ? `마지막 사용: ${new Date(passkey.last_used_at).toLocaleDateString('ko-KR')}`
+                                : `등록일: ${new Date(passkey.created_at).toLocaleDateString('ko-KR')}`}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleDeletePasskey(passkey.id)}
+                            className="p-2 rounded-lg transition-colors hover:bg-red-500/10"
+                            style={{ color: 'var(--error)' }}
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 패스키 등록 */}
+                  <button
+                    onClick={handleRegisterPasskey}
+                    disabled={isRegisteringPasskey}
+                    className="tds-btn tds-btn-secondary w-full flex items-center justify-center gap-2"
+                  >
+                    {isRegisteringPasskey ? (
+                      <>
+                        <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <circle cx="12" cy="12" r="10" opacity="0.25" />
+                          <path d="M12 2a10 10 0 0 1 10 10" />
+                        </svg>
+                        등록 중...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                        패스키 추가
+                      </>
+                    )}
+                  </button>
+
+                  {!('PublicKeyCredential' in window) && (
+                    <p className="tds-text-caption tds-text-tertiary mt-2 text-center">
+                      이 브라우저는 패스키를 지원하지 않습니다.
+                    </p>
+                  )}
+                </div>
+
                 {/* 2FA */}
                 <div className="tds-card p-4 sm:p-6">
                   <div className="flex items-center gap-3 mb-4">
@@ -367,17 +532,39 @@ export default function SettingsPage() {
                   {twoFASetup?.qrCode && (
                     <div className="space-y-4">
                       <p className="tds-text-body tds-text-secondary">
-                        Google Authenticator, Authy 등의 인증 앱에서 아래 QR 코드를 스캔하세요.
+                        인증 앱(Google Authenticator, Authy 등)에 아래 키를 추가하세요.
                       </p>
-                      <div className="flex flex-col items-center">
-                        <div className="p-3 sm:p-4 rounded-xl bg-white" style={{ border: '1px solid var(--border-default)' }}>
-                          <img src={twoFASetup.qrCode} alt="2FA QR Code" className="w-32 h-32 sm:w-40 sm:h-40" />
+
+                      {/* 시크릿 키 (모바일 친화적) */}
+                      {twoFASetup.secret && (
+                        <div className="p-3 rounded-xl" style={{ background: 'var(--background-secondary)' }}>
+                          <p className="tds-text-caption tds-text-tertiary mb-2">시크릿 키</p>
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 font-mono text-sm sm:text-base break-all" style={{ color: 'var(--foreground-primary)' }}>
+                              {twoFASetup.secret}
+                            </code>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(twoFASetup.secret!)
+                                showToast('시크릿 키가 복사되었습니다.', 'success')
+                              }}
+                              className="p-2 rounded-lg shrink-0 transition-colors"
+                              style={{ background: 'var(--background-tertiary)' }}
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
-                        {twoFASetup.secret && (
-                          <p className="mt-3 tds-text-caption font-mono tds-text-tertiary">
-                            {twoFASetup.secret}
-                          </p>
-                        )}
+                      )}
+
+                      {/* QR 코드 (데스크톱용) */}
+                      <div className="hidden sm:flex flex-col items-center">
+                        <p className="tds-text-caption tds-text-tertiary mb-2">또는 QR 코드 스캔</p>
+                        <div className="p-3 rounded-xl bg-white" style={{ border: '1px solid var(--border-default)' }}>
+                          <img src={twoFASetup.qrCode} alt="2FA QR Code" className="w-32 h-32" />
+                        </div>
                       </div>
 
                       <div className="flex gap-2 sm:gap-3">

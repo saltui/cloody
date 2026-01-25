@@ -18,6 +18,8 @@ export type AuditAction =
   | 'TRASH_RESTORE'
   | 'TRASH_PERMANENT_DELETE'
   | 'TRASH_EMPTY'
+  | 'PASSKEY_REGISTERED'
+  | 'PASSKEY_DELETED'
 
 interface AuditLogEntry {
   action: AuditAction
