@@ -2362,7 +2362,8 @@ export default function DrivePage() {
       )}
 
       {/* 메인 컨텐츠 (사이드바 여백 + 모바일 하단 탭 여백) */}
-      <div className="xl:pl-64 pb-20 xl:pb-0">
+      {/* 모바일에서 업로드/더보기 탭 활성화시 숨김 */}
+      <div className={`xl:pl-64 pb-20 xl:pb-0 ${(showUploadPanel || showMoreScreen) ? 'hidden xl:block' : ''}`}>
         {/* 헤더 */}
         <header className="header safe-area-top">
           <div className="header-content">
@@ -3854,9 +3855,9 @@ export default function DrivePage() {
         </button>
       </div>
 
-      {/* 더보기 화면 (모바일 전용 전체 화면) */}
+      {/* 더보기 화면 (모바일 전용 탭) */}
       {showMoreScreen && (
-        <div className="fixed inset-x-0 top-0 bottom-[calc(68px+env(safe-area-inset-bottom))] xl:hidden z-[60] animate-fade-in" style={{ background: 'var(--background)' }}>
+        <div className="xl:hidden min-h-screen pb-20" style={{ background: 'var(--background)' }}>
           {/* 헤더 */}
           <div className="sticky top-0 z-10 safe-area-top" style={{ background: 'var(--background)', borderBottom: '1px solid var(--glass-border)' }}>
             <div className="flex items-center h-14 px-4">
@@ -4046,10 +4047,16 @@ export default function DrivePage() {
         </div>
       )}
 
-      {/* 업로드 현황 패널 (모바일) */}
+      {/* 업로드 현황 패널 (모바일 탭) */}
       {showUploadPanel && (
-        <div className="fixed inset-0 xl:hidden z-30" style={{ top: '56px', bottom: '56px' }}>
-          <div className="h-full overflow-y-auto p-4" style={{ background: 'var(--background)' }}>
+        <div className="xl:hidden min-h-screen pb-20" style={{ background: 'var(--background)' }}>
+          {/* 헤더 */}
+          <div className="sticky top-0 z-10 safe-area-top" style={{ background: 'var(--background)', borderBottom: '1px solid var(--glass-border)' }}>
+            <div className="flex items-center h-14 px-4">
+              <h1 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>업로드</h1>
+            </div>
+          </div>
+          <div className="p-4" style={{ background: 'var(--background)' }}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>업로드 현황</h2>
               {uploadQueue.length > 0 && (
