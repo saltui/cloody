@@ -3982,7 +3982,7 @@ export default function DrivePage() {
               </button>
             </div>
 
-            <div className="tds-modal-body space-y-5 !px-0">
+            <div className="tds-modal-body space-y-5" style={{ padding: '16px 0' }}>
               {/* 썸네일 프리뷰 */}
               <div className="w-full aspect-square max-w-[120px] mx-auto rounded-xl overflow-hidden" style={{ background: 'var(--background-tertiary)' }}>
                 {isMediaFile(infoPhoto.name) ? (
@@ -4009,19 +4009,19 @@ export default function DrivePage() {
                 <div className="space-y-0">
                   <div className="flex justify-between items-center py-2.5 px-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
                     <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>이름</span>
-                    <span className="text-sm font-medium truncate ml-4 text-right" style={{ color: 'var(--foreground)' }}>
+                    <span className="text-sm font-medium truncate ml-4" style={{ color: 'var(--foreground)' }}>
                       {infoPhoto.name || infoPhoto.url.split('/').pop()}
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-2.5 px-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
                     <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>저장 위치</span>
-                    <span className="text-sm font-medium text-right" style={{ color: 'var(--foreground)' }}>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
                       Cloody{infoPhoto.folder_id ? ` > ${allFolders.find(f => f.id === infoPhoto.folder_id)?.name || '폴더'}` : ''}
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-2.5 px-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
                     <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>크기</span>
-                    <span className="text-sm font-medium text-right" style={{ color: 'var(--foreground)' }}>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
                       {infoPhoto.file_size ? (
                         infoPhoto.file_size >= 1024 * 1024
                           ? `${(infoPhoto.file_size / (1024 * 1024)).toFixed(2)} MB`
@@ -4031,13 +4031,13 @@ export default function DrivePage() {
                   </div>
                   <div className="flex justify-between items-center py-2.5 px-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
                     <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>유형</span>
-                    <span className="text-sm font-medium text-right" style={{ color: 'var(--foreground)' }}>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
                       {getFileTypeLabel(infoPhoto.name)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-2.5 px-5">
                     <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>수정 일시</span>
-                    <span className="text-sm font-medium text-right" style={{ color: 'var(--foreground)' }}>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
                       {new Date(infoPhoto.created_at).toLocaleDateString('ko-KR', {
                         year: 'numeric',
                         month: '2-digit',
@@ -4078,7 +4078,7 @@ export default function DrivePage() {
               </button>
             </div>
 
-            <div className="tds-modal-body space-y-5 !px-0">
+            <div className="tds-modal-body space-y-5" style={{ padding: '16px 0' }}>
               {/* 폴더 아이콘 프리뷰 */}
               <div className="w-32 h-32 mx-auto rounded-xl flex items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
                 <svg className="w-16 h-16" style={{ color: 'var(--accent-primary)', opacity: 0.7 }} fill="currentColor" viewBox="0 0 24 24">
@@ -4092,17 +4092,17 @@ export default function DrivePage() {
                 <div className="space-y-0">
                   <div className="flex justify-between items-center py-2.5 px-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
                     <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>이름</span>
-                    <span className="text-sm font-medium truncate ml-4 text-right" style={{ color: 'var(--foreground)' }}>{infoFolder.name}</span>
+                    <span className="text-sm font-medium truncate ml-4" style={{ color: 'var(--foreground)' }}>{infoFolder.name}</span>
                   </div>
                   <div className="flex justify-between items-center py-2.5 px-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
                     <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>저장 위치</span>
-                    <span className="text-sm font-medium text-right" style={{ color: 'var(--foreground)' }}>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
                       {infoFolder.parent_id ? folders.find(f => f.id === infoFolder.parent_id)?.name || 'Cloody' : 'Cloody'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-2.5 px-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
                     <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>항목</span>
-                    <span className="text-sm font-medium text-right" style={{ color: 'var(--foreground)' }}>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
                       {infoFolderCounts ? (() => {
                         const { files: fileCount, folders: folderCount } = infoFolderCounts
                         const total = fileCount + folderCount
@@ -4118,7 +4118,7 @@ export default function DrivePage() {
                   </div>
                   <div className="flex justify-between items-center py-2.5 px-5">
                     <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>수정 일시</span>
-                    <span className="text-sm font-medium text-right" style={{ color: 'var(--foreground)' }}>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
                       {new Date(infoFolder.created_at).toLocaleDateString('ko-KR', {
                         year: 'numeric',
                         month: '2-digit',

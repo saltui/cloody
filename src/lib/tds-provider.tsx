@@ -664,22 +664,23 @@ const globalStyles = css`
 
   .tds-modal {
     position: fixed;
-    top: env(safe-area-inset-top, 0);
+    bottom: 0;
     left: 0;
     right: 0;
     background: var(--background, #ffffff);
-    border-radius: 0 0 20px 20px;
+    border-radius: 20px 20px 0 0;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     z-index: 101;
-    animation: tds-slide-down 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+    animation: tds-slide-up 0.3s cubic-bezier(0.32, 0.72, 0, 1);
     max-height: 85vh;
+    padding-bottom: env(safe-area-inset-bottom, 0);
   }
 
-  @keyframes tds-slide-down {
+  @keyframes tds-slide-up {
     from {
-      transform: translateY(-100%);
+      transform: translateY(100%);
       opacity: 0;
     }
     to {
@@ -763,7 +764,7 @@ const globalStyles = css`
   }
 
   .tds-modal-footer {
-    padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+    padding: 12px 20px;
     display: flex;
     gap: 10px;
     border-top: 1px solid var(--glass-border, rgba(0, 0, 0, 0.06));
