@@ -7,7 +7,7 @@ import { useTheme } from '@/lib/theme'
 import { useUpload } from '@/lib/upload-context'
 import { useDownload } from '@/lib/download-context'
 import { useUser } from '@/lib/user-context'
-import { useDataCache } from '@/lib/data-cache'
+import { useDataCache, type CategoryFilter } from '@/lib/data-cache'
 import Sidebar, { FileCategory } from '@/components/Sidebar'
 import { Home, Image as ImageIcon, CloudUpload, Menu } from 'lucide-react'
 
@@ -253,6 +253,12 @@ export default function DrivePage() {
   const [breadcrumbs, setBreadcrumbs] = useState<Folder[]>([])
   const [loading, setLoading] = useState(true)
   const [isInitialLoad, setIsInitialLoad] = useState(true)
+
+  // 무한 스크롤 페이지네이션
+  const [hasMore, setHasMore] = useState(true)
+  const [cursor, setCursor] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const loadMoreRef = useRef<HTMLDivElement>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [selectedFolderIds, setSelectedFolderIds] = useState<Set<string>>(new Set())
   const [lastSelectedIndex, setLastSelectedIndex] = useState<{ type: 'photo' | 'folder', index: number } | null>(null)
@@ -265,6 +271,26 @@ export default function DrivePage() {
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null)
   const [editFolderName, setEditFolderName] = useState('')
   const [folderMenuId, setFolderMenuId] = useState<string | null>(null)
+  const [folderMenuPosition, setFolderMenuPosition] = useState<{ x: number; y: number } | null>(null)
+  const closeFolderMenu = () => {
+    setFolderMenuId(null)
+    setFolderMenuPosition(null)
+  }
+
+  // 파일 메뉴 관련
+  const [photoMenuId, setPhotoMenuId] = useState<string | null>(null)
+  const [photoMenuPosition, setPhotoMenuPosition] = useState<{ x: number; y: number } | null>(null)
+  const closePhotoMenu = () => {
+    setPhotoMenuId(null)
+    setPhotoMenuPosition(null)
+  }
+  const [editingPhoto, setEditingPhoto] = useState<Photo | null>(null)
+  const [editPhotoName, setEditPhotoName] = useState('')
+
+  // 정보 모달 관련
+  const [infoPhoto, setInfoPhoto] = useState<Photo | null>(null)
+  const [infoFolder, setInfoFolder] = useState<Folder | null>(null)
+  const [infoFolderCounts, setInfoFolderCounts] = useState<{ files: number; folders: number } | null>(null)
 
   // 폴더 선택 업로드 관련
   const [showFolderPicker, setShowFolderPicker] = useState(false)
@@ -305,6 +331,7 @@ export default function DrivePage() {
   const [dragSelectCurrent, setDragSelectCurrent] = useState<{ x: number; y: number } | null>(null)
   const [isDragSelecting, setIsDragSelecting] = useState(false)
   const gridContainerRef = useRef<HTMLDivElement>(null)
+  const listContainerRef = useRef<HTMLDivElement>(null)
 
   // 모바일 터치 선택 관련
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -349,7 +376,14 @@ export default function DrivePage() {
       return
     }
 
-    setLoading(true)
+    // 초기 로딩일 때만 로딩 표시 (캐시 데이터가 있으면 바로 표시)
+    if (isInitialLoad) {
+      setLoading(true)
+    }
+
+    // 페이지네이션 초기화
+    setCursor(0)
+    setHasMore(true)
 
     // 캐시에서 폴더 데이터 가져오기
     const fetchedFolders = await dataCache.getFolders(user.id)
@@ -362,21 +396,58 @@ export default function DrivePage() {
 
     await buildBreadcrumbs(folderId, fetchedFolders)
 
-    // 카테고리가 'all'이 아니면 모든 폴더의 파일을 가져옴 (필터링은 클라이언트에서)
     // 카테고리가 'all'이면 현재 폴더의 파일만 가져옴
+    // 카테고리가 photos/videos면 페이지네이션으로 가져옴
     if (category === 'all') {
       // 캐시에서 현재 폴더의 사진 가져오기
       const photosData = await dataCache.getPhotos(user.id, folderId)
       setPhotos(photosData as Photo[])
+      setHasMore(false) // 폴더 뷰는 전체 로드
+    } else if (category === 'photos' || category === 'videos') {
+      // 페이지네이션으로 첫 페이지 가져오기
+      const result = await dataCache.getPhotosPaginated(user.id, {
+        category: category as CategoryFilter,
+        limit: 40,
+        cursor: 0,
+      })
+      setPhotos(result.data as Photo[])
+      setHasMore(result.hasMore)
+      setCursor(result.nextCursor)
     } else {
-      // category !== 'all'이면 전체 파일 가져옴 (캐시 사용)
+      // documents 등 기타 카테고리는 전체 로드 (클라이언트 필터링)
       const allPhotos = await dataCache.getAllPhotos(user.id)
       setPhotos(allPhotos as Photo[])
+      setHasMore(false)
     }
 
     setLoading(false)
     setIsInitialLoad(false)
-  }, [buildBreadcrumbs, user?.id, dataCache])
+  }, [buildBreadcrumbs, user?.id, dataCache, isInitialLoad])
+
+  // 무한 스크롤: 더 불러오기
+  const loadMore = useCallback(async () => {
+    const category = searchParams.get('category') || 'all'
+    if (!user?.id || loadingMore || !hasMore) return
+    if (category !== 'photos' && category !== 'videos') return
+
+    setLoadingMore(true)
+
+    try {
+      const result = await dataCache.getPhotosPaginated(user.id, {
+        category: category as CategoryFilter,
+        limit: 40,
+        cursor,
+      })
+
+      setPhotos(prev => [...prev, ...(result.data as Photo[])])
+      setHasMore(result.hasMore)
+      setCursor(result.nextCursor)
+    } catch (error) {
+      console.error('Load more error:', error)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [user?.id, loadingMore, hasMore, cursor, searchParams, dataCache])
 
   const fetchStorageUsage = useCallback(async () => {
     try {
@@ -392,13 +463,21 @@ export default function DrivePage() {
     }
   }, [])
 
+  // 이전 폴더 ID 추적 (폴더 변경 시에만 선택 초기화)
+  const prevFolderIdRef = useRef<string | null>(null)
+
   useEffect(() => {
     const folderId = searchParams.get('folder')
     const category = searchParams.get('category') || 'all'
+
+    // 폴더가 변경된 경우에만 선택 상태 초기화
+    if (prevFolderIdRef.current !== folderId) {
+      setSelectedIds(new Set())
+      setSelectedFolderIds(new Set())
+      prevFolderIdRef.current = folderId
+    }
+
     setCurrentFolderId(folderId)
-    // 페이지 이동/새로고침 시 선택 상태 초기화
-    setSelectedIds(new Set())
-    setSelectedFolderIds(new Set())
     fetchData(folderId, category)
     fetchStorageUsage()
   }, [searchParams, fetchData, fetchStorageUsage])
@@ -414,6 +493,57 @@ export default function DrivePage() {
       }
     }
   }, [])
+
+  // 무한 스크롤: Intersection Observer
+  useEffect(() => {
+    const category = searchParams.get('category') || 'all'
+    // photos/videos 탭에서만 무한 스크롤 활성화
+    if (category !== 'photos' && category !== 'videos') return
+    if (!loadMoreRef.current) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          loadMore()
+        }
+      },
+      { threshold: 0.1, rootMargin: '100px' }
+    )
+
+    observer.observe(loadMoreRef.current)
+    return () => observer.disconnect()
+  }, [searchParams, hasMore, loadingMore, loadMore])
+
+  // 폴더 정보 모달 - 내부 항목 수 가져오기
+  useEffect(() => {
+    if (!infoFolder || !user) {
+      setInfoFolderCounts(null)
+      return
+    }
+
+    const fetchFolderCounts = async () => {
+      // 파일 수 가져오기
+      const { count: fileCount } = await supabase
+        .from('photos')
+        .select('*', { count: 'exact', head: true })
+        .eq('folder_id', infoFolder.id)
+        .eq('user_id', user.id)
+
+      // 하위 폴더 수 가져오기
+      const { count: folderCount } = await supabase
+        .from('folders')
+        .select('*', { count: 'exact', head: true })
+        .eq('parent_id', infoFolder.id)
+        .eq('user_id', user.id)
+
+      setInfoFolderCounts({
+        files: fileCount || 0,
+        folders: folderCount || 0
+      })
+    }
+
+    fetchFolderCounts()
+  }, [infoFolder, user])
 
   // 파일 선택 시
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1195,15 +1325,36 @@ export default function DrivePage() {
     await fetchData(currentFolderId, searchParams.get('category') || 'all')
   }
 
-  // 드래그 선택 핸들러
-  const handleDragSelectStart = (e: React.MouseEvent) => {
+  const handleRenamePhoto = async () => {
+    if (!editingPhoto || !editPhotoName.trim()) return
+
+    await supabase.from('photos')
+      .update({ name: editPhotoName.trim() })
+      .eq('id', editingPhoto.id)
+
+    // 로컬 상태도 업데이트
+    setPhotos(prev => prev.map(p =>
+      p.id === editingPhoto.id ? { ...p, name: editPhotoName.trim() } : p
+    ))
+
+    setEditingPhoto(null)
+    setEditPhotoName('')
+  }
+
+  // 현재 활성화된 드래그 컨테이너
+  const activeDragContainerRef = useRef<HTMLDivElement | null>(null)
+
+  // 드래그 선택 핸들러 (그리드/리스트 공용)
+  const handleDragSelectStart = (e: React.MouseEvent, containerRef: React.RefObject<HTMLDivElement | null>) => {
     // 좌클릭만, 그리고 아이템 위에서 시작하지 않을 때만
     if (e.button !== 0) return
     const target = e.target as HTMLElement
-    if (target.closest('.image-item, .folder-item, button, input, .modal-backdrop')) return
+    if (target.closest('.image-item, .folder-item, .list-item, button, input, .modal-backdrop, .tds-modal-backdrop, .tds-dialog-backdrop')) return
 
-    const container = gridContainerRef.current
+    const container = containerRef.current
     if (!container) return
+
+    activeDragContainerRef.current = container
 
     const rect = container.getBoundingClientRect()
     const x = e.clientX - rect.left + container.scrollLeft
@@ -1223,7 +1374,7 @@ export default function DrivePage() {
   const handleDragSelectMove = (e: React.MouseEvent) => {
     if (!isDragSelecting || !dragSelectStart) return
 
-    const container = gridContainerRef.current
+    const container = activeDragContainerRef.current
     if (!container) return
 
     const rect = container.getBoundingClientRect()
@@ -1242,8 +1393,8 @@ export default function DrivePage() {
     const newSelectedIds = new Set<string>()
     const newSelectedFolderIds = new Set<string>()
 
-    // 폴더 체크
-    container.querySelectorAll('.folder-item').forEach((el) => {
+    // 폴더 체크 (그리드 & 리스트)
+    container.querySelectorAll('[data-folder-id]').forEach((el) => {
       const itemRect = el.getBoundingClientRect()
       const itemLeft = itemRect.left - rect.left + container.scrollLeft
       const itemTop = itemRect.top - rect.top + container.scrollTop
@@ -1257,8 +1408,8 @@ export default function DrivePage() {
       }
     })
 
-    // 사진 체크
-    container.querySelectorAll('.image-item').forEach((el) => {
+    // 사진 체크 (그리드 & 리스트)
+    container.querySelectorAll('[data-photo-id]').forEach((el) => {
       const itemRect = el.getBoundingClientRect()
       const itemLeft = itemRect.left - rect.left + container.scrollLeft
       const itemTop = itemRect.top - rect.top + container.scrollTop
@@ -1280,6 +1431,7 @@ export default function DrivePage() {
     setIsDragSelecting(false)
     setDragSelectStart(null)
     setDragSelectCurrent(null)
+    activeDragContainerRef.current = null
   }
 
   // 모바일: 길게 누르기로 선택 모드 진입
@@ -1469,7 +1621,7 @@ export default function DrivePage() {
   }, [isSelecting, isTouchDragging])
 
   const handleDeleteFolder = async (folderId: string) => {
-    setFolderMenuId(null)
+    closeFolderMenu()
 
     if (!confirm('폴더와 모든 내용을 삭제할까요?')) return
 
@@ -1666,6 +1818,12 @@ export default function DrivePage() {
 
   // 정렬된 사진 목록
   const sortedPhotos = useMemo(() => {
+    // photos/videos 카테고리는 페이지네이션 사용 - DB 순서 유지 (재정렬 안함)
+    if (currentCategory === 'photos' || currentCategory === 'videos') {
+      return filteredPhotos
+    }
+
+    // 다른 카테고리는 클라이언트에서 정렬
     return [...filteredPhotos].sort((a, b) => {
       if (sortBy === 'name') {
         const nameA = (a.name || a.url.split('/').pop() || '').toLowerCase()
@@ -1679,7 +1837,7 @@ export default function DrivePage() {
         return sortOrder === 'asc' ? dateA - dateB : dateB - dateA
       }
     })
-  }, [filteredPhotos, sortBy, sortOrder])
+  }, [filteredPhotos, sortBy, sortOrder, currentCategory])
 
   // 정렬된 폴더 목록
   const sortedFolders = useMemo(() => {
@@ -1702,58 +1860,458 @@ export default function DrivePage() {
     sortedPhotosRef.current = sortedPhotos
   }, [sortedFolders, sortedPhotos])
 
+  // 메뉴 외부 클릭 시 닫기
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      // 메뉴 버튼이나 메뉴 내부를 클릭한 경우 무시
+      if (target.closest('[data-menu-button]') || target.closest('[data-menu-dropdown]')) {
+        return
+      }
+      setFolderMenuId(null)
+      setFolderMenuPosition(null)
+      setPhotoMenuId(null)
+      setPhotoMenuPosition(null)
+    }
+
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [])
+
   // 폴더 컨텍스트 메뉴 컴포넌트
-  const FolderContextMenu = ({ folder }: { folder: Folder }) => (
-    <>
+  const FolderContextMenu = ({ folder }: { folder: Folder }) => {
+    const menuWidth = 220
+    const safeAreaBottom = 120
+
+    const clickY = folderMenuPosition?.y || 0
+    const clickX = folderMenuPosition?.x || 0
+
+    const maxMenuHeight = typeof window !== 'undefined'
+      ? Math.min(400, window.innerHeight * 0.6)
+      : 350
+
+    const spaceBelow = typeof window !== 'undefined'
+      ? window.innerHeight - clickY - safeAreaBottom
+      : 400
+    const spaceAbove = clickY - 60
+
+    const showAbove = spaceBelow < 200 && spaceAbove > spaceBelow
+
+    let top: number | string = 'auto'
+    let bottom: number | string = 'auto'
+
+    if (showAbove) {
+      bottom = typeof window !== 'undefined'
+        ? window.innerHeight - clickY + 8
+        : 'auto'
+    } else {
+      top = clickY
+    }
+
+    let left = clickX - menuWidth
+    if (typeof window !== 'undefined') {
+      if (left < 10) left = 10
+      if (left + menuWidth > window.innerWidth - 10) {
+        left = window.innerWidth - menuWidth - 10
+      }
+    }
+
+    return (
       <div
-        className="fixed inset-0 z-[100]"
-        onClick={(e) => {
-          e.stopPropagation()
-          setFolderMenuId(null)
+        data-menu-dropdown
+        className="fixed min-w-[200px] overflow-y-auto rounded-xl shadow-lg animate-fade-in"
+        style={{
+          zIndex: 9999,
+          background: 'var(--background-elevated)',
+          border: '1px solid var(--glass-border)',
+          top: typeof top === 'number' ? top : undefined,
+          bottom: typeof bottom === 'number' ? bottom : undefined,
+          left,
+          maxHeight: maxMenuHeight,
         }}
-      />
-      <div
-        className="dropdown-menu right-0 bottom-full mb-1 z-[101]"
         onClick={(e) => e.stopPropagation()}
       >
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            setEditingFolder(folder)
-            setEditFolderName(folder.name)
-            setFolderMenuId(null)
-          }}
-          className="dropdown-item w-full"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-          </svg>
-          이름 변경
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            handleDeleteFolder(folder.id)
-          }}
-          className="dropdown-item dropdown-item-danger w-full"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-          삭제
-        </button>
-      </div>
-    </>
-  )
+        {/* 폴더명 헤더 */}
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+          <p className="font-semibold text-sm truncate" style={{ color: 'var(--foreground)' }}>{folder.name}</p>
+        </div>
 
-  // 최초 로딩 시에만 전체 화면 로딩 표시
+        {/* 공유 섹션 */}
+        <div className="py-1">
+          <button
+            onClick={async (e) => {
+              e.stopPropagation()
+              closeFolderMenu()
+              // 폴더 공유 링크 복사 (현재 URL 기반)
+              const shareUrl = `${window.location.origin}/drive?folder=${folder.id}`
+              await navigator.clipboard.writeText(shareUrl)
+              alert('링크가 복사되었습니다')
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: 'var(--foreground)' }}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            링크 복사
+          </button>
+        </div>
+
+        {/* 구분선 */}
+        <div style={{ borderTop: '1px solid var(--glass-border)' }} />
+
+        {/* 편집 섹션 */}
+        <div className="py-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              closeFolderMenu()
+              setEditingFolder(folder)
+              setEditFolderName(folder.name)
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: 'var(--foreground)' }}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            이름 변경
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              closeFolderMenu()
+              setSelectedFolderIds(new Set([folder.id]))
+              setSelectedIds(new Set())
+              setShowMoveModal(true)
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: 'var(--foreground)' }}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            이동
+          </button>
+        </div>
+
+        {/* 구분선 */}
+        <div style={{ borderTop: '1px solid var(--glass-border)' }} />
+
+        {/* 삭제 */}
+        <div className="py-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              closeFolderMenu()
+              handleDeleteFolder(folder.id)
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-red-500/10"
+            style={{ color: 'var(--error)' }}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            삭제
+          </button>
+        </div>
+
+        {/* 구분선 */}
+        <div style={{ borderTop: '1px solid var(--glass-border)' }} />
+
+        {/* 정보 */}
+        <div className="py-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              closeFolderMenu()
+              setInfoFolder(folder)
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: 'var(--foreground)' }}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            폴더 정보
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // 파일 컨텍스트 메뉴 컴포넌트
+  const PhotoContextMenu = ({ photo }: { photo: Photo }) => {
+    const menuWidth = 220
+    const safeAreaBottom = 120 // 하단 탭바 + 여유 공간
+
+    const clickY = photoMenuPosition?.y || 0
+    const clickX = photoMenuPosition?.x || 0
+
+    // 화면 높이의 60%를 최대 메뉴 높이로 설정
+    const maxMenuHeight = typeof window !== 'undefined'
+      ? Math.min(500, window.innerHeight * 0.6)
+      : 400
+
+    // 메뉴를 클릭 위치 위에 표시할지 아래에 표시할지 결정
+    const spaceBelow = typeof window !== 'undefined'
+      ? window.innerHeight - clickY - safeAreaBottom
+      : 400
+    const spaceAbove = clickY - 60 // 헤더 높이 고려
+
+    // 아래 공간이 부족하고 위에 공간이 있으면 위에 표시
+    const showAbove = spaceBelow < 250 && spaceAbove > spaceBelow
+
+    let top: number | string = 'auto'
+    let bottom: number | string = 'auto'
+
+    if (showAbove) {
+      // 클릭 위치 위에 표시 (bottom 기준)
+      bottom = typeof window !== 'undefined'
+        ? window.innerHeight - clickY + 8
+        : 'auto'
+    } else {
+      // 클릭 위치 아래에 표시 (top 기준)
+      top = clickY
+    }
+
+    // 좌우 위치 계산
+    let left = clickX - menuWidth
+    if (typeof window !== 'undefined') {
+      if (left < 10) left = 10
+      if (left + menuWidth > window.innerWidth - 10) {
+        left = window.innerWidth - menuWidth - 10
+      }
+    }
+
+    return (
+      <div
+        data-menu-dropdown
+        className="fixed min-w-[200px] overflow-y-auto rounded-xl shadow-lg animate-fade-in"
+        style={{
+          zIndex: 9999,
+          background: 'var(--background-elevated)',
+          border: '1px solid var(--glass-border)',
+          top: typeof top === 'number' ? top : undefined,
+          bottom: typeof bottom === 'number' ? bottom : undefined,
+          left,
+          maxHeight: maxMenuHeight,
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 파일명 헤더 */}
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+          <p className="font-semibold text-sm truncate" style={{ color: 'var(--foreground)' }}>
+            {photo.name || photo.url.split('/').pop()}
+          </p>
+        </div>
+
+        {/* 다운로드 */}
+        <div className="py-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              closePhotoMenu()
+              const link = document.createElement('a')
+              link.href = toProxyUrl(photo.url)
+              link.download = photo.name || photo.url.split('/').pop() || 'download'
+              document.body.appendChild(link)
+              link.click()
+              document.body.removeChild(link)
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: 'var(--foreground)' }}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            다운로드
+          </button>
+        </div>
+
+        {/* 구분선 */}
+        <div style={{ borderTop: '1px solid var(--glass-border)' }} />
+
+        {/* 공유 섹션 */}
+        <div className="py-1">
+          <button
+            onClick={async (e) => {
+              e.stopPropagation()
+              closePhotoMenu()
+              // 이미지 URL 복사
+              const imageUrl = `${window.location.origin}${toProxyUrl(photo.url)}`
+              await navigator.clipboard.writeText(imageUrl)
+              alert('링크가 복사되었습니다')
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: 'var(--foreground)' }}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            링크 복사
+          </button>
+          <button
+            onClick={async (e) => {
+              e.stopPropagation()
+              closePhotoMenu()
+              // 공유 링크 생성
+              try {
+                const res = await fetch('/api/share', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ photoId: photo.id }),
+                })
+                if (res.ok) {
+                  const data = await res.json()
+                  const shareUrl = `${window.location.origin}/share/${data.token}`
+                  await navigator.clipboard.writeText(shareUrl)
+                  alert('공유 링크가 복사되었습니다')
+                }
+              } catch (error) {
+                console.error('Share error:', error)
+              }
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: 'var(--foreground)' }}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+            </svg>
+            공유
+          </button>
+        </div>
+
+        {/* 구분선 */}
+        <div style={{ borderTop: '1px solid var(--glass-border)' }} />
+
+        {/* 편집/삭제 섹션 */}
+        <div className="py-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              closePhotoMenu()
+              setEditingPhoto(photo)
+              setEditPhotoName(photo.name || photo.url.split('/').pop() || '')
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: 'var(--foreground)' }}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            이름 변경
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              closePhotoMenu()
+              setSelectedIds(new Set([photo.id]))
+              setSelectedFolderIds(new Set())
+              setShowMoveModal(true)
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: 'var(--foreground)' }}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            이동
+          </button>
+          <button
+            onClick={async (e) => {
+              e.stopPropagation()
+              closePhotoMenu()
+              // 파일 복사 기능 (같은 폴더에 복사본 생성)
+              try {
+                const res = await fetch('/api/copy', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ photoId: photo.id }),
+                })
+                if (res.ok) {
+                  const data = await res.json()
+                  setPhotos(prev => [...prev, data.photo])
+                  alert('파일이 복사되었습니다')
+                }
+              } catch (error) {
+                console.error('Copy error:', error)
+              }
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: 'var(--foreground)' }}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            복사
+          </button>
+          <button
+            onClick={async (e) => {
+              e.stopPropagation()
+              closePhotoMenu()
+              if (!confirm('이 파일을 삭제하시겠습니까?')) return
+              try {
+                const res = await fetch('/api/delete', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ photoIds: [photo.id] }),
+                })
+                if (res.ok) {
+                  setPhotos(prev => prev.filter(p => p.id !== photo.id))
+                }
+              } catch (error) {
+                console.error('Delete error:', error)
+              }
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-red-500/10"
+            style={{ color: 'var(--error)' }}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            삭제
+          </button>
+        </div>
+
+        {/* 구분선 */}
+        <div style={{ borderTop: '1px solid var(--glass-border)' }} />
+
+        {/* 정보 */}
+        <div className="py-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              closePhotoMenu()
+              setInfoPhoto(photo)
+            }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: 'var(--foreground)' }}
+          >
+            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            파일 정보
+          </button>
+        </div>
+
+        {/* 마지막 수정 정보 푸터 */}
+        <div className="px-4 py-3" style={{ borderTop: '1px solid var(--glass-border)', background: 'var(--background-secondary)' }}>
+          <p className="text-xs" style={{ color: 'var(--foreground-tertiary)' }}>
+            마지막 수정: {new Date(photo.created_at).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // 최초 로딩 시 간단한 로딩 표시
   if (isInitialLoad && (loading || userLoading)) {
     return (
       <main className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background)' }}>
-        <div className="flex flex-col items-center gap-4 animate-fade-in">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--accent-primary)' }}>
-            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          </div>
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
+          <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>불러오는 중...</p>
         </div>
       </main>
     )
@@ -2068,7 +2626,7 @@ export default function DrivePage() {
       <div
         ref={gridContainerRef}
         className="p-3 sm:p-4 md:p-6 pb-24 sm:pb-6 relative select-none"
-        onMouseDown={handleDragSelectStart}
+        onMouseDown={(e) => handleDragSelectStart(e, gridContainerRef)}
         onMouseMove={handleDragSelectMove}
         onMouseUp={handleDragSelectEnd}
         onMouseLeave={handleDragSelectEnd}
@@ -2086,23 +2644,8 @@ export default function DrivePage() {
           />
         )}
 
-        {/* 스켈레톤 로딩 */}
-        {!isInitialLoad && loading && (
-          <div className="tds-image-grid pointer-events-none select-none">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <div
-                key={i}
-                className="tds-image-grid-item rounded-xl overflow-hidden"
-                style={{ background: 'var(--background-secondary)' }}
-              >
-                <div className="w-full h-full animate-pulse" style={{ background: 'var(--background-tertiary)' }} />
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* 그리드 뷰 */}
-        {!loading && !userLoading && effectiveViewMode === 'grid' && (
+        {!userLoading && effectiveViewMode === 'grid' && (
           <>
             {/* 폴더 섹션 - 전체 보기에서만 표시 */}
             {currentCategory === 'all' && sortedFolders.length > 0 && (
@@ -2113,7 +2656,7 @@ export default function DrivePage() {
                     <div
                       key={folder.id}
                       data-folder-id={folder.id}
-                      className={`folder-item group relative min-w-0 overflow-hidden ${selectedFolderIds.has(folder.id) ? 'selected' : ''}`}
+                      className={`folder-item group relative min-w-0 ${selectedFolderIds.has(folder.id) ? 'selected' : ''}`}
                       onClick={(e) => {
                         if (isTouchDragging) return
                         if (isSelecting) {
@@ -2161,9 +2704,17 @@ export default function DrivePage() {
                       {/* 폴더 메뉴 버튼 */}
                       <div className="absolute top-2 right-2">
                         <button
+                          data-menu-button
                           onClick={(e) => {
                             e.stopPropagation()
-                            setFolderMenuId(folderMenuId === folder.id ? null : folder.id)
+                            closePhotoMenu()
+                            if (folderMenuId === folder.id) {
+                              closeFolderMenu()
+                            } else {
+                              const rect = e.currentTarget.getBoundingClientRect()
+                              setFolderMenuPosition({ x: rect.right, y: rect.bottom + 4 })
+                              setFolderMenuId(folder.id)
+                            }
                           }}
                           className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all backdrop-blur-sm"
                           style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
@@ -2172,7 +2723,6 @@ export default function DrivePage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                           </svg>
                         </button>
-                        {folderMenuId === folder.id && <FolderContextMenu folder={folder} />}
                       </div>
                     </div>
                   ))}
@@ -2231,6 +2781,30 @@ export default function DrivePage() {
                         </div>
                       </div>
 
+                      {/* 더보기 버튼 */}
+                      <div className="absolute top-2 right-2">
+                        <button
+                          data-menu-button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            closeFolderMenu()
+                            if (photoMenuId === photo.id) {
+                              closePhotoMenu()
+                            } else {
+                              const rect = e.currentTarget.getBoundingClientRect()
+                              setPhotoMenuPosition({ x: rect.right, y: rect.bottom + 4 })
+                              setPhotoMenuId(photo.id)
+                            }
+                          }}
+                          className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all backdrop-blur-sm"
+                          style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+                        >
+                          <svg className="w-4 h-4" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                          </svg>
+                        </button>
+                      </div>
+
                       {/* 파일명 호버 시 표시 */}
                       <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                         <p className="text-white text-xs truncate">{photo.name}</p>
@@ -2238,14 +2812,31 @@ export default function DrivePage() {
                     </div>
                   ))}
                 </div>
+
+                {/* 무한 스크롤 로더 */}
+                {(currentCategory === 'photos' || currentCategory === 'videos') && (
+                  <div ref={loadMoreRef} className="flex justify-center py-8">
+                    {loadingMore && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
+                        <span className="text-sm" style={{ color: 'var(--foreground-muted)' }}>불러오는 중...</span>
+                      </div>
+                    )}
+                    {!hasMore && sortedPhotos.length > 0 && (
+                      <span className="text-sm" style={{ color: 'var(--foreground-tertiary)' }}>
+                        모든 {currentCategory === 'photos' ? '사진' : '동영상'}을 불러왔습니다
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </>
         )}
 
         {/* 리스트 뷰 */}
-        {!loading && !userLoading && effectiveViewMode === 'list' && (
-          <div className="sm:card overflow-hidden">
+        {!userLoading && effectiveViewMode === 'list' && (
+          <div className="sm:card">
             {/* 테이블 헤더 - 데스크톱만 */}
             <div className="hidden sm:grid grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] gap-4 px-4 py-2.5 text-xs font-medium uppercase tracking-wide" style={{ background: 'var(--background-secondary)', color: 'var(--foreground-muted)', borderBottom: '1px solid var(--border-default)' }}>
               <div className="w-5" />
@@ -2317,6 +2908,7 @@ export default function DrivePage() {
             {currentCategory === 'all' && sortedFolders.map((folder, folderIndex) => (
               <div
                 key={folder.id}
+                data-folder-id={folder.id}
                 className="flex items-center px-4 py-3.5 sm:py-2 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] sm:gap-4 sm:border-b"
                 style={{
                   background: selectedFolderIds.has(folder.id) ? 'var(--accent-primary-alpha)' : 'transparent',
@@ -2360,8 +2952,8 @@ export default function DrivePage() {
                 {/* 폴더 아이콘 + 이름 */}
                 <div className="flex items-center gap-3.5 sm:gap-3 min-w-0 flex-1">
                   {/* 모바일: 더 큰 폴더 아이콘 */}
-                  <div className="w-12 h-12 sm:w-8 sm:h-8 rounded-xl sm:rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-primary-alpha)' }}>
-                    <svg className="w-6 h-6 sm:w-4 sm:h-4" style={{ color: 'var(--accent-primary)' }} fill="currentColor" viewBox="0 0 24 24">
+                  <div className="w-12 h-12 sm:w-10 sm:h-10 rounded-xl sm:rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--accent-primary-alpha)' }}>
+                    <svg className="w-6 h-6 sm:w-5 sm:h-5" style={{ color: 'var(--accent-primary)' }} fill="currentColor" viewBox="0 0 24 24">
                       <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z" />
                     </svg>
                   </div>
@@ -2376,9 +2968,17 @@ export default function DrivePage() {
                 {/* 더보기 버튼 */}
                 <div className="w-10 sm:w-8 relative ml-1 sm:ml-0">
                   <button
+                    data-menu-button
                     onClick={(e) => {
                       e.stopPropagation()
-                      setFolderMenuId(folderMenuId === folder.id ? null : folder.id)
+                      closePhotoMenu()
+                      if (folderMenuId === folder.id) {
+                        closeFolderMenu()
+                      } else {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setFolderMenuPosition({ x: rect.right, y: rect.bottom + 4 })
+                        setFolderMenuId(folder.id)
+                      }
                     }}
                     className="w-10 h-10 sm:w-8 sm:h-8 rounded-full sm:rounded-lg flex items-center justify-center transition-all sm:opacity-0 sm:group-hover:opacity-100 active:bg-black/10 dark:active:bg-white/10"
                     style={{ color: 'var(--foreground-muted)' }}
@@ -2389,7 +2989,6 @@ export default function DrivePage() {
                       <circle cx="12" cy="19" r="2" />
                     </svg>
                   </button>
-                  {folderMenuId === folder.id && <FolderContextMenu folder={folder} />}
                 </div>
               </div>
             ))}
@@ -2398,6 +2997,7 @@ export default function DrivePage() {
             {sortedPhotos.map((photo, index) => (
               <div
                 key={photo.id}
+                data-photo-id={photo.id}
                 className="flex items-center px-4 py-3.5 sm:py-2 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] sm:gap-4 sm:border-b"
                 style={{
                   background: selectedIds.has(photo.id) ? 'var(--accent-primary-alpha)' : 'transparent',
@@ -2448,7 +3048,31 @@ export default function DrivePage() {
                   {photo.is_video ? '동영상' : '이미지'}
                 </div>
                 <div className="text-sm hidden sm:block" style={{ color: 'var(--foreground-muted)' }}>{formatDate(photo.created_at)}</div>
-                <div className="w-8 hidden sm:block" />
+                {/* 더보기 버튼 */}
+                <div className="w-10 sm:w-8 relative ml-1 sm:ml-0">
+                  <button
+                    data-menu-button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      closeFolderMenu()
+                      if (photoMenuId === photo.id) {
+                        closePhotoMenu()
+                      } else {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setPhotoMenuPosition({ x: rect.right, y: rect.bottom + 4 })
+                        setPhotoMenuId(photo.id)
+                      }
+                    }}
+                    className="w-10 h-10 sm:w-8 sm:h-8 rounded-full sm:rounded-lg flex items-center justify-center transition-all sm:opacity-0 sm:group-hover:opacity-100 active:bg-black/10 dark:active:bg-white/10"
+                    style={{ color: 'var(--foreground-muted)' }}
+                  >
+                    <svg className="w-5 h-5 sm:w-4 sm:h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <circle cx="12" cy="5" r="2" />
+                      <circle cx="12" cy="12" r="2" />
+                      <circle cx="12" cy="19" r="2" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             ))}
 
@@ -2487,116 +3111,101 @@ export default function DrivePage() {
         )}
       </div>
 
-      {/* 새 폴더 모달 */}
+      {/* 새 폴더 모달 - TDS Style */}
       {showNewFolderInput && (
-        <>
-          <div className="modal-backdrop" onClick={() => { setShowNewFolderInput(false); setNewFolderName('') }} />
-          <div className="modal-content">
-            <div className="modal-header">
-              <h2 className="text-title">새 폴더</h2>
+        <div className="tds-modal-backdrop" onClick={() => { setShowNewFolderInput(false); setNewFolderName('') }}>
+          <div className="tds-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="tds-modal-handle" />
+            <div className="tds-modal-header">
+              <h2>새 폴더</h2>
             </div>
-            <div className="modal-body">
+            <div className="tds-modal-body">
               <input
                 type="text"
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
                 placeholder="폴더 이름을 입력하세요"
-                className="input"
+                className="tds-input"
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
               />
             </div>
-            <div className="modal-footer">
+            <div className="tds-modal-footer">
               <button
                 onClick={() => {
                   setShowNewFolderInput(false)
                   setNewFolderName('')
                 }}
-                className="btn btn-secondary"
+                className="tds-btn tds-btn-secondary"
               >
                 취소
               </button>
               <button
                 onClick={handleCreateFolder}
                 disabled={!newFolderName.trim()}
-                className="btn btn-primary disabled:opacity-50"
+                className="tds-btn tds-btn-primary"
               >
                 만들기
               </button>
             </div>
           </div>
-        </>
+        </div>
       )}
 
-      {/* 폴더 이름 수정 모달 */}
+      {/* 폴더 이름 수정 모달 - TDS Style */}
       {editingFolder && (
-        <>
-          <div className="modal-backdrop" onClick={() => { setEditingFolder(null); setEditFolderName('') }} />
-          <div className="modal-content">
-            <div className="modal-header">
-              <h2 className="text-title">폴더 이름 변경</h2>
+        <div className="tds-modal-backdrop" onClick={() => { setEditingFolder(null); setEditFolderName('') }}>
+          <div className="tds-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="tds-modal-handle" />
+            <div className="tds-modal-header">
+              <h2>폴더 이름 변경</h2>
             </div>
-            <div className="modal-body">
+            <div className="tds-modal-body">
               <input
                 type="text"
                 value={editFolderName}
                 onChange={(e) => setEditFolderName(e.target.value)}
                 placeholder="새 폴더 이름을 입력하세요"
-                className="input"
+                className="tds-input"
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleRenameFolder()}
               />
             </div>
-            <div className="modal-footer">
+            <div className="tds-modal-footer">
               <button
                 onClick={() => {
                   setEditingFolder(null)
                   setEditFolderName('')
                 }}
-                className="btn btn-secondary"
+                className="tds-btn tds-btn-secondary"
               >
                 취소
               </button>
               <button
                 onClick={handleRenameFolder}
                 disabled={!editFolderName.trim()}
-                className="btn btn-primary disabled:opacity-50"
+                className="tds-btn tds-btn-primary"
               >
                 변경
               </button>
             </div>
           </div>
-        </>
+        </div>
       )}
 
-      {/* 폴더 선택 모달 (업로드 위치) */}
+      {/* 폴더 선택 모달 (업로드 위치) - TDS Style */}
       {showFolderPicker && (
-        <>
-          <div className="modal-backdrop" onClick={() => { setShowFolderPicker(false); setPendingFiles([]) }} />
-          <div className="modal-content !max-h-[80vh] !w-full !max-w-md flex flex-col" style={{ background: 'var(--background)' }}>
+        <div className="tds-modal-backdrop" onClick={() => { setShowFolderPicker(false); setPendingFiles([]) }}>
+          <div className="tds-modal !max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="tds-modal-handle" />
             {/* 헤더 */}
-            <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--glass-border)' }}>
-              <div>
-                <h2 className="tds-text-title">폴더 선택</h2>
-                <p className="tds-text-caption tds-text-tertiary mt-0.5">
-                  {pendingFiles.length}개 파일을 업로드할 위치
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowFolderPicker(false)
-                  setPendingFiles([])
-                }}
-                className="tds-header-action"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+            <div className="tds-modal-header">
+              <h2>폴더 선택</h2>
+              <p>{pendingFiles.length}개 파일을 업로드할 위치</p>
             </div>
 
             {/* 폴더 목록 */}
-            <div className="flex-1 overflow-y-auto py-2">
+            <div className="flex-1 overflow-y-auto py-2 max-h-[50vh]">
               {buildFolderTree(null).map(({ folder, depth }) => {
                 const isCurrentFolder = (folder?.id || null) === currentFolderId
                 const isRoot = !folder
@@ -2605,12 +3214,12 @@ export default function DrivePage() {
                     key={folder?.id || 'root'}
                     onClick={() => handleUploadToFolder(folder?.id || null)}
                     className={`
-                      folder-picker-item w-full flex items-center gap-3 px-4 py-3
+                      folder-picker-item w-full flex items-center gap-3 px-5 py-3
                       transition-all duration-150 text-left
                       ${isCurrentFolder ? 'folder-picker-item-active' : ''}
                     `}
                     style={{
-                      paddingLeft: `${16 + depth * 24}px`,
+                      paddingLeft: `${20 + depth * 24}px`,
                       background: isCurrentFolder ? 'var(--accent-gradient-subtle)' : 'transparent',
                     }}
                   >
@@ -2650,13 +3259,7 @@ export default function DrivePage() {
 
                     {/* 현재 위치 표시 */}
                     {isCurrentFolder && (
-                      <span
-                        className="px-2 py-0.5 text-xs font-medium rounded-full flex-shrink-0"
-                        style={{
-                          background: 'var(--accent-primary)',
-                          color: 'white',
-                        }}
-                      >
+                      <span className="tds-badge tds-badge-primary flex-shrink-0">
                         현재
                       </span>
                     )}
@@ -2666,45 +3269,50 @@ export default function DrivePage() {
             </div>
 
             {/* 하단 안내 */}
-            <div className="p-4 border-t" style={{ borderColor: 'var(--glass-border)', background: 'var(--background-secondary)' }}>
-              <p className="tds-text-caption tds-text-tertiary text-center">
+            <div className="tds-modal-footer !justify-center" style={{ background: 'var(--background-secondary)' }}>
+              <p className="tds-text-caption tds-text-tertiary">
                 폴더를 선택하면 바로 업로드가 시작됩니다
               </p>
             </div>
           </div>
-        </>
+        </div>
       )}
 
-      {/* 중복 파일 처리 모달 */}
+      {/* 중복 파일 처리 모달 - TDS Style */}
       {showDuplicateModal && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className={`rounded-2xl w-full max-w-md overflow-hidden ${isDark ? 'bg-zinc-900' : 'bg-white'}`}>
-            <div className={`p-5 border-b ${isDark ? 'border-zinc-800' : 'border-gray-200'}`}>
+        <div className="tds-modal-backdrop" style={{ zIndex: 10000 }} onClick={() => {
+          setShowDuplicateModal(false)
+          setDuplicateFiles([])
+          setNonDuplicateFiles([])
+          setPendingUploadFolderId(null)
+        }}>
+          <div className="tds-modal !max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="tds-modal-handle" />
+            {/* 헤더 */}
+            <div className="tds-modal-header">
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDark ? 'bg-yellow-500/20' : 'bg-yellow-100'}`}>
-                  <svg className="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: 'rgba(245, 158, 11, 0.15)' }}>
+                  <svg className="w-5 h-5" style={{ color: '#f59e0b' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
                 </div>
                 <div>
-                  <h2 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>중복 파일 발견</h2>
-                  <p className={`text-sm ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
-                    {duplicateFiles.length}개의 파일이 이미 존재합니다
-                  </p>
+                  <h2>중복 파일 발견</h2>
+                  <p>{duplicateFiles.length}개의 파일이 이미 존재합니다</p>
                 </div>
               </div>
             </div>
 
             {/* 중복 파일 목록 */}
-            <div className={`max-h-48 overflow-y-auto ${isDark ? 'bg-zinc-800/50' : 'bg-gray-50'}`}>
+            <div className="max-h-40 overflow-y-auto" style={{ background: 'var(--background-secondary)' }}>
               {duplicateFiles.map((dup, idx) => (
-                <div key={idx} className={`flex items-center gap-3 px-5 py-3 ${isDark ? 'border-b border-zinc-800' : 'border-b border-gray-100'}`}>
-                  <div className={`w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 ${isDark ? 'bg-zinc-700' : 'bg-gray-200'}`}>
+                <div key={idx} className="flex items-center gap-3 px-5 py-3 border-b" style={{ borderColor: 'var(--glass-border)' }}>
+                  <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0" style={{ background: 'var(--background-tertiary)' }}>
                     <img src={toProxyUrl(dup.existingPhoto.thumbnail_url || dup.existingPhoto.url)} alt="" className="w-full h-full object-cover" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>{dup.file.name}</p>
-                    <p className={`text-xs ${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>
+                    <p className="tds-text-body truncate" style={{ fontWeight: 500 }}>{dup.file.name}</p>
+                    <p className="tds-text-caption tds-text-tertiary">
                       {(dup.file.size / 1024).toFixed(1)} KB
                     </p>
                   </div>
@@ -2713,46 +3321,51 @@ export default function DrivePage() {
             </div>
 
             {/* 액션 버튼 */}
-            <div className="p-4 space-y-2">
+            <div className="tds-modal-body space-y-2">
               <button
                 onClick={() => handleDuplicateAction('overwrite')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${isDark ? 'bg-zinc-800 hover:bg-zinc-700 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-900'}`}
+                className="tds-list-item w-full rounded-xl"
+                style={{ background: 'var(--background-tertiary)' }}
               >
-                <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 flex-shrink-0" style={{ color: '#ef4444' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                <div className="text-left">
-                  <p className="font-medium">덮어쓰기</p>
-                  <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>기존 파일을 새 파일로 교체</p>
+                <div className="text-left flex-1">
+                  <p className="tds-text-body" style={{ fontWeight: 500 }}>덮어쓰기</p>
+                  <p className="tds-text-caption tds-text-tertiary">기존 파일을 새 파일로 교체</p>
                 </div>
               </button>
 
               <button
                 onClick={() => handleDuplicateAction('keep')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${isDark ? 'bg-zinc-800 hover:bg-zinc-700 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-900'}`}
+                className="tds-list-item w-full rounded-xl"
+                style={{ background: 'var(--background-tertiary)' }}
               >
-                <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
-                <div className="text-left">
-                  <p className="font-medium">둘 다 유지</p>
-                  <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>새 파일 이름에 번호 추가</p>
+                <div className="text-left flex-1">
+                  <p className="tds-text-body" style={{ fontWeight: 500 }}>둘 다 유지</p>
+                  <p className="tds-text-caption tds-text-tertiary">새 파일 이름에 번호 추가</p>
                 </div>
               </button>
 
               <button
                 onClick={() => handleDuplicateAction('skip')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${isDark ? 'bg-zinc-800 hover:bg-zinc-700 text-white' : 'bg-gray-100 hover:bg-gray-200 text-gray-900'}`}
+                className="tds-list-item w-full rounded-xl"
+                style={{ background: 'var(--background-tertiary)' }}
               >
-                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                 </svg>
-                <div className="text-left">
-                  <p className="font-medium">건너뛰기</p>
-                  <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>중복 파일은 업로드하지 않음</p>
+                <div className="text-left flex-1">
+                  <p className="tds-text-body" style={{ fontWeight: 500 }}>건너뛰기</p>
+                  <p className="tds-text-caption tds-text-tertiary">중복 파일은 업로드하지 않음</p>
                 </div>
               </button>
+            </div>
 
+            <div className="tds-modal-footer">
               <button
                 onClick={() => {
                   setShowDuplicateModal(false)
@@ -2760,7 +3373,7 @@ export default function DrivePage() {
                   setNonDuplicateFiles([])
                   setPendingUploadFolderId(null)
                 }}
-                className={`w-full py-3 rounded-xl font-medium transition-colors ${isDark ? 'text-zinc-400 hover:text-white' : 'text-gray-500 hover:text-gray-700'}`}
+                className="tds-btn tds-btn-ghost flex-1"
               >
                 취소
               </button>
@@ -2769,31 +3382,21 @@ export default function DrivePage() {
         </div>
       )}
 
-      {/* 이동 대상 폴더 선택 모달 */}
+      {/* 이동 대상 폴더 선택 모달 - TDS Style */}
       {showMoveModal && (
-        <>
-          <div className="modal-backdrop" style={{ zIndex: 10000 }} onClick={() => setShowMoveModal(false)} />
-          <div className="modal-content !max-h-[70vh] flex flex-col" style={{ zIndex: 10001 }}>
-            <div className="modal-header flex items-center justify-between">
-              <h2 className="text-title">이동할 폴더 선택</h2>
-              <button
-                onClick={() => setShowMoveModal(false)}
-                className="btn btn-ghost !p-1.5"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+        <div className="tds-modal-backdrop" style={{ zIndex: 10000 }} onClick={() => setShowMoveModal(false)}>
+          <div className="tds-modal" style={{ zIndex: 10001 }} onClick={(e) => e.stopPropagation()}>
+            <div className="tds-modal-handle" />
+            <div className="tds-modal-header">
+              <h2>이동할 폴더 선택</h2>
+              <p>
+                {selectedIds.size > 0 && `${selectedIds.size}개 파일`}
+                {selectedIds.size > 0 && selectedFolderIds.size > 0 && ', '}
+                {selectedFolderIds.size > 0 && `${selectedFolderIds.size}개 폴더`}
+              </p>
             </div>
 
-            <div className="px-4 py-2 border-b" style={{ borderColor: 'var(--border-default)' }}>
-              <div className="flex gap-2">
-                {selectedIds.size > 0 && <span className="badge badge-primary">{selectedIds.size}개 파일</span>}
-                {selectedFolderIds.size > 0 && <span className="badge badge-primary">{selectedFolderIds.size}개 폴더</span>}
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-2">
+            <div className="flex-1 overflow-y-auto py-2 max-h-[50vh]">
               {buildFolderTree(null).map(({ folder, depth }) => {
                 const isSelected = folder && selectedFolderIds.has(folder.id)
                 const isCurrent = (folder?.id || null) === currentFolderId
@@ -2805,42 +3408,296 @@ export default function DrivePage() {
                     key={folder?.id || 'root'}
                     onClick={() => handleMoveSelected(folder?.id || null)}
                     disabled={moving || isCurrent}
-                    className={`dropdown-item w-full rounded-lg ${isCurrent ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    style={{ paddingLeft: `${12 + depth * 20}px` }}
+                    className={`folder-picker-item w-full flex items-center gap-3 px-5 py-3 text-left ${isCurrent ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    style={{ paddingLeft: `${20 + depth * 20}px` }}
                   >
-                    <svg className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z" />
-                    </svg>
-                    <span className="text-sm truncate flex-1">
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ background: 'var(--background-tertiary)' }}
+                    >
+                      <svg className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z" />
+                      </svg>
+                    </div>
+                    <span className="text-sm truncate flex-1" style={{ color: 'var(--foreground)' }}>
                       {folder ? folder.name : '홈 (루트)'}
                     </span>
-                    {isCurrent && <span className="badge">현재 위치</span>}
+                    {isCurrent && <span className="tds-badge">현재</span>}
                   </button>
                 )
               })}
             </div>
 
             {moving && (
-              <div className="modal-footer !justify-start">
+              <div className="tds-modal-footer !justify-center">
                 <div className="flex items-center gap-3">
                   <div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--border-default)', borderTopColor: 'var(--accent-primary)' }} />
-                  <span className="text-small" style={{ color: 'var(--foreground-secondary)' }}>이동 중...</span>
+                  <span className="tds-text-body tds-text-secondary">이동 중...</span>
                 </div>
               </div>
             )}
           </div>
-        </>
+        </div>
       )}
 
-      {/* 삭제 진행 오버레이 */}
+      {/* 삭제 진행 오버레이 - TDS Style */}
       {deleting && (
-        <div className="modal-backdrop !z-[300] flex items-center justify-center">
-          <div className="card p-6 !transform-none animate-fade-in-scale">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 border-3 rounded-full animate-spin" style={{ borderColor: 'var(--border-default)', borderTopColor: '#ef4444' }} />
+        <div className="tds-dialog-backdrop" style={{ zIndex: 300 }}>
+          <div className="tds-dialog !max-w-xs">
+            <div className="tds-dialog-body">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 border-3 rounded-full animate-spin" style={{ borderColor: 'var(--border-default)', borderTopColor: '#ef4444' }} />
+                <div>
+                  <p className="tds-text-body font-medium" style={{ color: 'var(--foreground)' }}>삭제 중</p>
+                  <p className="tds-text-caption tds-text-secondary">{deleteStatus}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 파일 이름 변경 모달 */}
+      {editingPhoto && (
+        <div className="tds-modal-backdrop" onClick={() => { setEditingPhoto(null); setEditPhotoName('') }}>
+          <div className="tds-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="tds-modal-handle" />
+            <div className="tds-modal-header">
+              <h2>파일 이름 변경</h2>
+            </div>
+            <div className="tds-modal-body">
+              <input
+                type="text"
+                value={editPhotoName}
+                onChange={(e) => setEditPhotoName(e.target.value)}
+                placeholder="새 파일 이름을 입력하세요"
+                className="tds-input"
+                autoFocus
+                onKeyDown={(e) => e.key === 'Enter' && handleRenamePhoto()}
+              />
+            </div>
+            <div className="tds-modal-footer">
+              <button
+                onClick={() => {
+                  setEditingPhoto(null)
+                  setEditPhotoName('')
+                }}
+                className="tds-btn tds-btn-secondary"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleRenamePhoto}
+                disabled={!editPhotoName.trim()}
+                className="tds-btn tds-btn-primary"
+              >
+                변경
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 폴더 컨텍스트 메뉴 (fixed 포지션) */}
+      {folderMenuId && folderMenuPosition && (() => {
+        const folder = [...folders, ...allFolders].find(f => f.id === folderMenuId)
+        return folder ? <FolderContextMenu folder={folder} /> : null
+      })()}
+
+      {/* 파일 컨텍스트 메뉴 (fixed 포지션) */}
+      {photoMenuId && photoMenuPosition && (() => {
+        const photo = photos.find(p => p.id === photoMenuId)
+        return photo ? <PhotoContextMenu photo={photo} /> : null
+      })()}
+
+      {/* 파일 정보 모달 - 드롭박스 스타일 */}
+      {infoPhoto && (
+        <div className="tds-modal-backdrop" onClick={() => setInfoPhoto(null)}>
+          <div className="tds-modal !max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="tds-modal-handle" />
+            {/* 헤더 */}
+            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="font-semibold" style={{ color: 'var(--foreground)' }}>정보</span>
+              </div>
+              <button
+                onClick={() => setInfoPhoto(null)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+              >
+                <svg className="w-5 h-5" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="tds-modal-body space-y-5">
+              {/* 썸네일 프리뷰 */}
+              <div className="w-full aspect-square max-w-[120px] mx-auto rounded-xl overflow-hidden" style={{ background: 'var(--background-tertiary)' }}>
+                {infoPhoto.is_video ? (
+                  <video
+                    src={toProxyUrl(infoPhoto.url)}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <img
+                    src={toProxyUrl(infoPhoto.thumbnail_url || infoPhoto.url)}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                )}
+              </div>
+
+              {/* 속성 섹션 */}
               <div>
-                <p className="font-medium">삭제 중</p>
-                <p className="text-small" style={{ color: 'var(--foreground-secondary)' }}>{deleteStatus}</p>
+                <h3 className="text-xs font-medium uppercase tracking-wide mb-3" style={{ color: 'var(--foreground-muted)' }}>속성</h3>
+                <div className="space-y-0">
+                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>이름</span>
+                    <span className="text-sm font-medium truncate ml-4 max-w-[180px]" style={{ color: 'var(--foreground)' }}>
+                      {infoPhoto.name || infoPhoto.url.split('/').pop()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>저장 위치</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                      Cloody{infoPhoto.folder_id ? ` > ${allFolders.find(f => f.id === infoPhoto.folder_id)?.name || '폴더'}` : ''}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>크기</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                      {infoPhoto.file_size ? (
+                        infoPhoto.file_size >= 1024 * 1024
+                          ? `${(infoPhoto.file_size / (1024 * 1024)).toFixed(2)} MB`
+                          : `${(infoPhoto.file_size / 1024).toFixed(2)} KB`
+                      ) : '-'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>수정 일시</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                      {new Date(infoPhoto.created_at).toLocaleDateString('ko-KR', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                      })} {new Date(infoPhoto.created_at).toLocaleTimeString('ko-KR', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>유형</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                      {infoPhoto.is_video ? '동영상' : '이미지'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>업로드한 날짜</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                      {new Date(infoPhoto.created_at).toLocaleDateString('ko-KR', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })} {new Date(infoPhoto.created_at).toLocaleTimeString('ko-KR', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                  {(infoPhoto.width && infoPhoto.height) && (
+                    <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                      <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>크기</span>
+                      <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                        {infoPhoto.width} x {infoPhoto.height}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 폴더 정보 모달 - 드롭박스 스타일 */}
+      {infoFolder && (
+        <div className="tds-modal-backdrop" onClick={() => setInfoFolder(null)}>
+          <div className="tds-modal !max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="tds-modal-handle" />
+            {/* 헤더 */}
+            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="font-semibold" style={{ color: 'var(--foreground)' }}>정보</span>
+              </div>
+              <button
+                onClick={() => setInfoFolder(null)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+              >
+                <svg className="w-5 h-5" style={{ color: 'var(--foreground-secondary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="tds-modal-body space-y-5">
+              {/* 폴더 아이콘 프리뷰 */}
+              <div className="w-32 h-32 mx-auto rounded-xl flex items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
+                <svg className="w-16 h-16" style={{ color: 'var(--accent-primary)', opacity: 0.7 }} fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M10 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2h-8l-2-2z" />
+                </svg>
+              </div>
+
+              {/* 속성 섹션 */}
+              <div>
+                <h3 className="text-xs font-medium uppercase tracking-wide mb-3" style={{ color: 'var(--foreground-muted)' }}>속성</h3>
+                <div className="space-y-0">
+                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>이름</span>
+                    <span className="text-sm font-medium truncate ml-4 max-w-[180px]" style={{ color: 'var(--foreground)' }}>{infoFolder.name}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>저장 위치</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                      {infoFolder.parent_id ? folders.find(f => f.id === infoFolder.parent_id)?.name || 'Cloody' : 'Cloody'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>항목</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                      {infoFolderCounts ? (() => {
+                        const { files: fileCount, folders: folderCount } = infoFolderCounts
+                        const total = fileCount + folderCount
+                        if (folderCount > 0 && fileCount > 0) {
+                          return `${total}개 항목 (폴더 ${folderCount}, 파일 ${fileCount})`
+                        } else if (folderCount > 0) {
+                          return `${folderCount}개 폴더`
+                        } else {
+                          return `${fileCount}개 파일`
+                        }
+                      })() : '불러오는 중...'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>수정 일시</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                      {new Date(infoFolder.created_at).toLocaleDateString('ko-KR', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                      })} {new Date(infoFolder.created_at).toLocaleTimeString('ko-KR', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -2850,18 +3707,19 @@ export default function DrivePage() {
       </div>{/* lg:pl-64 끝 */}
 
       {/* 모바일 하단 탭 네비게이션 - Toss Style */}
-      <nav className="tds-bottom-nav xl:hidden">
+      <nav className="tds-bottom-nav xl:hidden" style={{ zIndex: 70 }}>
         <button
           onClick={() => {
             setShowUploadPanel(false)
+            setShowMoreScreen(false)
             router.push('/drive')
           }}
-          className={`tds-bottom-nav-item ${currentCategory === 'all' && !showUploadPanel ? 'active' : ''}`}
+          className={`tds-bottom-nav-item ${currentCategory === 'all' && !showUploadPanel && !showMoreScreen ? 'active' : ''}`}
         >
           <Home
             size={26}
-            strokeWidth={currentCategory === 'all' && !showUploadPanel ? 2.5 : 1.5}
-            fill={currentCategory === 'all' && !showUploadPanel ? 'currentColor' : 'none'}
+            strokeWidth={currentCategory === 'all' && !showUploadPanel && !showMoreScreen ? 2.5 : 1.5}
+            fill={currentCategory === 'all' && !showUploadPanel && !showMoreScreen ? 'currentColor' : 'none'}
           />
           <span>홈</span>
         </button>
@@ -2869,27 +3727,31 @@ export default function DrivePage() {
         <button
           onClick={() => {
             setShowUploadPanel(false)
+            setShowMoreScreen(false)
             router.push('/drive?category=photos')
           }}
-          className={`tds-bottom-nav-item ${currentCategory === 'photos' && !showUploadPanel ? 'active' : ''}`}
+          className={`tds-bottom-nav-item ${currentCategory === 'photos' && !showUploadPanel && !showMoreScreen ? 'active' : ''}`}
         >
           <ImageIcon
             size={26}
-            strokeWidth={currentCategory === 'photos' && !showUploadPanel ? 2.5 : 1.5}
-            fill={currentCategory === 'photos' && !showUploadPanel ? 'currentColor' : 'none'}
+            strokeWidth={currentCategory === 'photos' && !showUploadPanel && !showMoreScreen ? 2.5 : 1.5}
+            fill={currentCategory === 'photos' && !showUploadPanel && !showMoreScreen ? 'currentColor' : 'none'}
           />
           <span>사진</span>
         </button>
 
         <button
-          onClick={() => setShowUploadPanel(true)}
-          className={`tds-bottom-nav-item ${showUploadPanel ? 'active' : ''}`}
+          onClick={() => {
+            setShowMoreScreen(false)
+            setShowUploadPanel(true)
+          }}
+          className={`tds-bottom-nav-item ${showUploadPanel && !showMoreScreen ? 'active' : ''}`}
         >
           <div className="relative">
             <CloudUpload
               size={26}
-              strokeWidth={showUploadPanel ? 2.5 : 1.5}
-              fill={showUploadPanel ? 'currentColor' : 'none'}
+              strokeWidth={showUploadPanel && !showMoreScreen ? 2.5 : 1.5}
+              fill={showUploadPanel && !showMoreScreen ? 'currentColor' : 'none'}
             />
             {uploading && (
               <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)' }} />
@@ -2899,11 +3761,11 @@ export default function DrivePage() {
         </button>
 
         <button
-          onClick={() => setShowMoreScreen(true)}
-          className="tds-bottom-nav-item"
+          onClick={() => setShowMoreScreen(!showMoreScreen)}
+          className={`tds-bottom-nav-item ${showMoreScreen ? 'active' : ''}`}
         >
-          <Menu size={26} strokeWidth={1.5} />
-          <span>전체</span>
+          <Menu size={26} strokeWidth={showMoreScreen ? 2.5 : 1.5} />
+          <span>더보기</span>
         </button>
       </nav>
 
@@ -2994,25 +3856,16 @@ export default function DrivePage() {
 
       {/* 더보기 화면 (모바일 전용 전체 화면) */}
       {showMoreScreen && (
-        <div className="fixed inset-0 xl:hidden z-[60] animate-fade-in" style={{ background: 'var(--background)' }}>
+        <div className="fixed inset-x-0 top-0 bottom-[calc(68px+env(safe-area-inset-bottom))] xl:hidden z-[60] animate-fade-in" style={{ background: 'var(--background)' }}>
           {/* 헤더 */}
           <div className="sticky top-0 z-10 safe-area-top" style={{ background: 'var(--background)', borderBottom: '1px solid var(--glass-border)' }}>
             <div className="flex items-center h-14 px-4">
-              <button
-                onClick={() => setShowMoreScreen(false)}
-                className="p-2 -ml-2 rounded-lg transition-colors"
-                style={{ color: 'var(--foreground)' }}
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              <h1 className="text-lg font-semibold ml-2" style={{ color: 'var(--foreground)' }}>더보기</h1>
+              <h1 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>더보기</h1>
             </div>
           </div>
 
           {/* 내용 */}
-          <div className="overflow-y-auto pb-8" style={{ height: 'calc(100vh - 56px)' }}>
+          <div className="overflow-y-auto pb-4 h-full">
             {/* 사용자 프로필 */}
             <div className="p-4">
               <div className="flex items-center gap-4 p-4 rounded-2xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>

@@ -6,6 +6,7 @@ export type AuditAction =
   | 'LOGOUT'
   | 'UPLOAD'
   | 'DELETE'
+  | 'COPY'
   | 'VIEW'
   | 'SESSION_TIMEOUT'
   | 'IP_MISMATCH'

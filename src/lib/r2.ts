@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command, GetObjectCommand, HeadObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID!
@@ -92,4 +92,16 @@ export async function getObjectWithRange(fileName: string, range?: string) {
   })
 
   return r2Client.send(command)
+}
+
+// 객체 복사
+export async function copyObject(sourceKey: string, destinationKey: string) {
+  const command = new CopyObjectCommand({
+    Bucket: BUCKET_NAME,
+    CopySource: `${BUCKET_NAME}/${sourceKey}`,
+    Key: destinationKey,
+  })
+
+  await r2Client.send(command)
+  return `${R2_PUBLIC_URL}/${destinationKey}`
 }

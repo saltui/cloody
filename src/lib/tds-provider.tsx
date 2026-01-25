@@ -575,6 +575,204 @@ const globalStyles = css`
     to { transform: translateY(0); }
   }
 
+  @keyframes tds-dialog-in {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* TDS Dialog (PC Modal) */
+  .tds-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 100;
+    animation: tds-fade-in 0.2s ease;
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .tds-dialog {
+    width: 100%;
+    max-width: 400px;
+    max-height: calc(100vh - 48px);
+    background: var(--background, #ffffff);
+    border-radius: 20px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    z-index: 101;
+    animation: tds-dialog-in 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  }
+
+  html.dark .tds-dialog {
+    background: var(--background-elevated, #26262d);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  }
+
+  .tds-dialog-header {
+    padding: 20px 20px 0;
+  }
+
+  .tds-dialog-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--foreground, #191f28);
+    margin: 0;
+  }
+
+  .tds-dialog-header p {
+    font-size: 14px;
+    color: var(--foreground-secondary, #4e5968);
+    margin: 4px 0 0;
+  }
+
+  .tds-dialog-body {
+    padding: 16px 20px;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .tds-dialog-footer {
+    padding: 16px 20px 20px;
+    display: flex;
+    gap: 10px;
+  }
+
+  .tds-dialog-footer .tds-btn {
+    flex: 1;
+  }
+
+  /* TDS Responsive Modal (Sheet on mobile, Dialog on desktop) */
+  .tds-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 100;
+    animation: tds-fade-in 0.2s ease;
+    backdrop-filter: blur(4px);
+  }
+
+  .tds-modal {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--background, #ffffff);
+    border-radius: 20px 20px 0 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    z-index: 101;
+    animation: tds-slide-up 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+    max-height: 85vh;
+  }
+
+  html.dark .tds-modal {
+    background: var(--background-elevated, #26262d);
+  }
+
+  @media (min-width: 640px) {
+    .tds-modal-backdrop {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .tds-modal {
+      position: relative;
+      bottom: auto;
+      left: auto;
+      right: auto;
+      width: 100%;
+      max-width: 400px;
+      max-height: calc(100vh - 48px);
+      border-radius: 20px;
+      animation: tds-dialog-in 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+
+    html.dark .tds-modal {
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+  }
+
+  .tds-modal-handle {
+    width: 36px;
+    height: 4px;
+    background: var(--foreground-muted, #8b95a1);
+    border-radius: 2px;
+    margin: 8px auto 0;
+    opacity: 0.3;
+  }
+
+  @media (min-width: 640px) {
+    .tds-modal-handle {
+      display: none;
+    }
+  }
+
+  .tds-modal-header {
+    padding: 16px 20px 0;
+  }
+
+  @media (min-width: 640px) {
+    .tds-modal-header {
+      padding: 20px 20px 0;
+    }
+  }
+
+  .tds-modal-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--foreground, #191f28);
+    margin: 0;
+  }
+
+  .tds-modal-header p {
+    font-size: 14px;
+    color: var(--foreground-secondary, #4e5968);
+    margin: 4px 0 0;
+  }
+
+  .tds-modal-body {
+    padding: 16px 20px;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .tds-modal-footer {
+    padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+    display: flex;
+    gap: 10px;
+    border-top: 1px solid var(--glass-border, rgba(0, 0, 0, 0.06));
+  }
+
+  html.dark .tds-modal-footer {
+    border-top-color: var(--glass-border, rgba(255, 255, 255, 0.06));
+  }
+
+  @media (min-width: 640px) {
+    .tds-modal-footer {
+      padding: 16px 20px 20px;
+      border-top: none;
+    }
+  }
+
+  .tds-modal-footer .tds-btn {
+    flex: 1;
+  }
+
   /* TDS Image Grid */
   .tds-image-grid {
     display: grid;

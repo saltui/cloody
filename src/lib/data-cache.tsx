@@ -28,6 +28,14 @@ interface CacheEntry<T> {
   userId: string
 }
 
+export interface PaginatedResult<T> {
+  data: T[]
+  hasMore: boolean
+  nextCursor: number
+}
+
+export type CategoryFilter = 'all' | 'photos' | 'videos'
+
 interface DataCacheContextType {
   // 폴더 관련
   getFolders: (userId: string) => Promise<Folder[]>
@@ -38,6 +46,17 @@ interface DataCacheContextType {
   getPhotos: (userId: string, folderId: string | null) => Promise<Photo[]>
   getAllPhotos: (userId: string) => Promise<Photo[]>
   invalidatePhotos: (folderId?: string | null) => void
+
+  // 페이지네이션 사진 (무한스크롤용)
+  getPhotosPaginated: (
+    userId: string,
+    options: {
+      category?: CategoryFilter
+      folderId?: string | null
+      cursor?: number
+      limit?: number
+    }
+  ) => Promise<PaginatedResult<Photo>>
 
   // 전체 캐시 무효화
   invalidateAll: () => void
@@ -221,6 +240,59 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
     getPhotos(userId, folderId).catch(() => {})
   }, [getPhotos])
 
+  // 페이지네이션 사진 가져오기 (무한스크롤용)
+  const getPhotosPaginated = useCallback(async (
+    userId: string,
+    options: {
+      category?: CategoryFilter
+      folderId?: string | null
+      cursor?: number
+      limit?: number
+    }
+  ): Promise<PaginatedResult<Photo>> => {
+    const { category = 'all', folderId, cursor = 0, limit = 40 } = options
+
+    let query = supabase
+      .from('photos')
+      .select('*')
+      .eq('user_id', userId)
+      .order('order', { ascending: false })
+      .range(cursor, cursor + limit)
+
+    // 폴더 필터
+    if (folderId !== undefined) {
+      if (folderId) {
+        query = query.eq('folder_id', folderId)
+      } else {
+        query = query.is('folder_id', null)
+      }
+    }
+
+    // 카테고리 필터 (DB에서 직접 필터링)
+    if (category === 'photos') {
+      query = query.eq('is_video', false)
+    } else if (category === 'videos') {
+      query = query.eq('is_video', true)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error('getPhotosPaginated error:', error)
+      return { data: [], hasMore: false, nextCursor: cursor }
+    }
+
+    const photos = (data || []) as Photo[]
+    const hasMore = photos.length > limit
+    const resultPhotos = hasMore ? photos.slice(0, limit) : photos
+
+    return {
+      data: resultPhotos,
+      hasMore,
+      nextCursor: cursor + resultPhotos.length,
+    }
+  }, [])
+
   return (
     <DataCacheContext.Provider
       value={{
@@ -230,6 +302,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
         getPhotos,
         getAllPhotos,
         invalidatePhotos,
+        getPhotosPaginated,
         invalidateAll,
         prefetchFolder,
       }}
