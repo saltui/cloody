@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyMagicLinkToken, createUserSessionToken, updateLastLogin } from '@/lib/user-auth'
 import { logAudit } from '@/lib/audit'
-import { ALLOWED_EMAILS } from '@/lib/whitelist'
+import { isEmailAllowed } from '@/lib/whitelist'
 
 function getClientIP(request: NextRequest): string {
   const forwardedFor = request.headers.get('cf-connecting-ip')
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 허용된 이메일인지 확인
-    if (!ALLOWED_EMAILS.has(user.email.toLowerCase())) {
+    if (!isEmailAllowed(user.email)) {
       return NextResponse.json({ error: '로그인이 허용되지 않은 이메일입니다.' }, { status: 403 })
     }
 

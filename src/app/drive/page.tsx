@@ -433,11 +433,17 @@ export default function DrivePage() {
   const isInitialLoadRef = useRef(isInitialLoad)
   isInitialLoadRef.current = isInitialLoad
 
+  // fetch 요청 카운터 (race condition 방지)
+  const fetchCounterRef = useRef(0)
+
   const fetchData = useCallback(async (folderId: string | null, category: string = 'all') => {
     // 사용자 ID가 없으면 로딩 유지 (사용자 로딩 완료될 때까지)
     if (!user?.id) {
       return
     }
+
+    // 현재 fetch ID 기록 (새 요청이 오면 이전 결과 무시)
+    const currentFetchId = ++fetchCounterRef.current
 
     // 초기 로딩일 때만 로딩 표시 (캐시 데이터가 있으면 바로 표시)
     if (isInitialLoadRef.current) {
@@ -450,6 +456,12 @@ export default function DrivePage() {
 
     // 캐시에서 폴더 데이터 가져오기
     const fetchedFolders = await dataCache.getFolders(user.id)
+
+    // 이미 다른 요청이 시작되었으면 이 결과 무시
+    if (currentFetchId !== fetchCounterRef.current) {
+      return
+    }
+
     setAllFolders(fetchedFolders)
 
     const childFolders = fetchedFolders.filter(f =>
@@ -459,11 +471,22 @@ export default function DrivePage() {
 
     await buildBreadcrumbs(folderId, fetchedFolders)
 
+    // 이미 다른 요청이 시작되었으면 이 결과 무시
+    if (currentFetchId !== fetchCounterRef.current) {
+      return
+    }
+
     // 카테고리가 'all'이면 현재 폴더의 파일만 가져옴
     // 카테고리가 photos/videos면 페이지네이션으로 가져옴
     if (category === 'all') {
       // 캐시에서 현재 폴더의 사진 가져오기
       const photosData = await dataCache.getPhotos(user.id, folderId)
+
+      // 이미 다른 요청이 시작되었으면 이 결과 무시
+      if (currentFetchId !== fetchCounterRef.current) {
+        return
+      }
+
       setPhotos(photosData as Photo[])
       setHasMore(false) // 폴더 뷰는 전체 로드
     } else if (category === 'photos' || category === 'videos') {
@@ -473,12 +496,24 @@ export default function DrivePage() {
         limit: 40,
         cursor: 0,
       })
+
+      // 이미 다른 요청이 시작되었으면 이 결과 무시
+      if (currentFetchId !== fetchCounterRef.current) {
+        return
+      }
+
       setPhotos(result.data as Photo[])
       setHasMore(result.hasMore)
       setCursor(result.nextCursor)
     } else {
       // documents 등 기타 카테고리는 전체 로드 (클라이언트 필터링)
       const allPhotos = await dataCache.getAllPhotos(user.id)
+
+      // 이미 다른 요청이 시작되었으면 이 결과 무시
+      if (currentFetchId !== fetchCounterRef.current) {
+        return
+      }
+
       setPhotos(allPhotos as Photo[])
       setHasMore(false)
     }
@@ -502,7 +537,12 @@ export default function DrivePage() {
         cursor,
       })
 
-      setPhotos(prev => [...prev, ...(result.data as Photo[])])
+      // 중복 방지: ID로 중복 체크 후 새 항목만 추가
+      setPhotos(prev => {
+        const existingIds = new Set(prev.map(p => p.id))
+        const newPhotos = (result.data as Photo[]).filter(p => !existingIds.has(p.id))
+        return [...prev, ...newPhotos]
+      })
       setHasMore(result.hasMore)
       setCursor(result.nextCursor)
     } catch (error) {

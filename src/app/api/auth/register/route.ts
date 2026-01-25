@@ -3,7 +3,7 @@ import { createUser, createUserSessionToken, checkRateLimit, recordFailedAttempt
 import { sendVerificationEmail } from '@/lib/email'
 import { logAudit } from '@/lib/audit'
 import { supabase } from '@/lib/supabase'
-import { ALLOWED_EMAILS } from '@/lib/whitelist'
+import { isEmailAllowed } from '@/lib/whitelist'
 
 function getClientIP(request: NextRequest): string {
   const forwardedFor = request.headers.get('cf-connecting-ip')
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 허용된 이메일인지 확인
-    if (!ALLOWED_EMAILS.has(email.toLowerCase())) {
+    if (!isEmailAllowed(email)) {
       return NextResponse.json({ error: '가입이 허용되지 않은 이메일입니다.' }, { status: 403 })
     }
 

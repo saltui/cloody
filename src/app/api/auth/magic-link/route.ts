@@ -3,7 +3,7 @@ import { findUserByEmail, createMagicLinkToken, createUser, createUserSessionTok
 import { sendMagicLinkEmail } from '@/lib/email'
 import { logAudit } from '@/lib/audit'
 import { supabase } from '@/lib/supabase'
-import { ALLOWED_EMAILS } from '@/lib/whitelist'
+import { isEmailAllowed } from '@/lib/whitelist'
 
 // 이메일 인증 우회 (개발/테스트용)
 const BYPASS_VERIFICATION_EMAILS = new Set([
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 허용된 이메일인지 확인
-    if (!ALLOWED_EMAILS.has(email.toLowerCase())) {
+    if (!isEmailAllowed(email)) {
       return NextResponse.json({ error: '허용되지 않은 이메일입니다.' }, { status: 403 })
     }
 

@@ -1,10 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { uploadToR2 } from '@/lib/r2'
 import { logAudit } from '@/lib/audit'
+import { verifyUserSessionToken, findUserById } from '@/lib/user-auth'
+import { supabase } from '@/lib/supabase'
 
 // 대용량 파일 업로드를 위한 설정
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+// 무제한 스토리지 사용자
+const UNLIMITED_STORAGE_EMAILS = new Set([
+  'jdnfree@icloud.com',
+])
+
+// 일반 사용자 스토리지 제한 (1GB)
+const STORAGE_LIMIT = 1 * 1024 * 1024 * 1024 // 1GB
 
 // 클라이언트 IP 가져오기
 function getClientIP(request: NextRequest): string {
@@ -150,6 +160,23 @@ export async function POST(request: NextRequest) {
   const ip = getClientIP(request)
   const userAgent = request.headers.get('user-agent') || undefined
 
+  // 사용자 인증 확인
+  const sessionCookie = request.cookies.get('gallery_session')
+  if (!sessionCookie) {
+    return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
+  }
+
+  const validation = verifyUserSessionToken(sessionCookie.value, ip)
+  if (!validation.valid || !validation.userId) {
+    return NextResponse.json({ error: '세션이 만료되었습니다.' }, { status: 401 })
+  }
+
+  // 사용자 정보 가져오기
+  const user = await findUserById(validation.userId)
+  if (!user) {
+    return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 401 })
+  }
+
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File
@@ -160,12 +187,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File and fileName are required' }, { status: 400 })
     }
 
-    console.log('Upload attempt:', { fileName, fileType: file.type, fileSize: file.size })
+    console.log('Upload attempt:', { fileName, fileType: file.type, fileSize: file.size, userEmail: user.email })
 
     // 파일 크기 검증
     if (file.size > MAX_FILE_SIZE) {
       console.log('Upload validation failed: file too large', { size: file.size, max: MAX_FILE_SIZE })
-      return NextResponse.json({ error: '파일 크기는 100MB를 초과할 수 없습니다.' }, { status: 400 })
+      return NextResponse.json({ error: '파일 크기는 500MB를 초과할 수 없습니다.' }, { status: 400 })
+    }
+
+    // 스토리지 제한 확인 (무제한 사용자 제외)
+    if (!UNLIMITED_STORAGE_EMAILS.has(user.email.toLowerCase())) {
+      // 현재 사용량 조회
+      const { data: storageData } = await supabase
+        .from('photos')
+        .select('file_size')
+        .eq('user_id', user.id)
+        .is('deleted_at', null)
+
+      const currentUsage = (storageData || []).reduce((sum, photo) => sum + (photo.file_size || 0), 0)
+      const newUsage = currentUsage + file.size
+
+      if (newUsage > STORAGE_LIMIT) {
+        const usedGB = (currentUsage / (1024 * 1024 * 1024)).toFixed(2)
+        const limitGB = (STORAGE_LIMIT / (1024 * 1024 * 1024)).toFixed(0)
+        console.log('Upload rejected: storage limit exceeded', { currentUsage, fileSize: file.size, limit: STORAGE_LIMIT })
+        return NextResponse.json({
+          error: `스토리지 용량이 부족합니다. (현재 ${usedGB}GB / ${limitGB}GB 제한)`,
+          storageExceeded: true,
+          currentUsage,
+          limit: STORAGE_LIMIT,
+        }, { status: 403 })
+      }
     }
 
     const buffer = Buffer.from(await file.arrayBuffer())

@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useCallback, useRef, ReactNode } from 'react'
+import { createContext, useContext, useCallback, useRef, useMemo, ReactNode } from 'react'
 import { supabase } from './supabase'
 
 interface Photo {
@@ -315,20 +315,31 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Context value를 useMemo로 안정화 (불필요한 리렌더 방지)
+  const contextValue = useMemo(() => ({
+    getFolders,
+    getFoldersByParent,
+    invalidateFolders,
+    getPhotos,
+    getAllPhotos,
+    invalidatePhotos,
+    getPhotosPaginated,
+    invalidateAll,
+    prefetchFolder,
+  }), [
+    getFolders,
+    getFoldersByParent,
+    invalidateFolders,
+    getPhotos,
+    getAllPhotos,
+    invalidatePhotos,
+    getPhotosPaginated,
+    invalidateAll,
+    prefetchFolder,
+  ])
+
   return (
-    <DataCacheContext.Provider
-      value={{
-        getFolders,
-        getFoldersByParent,
-        invalidateFolders,
-        getPhotos,
-        getAllPhotos,
-        invalidatePhotos,
-        getPhotosPaginated,
-        invalidateAll,
-        prefetchFolder,
-      }}
-    >
+    <DataCacheContext.Provider value={contextValue}>
       {children}
     </DataCacheContext.Provider>
   )
