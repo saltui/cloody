@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, ImgHTMLAttributes } from 'react'
+import { useState, useEffect, ImgHTMLAttributes, memo } from 'react'
 import { useSignedUrl } from '@/lib/signed-url-context'
 
 interface SecureImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, 'src'> {
@@ -8,7 +8,7 @@ interface SecureImageProps extends Omit<ImgHTMLAttributes<HTMLImageElement>, 'sr
   fallbackSrc?: string
 }
 
-export default function SecureImage({ src, fallbackSrc, alt = '', ...props }: SecureImageProps) {
+export default memo(function SecureImage({ src, fallbackSrc, alt = '', ...props }: SecureImageProps) {
   const { getSignedUrl } = useSignedUrl()
   const [signedSrc, setSignedSrc] = useState<string | null>(null)
   const [error, setError] = useState(false)
@@ -44,15 +44,17 @@ export default function SecureImage({ src, fallbackSrc, alt = '', ...props }: Se
   }
 
   if (error && fallbackSrc) {
-    return <img src={fallbackSrc} alt={alt} {...props} />
+    return <img src={fallbackSrc} alt={alt} loading="lazy" decoding="async" {...props} />
   }
 
   return (
     <img
       src={signedSrc}
       alt={alt}
+      loading="lazy"
+      decoding="async"
       onError={() => setError(true)}
       {...props}
     />
   )
-}
+})

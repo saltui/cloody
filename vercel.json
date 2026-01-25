@@ -4,6 +4,10 @@
     {
       "path": "/api/transcode/process",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/trash/cleanup",
+      "schedule": "0 3 * * *"
     }
   ]
 }

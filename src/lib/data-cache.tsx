@@ -6,12 +6,21 @@ import { supabase } from './supabase'
 interface Photo {
   id: string
   url: string
-  thumbnail_url?: string
-  name?: string
+  thumbnail_url: string | null
+  name: string
   folder_id: string | null
   user_id: string
   order: number
   created_at: string
+  // Video metadata
+  file_type?: string
+  file_size?: number
+  is_video?: boolean
+  duration?: number
+  width?: number
+  height?: number
+  hls_url?: string
+  hls_status?: 'not_applicable' | 'pending' | 'processing' | 'ready' | 'failed'
 }
 
 interface Folder {
@@ -34,7 +43,7 @@ export interface PaginatedResult<T> {
   nextCursor: number
 }
 
-export type CategoryFilter = 'all' | 'photos' | 'videos'
+export type CategoryFilter = 'all' | 'photos' | 'videos' | 'documents'
 
 interface DataCacheContextType {
   // 폴더 관련
@@ -104,6 +113,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
         .from('folders')
         .select('*')
         .eq('user_id', userId)
+        .is('deleted_at', null) // 휴지통 제외
         .order('created_at', { ascending: true })
 
       const folders = (data || []) as Folder[]
@@ -144,6 +154,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
         .from('photos')
         .select('*')
         .eq('user_id', userId)
+        .is('deleted_at', null) // 휴지통 제외
         .order('order', { ascending: true })
 
       if (folderId) {
@@ -186,6 +197,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
           .from('photos')
           .select('*')
           .eq('user_id', userId)
+          .is('deleted_at', null) // 휴지통 제외
           .order('order', { ascending: false }) // 최신순 (getPhotosPaginated와 동일)
           .range(from, from + pageSize - 1)
 
@@ -256,6 +268,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
       .from('photos')
       .select('*')
       .eq('user_id', userId)
+      .is('deleted_at', null) // 휴지통 제외
       .order('order', { ascending: false })
       .range(cursor, cursor + limit)
 
@@ -270,9 +283,16 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
 
     // 카테고리 필터 (DB에서 직접 필터링)
     if (category === 'photos') {
-      query = query.eq('is_video', false)
+      // 사진: 비디오가 아니거나 NULL이고, file_type이 image/로 시작하거나 NULL인 것
+      // 기존 데이터 호환성을 위해 NULL도 포함
+      query = query
+        .or('is_video.eq.false,is_video.is.null')
+        .or('file_type.like.image/%,file_type.is.null')
     } else if (category === 'videos') {
       query = query.eq('is_video', true)
+    } else if (category === 'documents') {
+      // 문서: 비디오가 아니고 file_type이 image/로 시작하지 않는 것
+      query = query.eq('is_video', false).not('file_type', 'like', 'image/%')
     }
 
     const { data, error } = await query

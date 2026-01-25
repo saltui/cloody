@@ -168,31 +168,30 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '파일 크기는 100MB를 초과할 수 없습니다.' }, { status: 400 })
     }
 
-    // MIME 타입 검증
-    if (!ALLOWED_TYPES.has(file.type)) {
-      console.log('Upload validation failed: invalid MIME type', { type: file.type, allowed: Array.from(ALLOWED_TYPES) })
-      return NextResponse.json({ error: `허용되지 않는 파일 형식입니다: ${file.type}` }, { status: 400 })
-    }
-
     const buffer = Buffer.from(await file.arrayBuffer())
 
-    // Magic bytes로 실제 파일 타입 검증
-    const detectedType = detectFileType(buffer)
-    if (!detectedType) {
-      console.log('Upload validation failed: could not detect file type', { declaredType: file.type, firstBytes: buffer.slice(0, 16).toString('hex') })
-      return NextResponse.json({ error: '파일 형식을 확인할 수 없습니다.' }, { status: 400 })
-    }
-
-    // 선언된 타입과 실제 타입이 다르면 거부
-    // (이미지/비디오 카테고리는 맞아야 함)
+    // 이미지/비디오 파일만 magic bytes 검증 (보안 목적)
     const declaredCategory = file.type.split('/')[0]
-    const detectedCategory = detectedType.split('/')[0]
-    console.log('Type check:', { declaredType: file.type, detectedType, declaredCategory, detectedCategory })
-    if (declaredCategory !== detectedCategory) {
-      console.log('Upload validation failed: type mismatch', { declaredCategory, detectedCategory })
-      return NextResponse.json({
-        error: `파일 형식이 일치하지 않습니다: ${file.type} vs ${detectedType}`
-      }, { status: 400 })
+    let finalType = file.type || 'application/octet-stream'
+
+    if (declaredCategory === 'image' || declaredCategory === 'video') {
+      // Magic bytes로 실제 파일 타입 검증
+      const detectedType = detectFileType(buffer)
+      if (!detectedType) {
+        console.log('Upload validation failed: could not detect file type', { declaredType: file.type, firstBytes: buffer.slice(0, 16).toString('hex') })
+        return NextResponse.json({ error: '파일 형식을 확인할 수 없습니다.' }, { status: 400 })
+      }
+
+      // 선언된 타입과 실제 타입이 다르면 거부
+      const detectedCategory = detectedType.split('/')[0]
+      console.log('Type check:', { declaredType: file.type, detectedType, declaredCategory, detectedCategory })
+      if (declaredCategory !== detectedCategory) {
+        console.log('Upload validation failed: type mismatch', { declaredCategory, detectedCategory })
+        return NextResponse.json({
+          error: `파일 형식이 일치하지 않습니다: ${file.type} vs ${detectedType}`
+        }, { status: 400 })
+      }
+      finalType = detectedType
     }
 
     // 파일명에서 위험한 문자 제거
@@ -200,7 +199,7 @@ export async function POST(request: NextRequest) {
       .replace(/\.\./g, '') // path traversal 방지
       .replace(/[<>:"|?*]/g, '') // 특수문자 제거
 
-    const url = await uploadToR2(sanitizedFileName, buffer, detectedType)
+    const url = await uploadToR2(sanitizedFileName, buffer, finalType)
 
     // 감사 로그 - 파일 업로드
     logAudit({
@@ -209,7 +208,7 @@ export async function POST(request: NextRequest) {
       userAgent,
       details: {
         fileName: sanitizedFileName,
-        fileType: detectedType,
+        fileType: finalType,
         fileSize: file.size
       }
     })

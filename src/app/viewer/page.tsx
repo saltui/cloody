@@ -117,9 +117,19 @@ export default function ViewerPage() {
         }
 
         setPhotos(sortedData)
-        const indexParam = searchParams.get('index')
-        if (indexParam) {
-          setCurrentIndex(Math.min(parseInt(indexParam), sortedData.length - 1))
+
+        // photoId가 있으면 해당 사진의 인덱스 찾기 (검색 결과에서 클릭 시)
+        const photoIdParam = searchParams.get('photoId')
+        if (photoIdParam) {
+          const photoIndex = sortedData.findIndex(p => p.id === photoIdParam)
+          if (photoIndex >= 0) {
+            setCurrentIndex(photoIndex)
+          }
+        } else {
+          const indexParam = searchParams.get('index')
+          if (indexParam) {
+            setCurrentIndex(Math.min(parseInt(indexParam), sortedData.length - 1))
+          }
         }
       }
       setLoading(false)
@@ -564,10 +574,14 @@ export default function ViewerPage() {
         </div>
       </header>
 
-      {/* 이미지 영역 - 화면 중앙에 절대 위치 */}
+      {/* 이미지 영역 - 화면 중앙에 절대 위치 (safe area 고려) */}
       <div
         ref={containerRef}
         className="absolute inset-0 flex items-center justify-center z-10"
+        style={{
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        }}
         onClick={() => setShowUI(!showUI)}
       >
         {/* 이전 버튼 - 데스크탑 */}
@@ -614,7 +628,8 @@ export default function ViewerPage() {
               controls
               autoPlay
               playsInline
-              className="max-h-screen max-w-full object-contain"
+              className="max-w-full object-contain"
+              style={{ maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))' }}
               onLoadedData={() => setImageLoading(false)}
               onCanPlay={() => setImageLoading(false)}
             />
@@ -623,9 +638,10 @@ export default function ViewerPage() {
               key={currentPhoto.url}
               src={currentSignedUrl}
               alt=""
-              className={`max-h-screen max-w-full object-contain select-none transition-opacity duration-300 ${
+              className={`max-w-full object-contain select-none transition-opacity duration-300 ${
                 imageLoading ? 'opacity-0' : 'opacity-100'
               }`}
+              style={{ maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))' }}
               draggable={false}
               onLoad={handleImageLoad}
             />

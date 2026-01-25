@@ -22,21 +22,22 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // 사용자의 사진 수를 가져와서 추정치 계산
-    // TODO: photos 테이블에 file_size 컬럼 추가 후 정확한 계산으로 변경
-    const { count } = await supabase
+    // 실제 파일 크기 합산 (휴지통 제외)
+    const { data, error } = await supabase
       .from('photos')
-      .select('*', { count: 'exact', head: true })
+      .select('file_size')
       .eq('user_id', userId)
+      .is('deleted_at', null)
 
-    // 사진당 평균 2MB로 추정 (실제로는 file_size 컬럼으로 계산해야 함)
-    const estimatedUsage = (count || 0) * 2 * 1024 * 1024
+    if (error) throw error
+
+    const totalUsage = (data || []).reduce((sum, photo) => sum + (photo.file_size || 0), 0)
 
     // 캐시 저장
-    cache.set(userId, { usage: estimatedUsage, timestamp: Date.now() })
+    cache.set(userId, { usage: totalUsage, timestamp: Date.now() })
 
     return NextResponse.json(
-      { usage: estimatedUsage },
+      { usage: totalUsage },
       { headers: { 'Cache-Control': 'private, max-age=60' } }
     )
   } catch (error) {

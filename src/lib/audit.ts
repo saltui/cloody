@@ -14,6 +14,10 @@ export type AuditAction =
   | '2FA_ENABLED'
   | '2FA_VERIFIED'
   | '2FA_FAILED'
+  | 'TRASH_MOVE'
+  | 'TRASH_RESTORE'
+  | 'TRASH_PERMANENT_DELETE'
+  | 'TRASH_EMPTY'
 
 interface AuditLogEntry {
   action: AuditAction

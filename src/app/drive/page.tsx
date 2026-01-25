@@ -10,6 +10,13 @@ import { useUser } from '@/lib/user-context'
 import { useDataCache, type CategoryFilter } from '@/lib/data-cache'
 import Sidebar, { FileCategory } from '@/components/Sidebar'
 import { Home, Image as ImageIcon, CloudUpload, Menu } from 'lucide-react'
+import { FileThumbnail, isMediaFile, getFileTypeLabel } from '@/lib/file-icons'
+
+// file_type을 DB 컬럼 크기(50자)에 맞게 제한
+function truncateFileType(fileType: string | undefined): string | undefined {
+  if (!fileType) return fileType
+  return fileType.slice(0, 50)
+}
 
 // R2 URL을 프록시 URL로 즉시 변환
 function toProxyUrl(url: string): string {
@@ -29,6 +36,44 @@ function toProxyUrl(url: string): string {
     }
   }
   return url
+}
+
+// XMLHttpRequest를 사용한 업로드 (진행률 추적 지원)
+function uploadWithProgress(
+  url: string,
+  formData: FormData,
+  onProgress?: (percent: number, loaded: number, total: number) => void
+): Promise<{ url: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable && onProgress) {
+        const percent = Math.round((event.loaded / event.total) * 100)
+        onProgress(percent, event.loaded, event.total)
+      }
+    })
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const response = JSON.parse(xhr.responseText)
+          resolve(response)
+        } catch {
+          reject(new Error('Invalid response'))
+        }
+      } else {
+        reject(new Error(`Upload failed: ${xhr.status}`))
+      }
+    })
+
+    xhr.addEventListener('error', () => {
+      reject(new Error('Network error'))
+    })
+
+    xhr.open('POST', url)
+    xhr.send(formData)
+  })
 }
 
 interface Photo {
@@ -242,7 +287,7 @@ interface DuplicateFile {
 export default function DrivePage() {
   const { theme, viewMode, setTheme, setViewMode } = useTheme()
   const { uploading, uploadQueue, uploadProgress, showUploadPanel, setShowUploadPanel, addToQueue, updateQueueItem, removeFromQueue, clearCompleted, clearAll } = useUpload()
-  const { startDownload } = useDownload()
+  const { startDownload, startZipDownload } = useDownload()
   const { user, isLoading: userLoading } = useUser()
   const dataCache = useDataCache()
   const [photos, setPhotos] = useState<Photo[]>([])
@@ -326,6 +371,13 @@ export default function DrivePage() {
   const [showFabMenu, setShowFabMenu] = useState(false)
   const fabFileInputRef = useRef<HTMLInputElement>(null)
 
+  // 검색
+  const [searchQuery, setSearchQuery] = useState('')
+  const [isSearchFocused, setIsSearchFocused] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [allPhotosForSearch, setAllPhotosForSearch] = useState<Photo[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+
   // 드래그 선택 관련 (데스크톱)
   const [dragSelectStart, setDragSelectStart] = useState<{ x: number; y: number } | null>(null)
   const [dragSelectCurrent, setDragSelectCurrent] = useState<{ x: number; y: number } | null>(null)
@@ -344,6 +396,13 @@ export default function DrivePage() {
   // 범위 선택을 위한 정렬된 배열 refs
   const sortedFoldersRef = useRef<Folder[]>([])
   const sortedPhotosRef = useRef<Photo[]>([])
+
+  // Pull to refresh (모바일)
+  const [pullDistance, setPullDistance] = useState(0)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const pullStartY = useRef<number | null>(null)
+  const isPulling = useRef(false)
+  const PULL_THRESHOLD = 80
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -545,13 +604,85 @@ export default function DrivePage() {
     fetchFolderCounts()
   }, [infoFolder, user])
 
+  // 모달이 열릴 때 body 스크롤 차단
+  useEffect(() => {
+    const isModalOpen = !!infoPhoto || !!infoFolder || showNewFolderInput || !!editingFolder || !!editingPhoto || showFolderPicker
+    if (isModalOpen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [infoPhoto, infoFolder, showNewFolderInput, editingFolder, editingPhoto, showFolderPicker])
+
+  // iCloud 파일 준비 (다운로드 대기)
+  const [iCloudDownloading, setICloudDownloading] = useState(false)
+  const [iCloudProgress, setICloudProgress] = useState({ current: 0, total: 0, fileName: '' })
+
+  const prepareFileForUpload = async (file: File, onProgress?: (fileName: string) => void): Promise<File | null> => {
+    // 파일 크기가 0이면 iCloud에서 아직 다운로드 안 됨
+    // 파일을 읽으려고 시도하면 macOS가 자동으로 다운로드 시작
+    try {
+      onProgress?.(file.name)
+      // 전체 파일을 읽어서 iCloud 다운로드 트리거 (타임아웃 5분)
+      const timeoutPromise = new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 5 * 60 * 1000)
+      )
+      const readPromise = file.arrayBuffer().then(() => file)
+      const result = await Promise.race([readPromise, timeoutPromise])
+      return result
+    } catch {
+      return null
+    }
+  }
+
   // 파일 선택 시
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
 
-    setPendingFiles(Array.from(files))
-    setShowFolderPicker(true)
+    const fileArray = Array.from(files)
+
+    // iCloud 파일이 있는지 확인 (크기가 0인 파일)
+    const hasICloudFiles = fileArray.some(f => f.size === 0)
+
+    if (hasICloudFiles) {
+      setICloudDownloading(true)
+      setICloudProgress({ current: 0, total: fileArray.length, fileName: '' })
+    }
+
+    const validFiles: File[] = []
+    const skippedFiles: string[] = []
+
+    // 각 파일 준비 (iCloud 다운로드 대기)
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i]
+      setICloudProgress({ current: i + 1, total: fileArray.length, fileName: file.name })
+
+      const preparedFile = await prepareFileForUpload(file, (name) => {
+        setICloudProgress(prev => ({ ...prev, fileName: name }))
+      })
+
+      if (preparedFile) {
+        validFiles.push(preparedFile)
+      } else {
+        skippedFiles.push(file.name)
+      }
+    }
+
+    setICloudDownloading(false)
+
+    // 건너뛴 파일 알림
+    if (skippedFiles.length > 0) {
+      alert(`다음 ${skippedFiles.length}개 파일을 준비할 수 없습니다.\n(타임아웃 또는 접근 불가)\n\n${skippedFiles.slice(0, 5).join('\n')}${skippedFiles.length > 5 ? `\n... 외 ${skippedFiles.length - 5}개` : ''}`)
+    }
+
+    if (validFiles.length > 0) {
+      setPendingFiles(validFiles)
+      setShowFolderPicker(true)
+    }
     e.target.value = ''
   }
 
@@ -590,18 +721,44 @@ export default function DrivePage() {
     const folderPaths: string[] = []
     let hasDroppedFolders = false
 
+    // iCloud 파일 준비 함수 (다운로드 대기)
+    const prepareFile = async (file: File): Promise<File | null> => {
+      try {
+        // 전체 파일을 읽어서 iCloud 다운로드 트리거 (타임아웃 5분)
+        const timeoutPromise = new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 5 * 60 * 1000)
+        )
+        const readPromise = file.arrayBuffer().then(() => file)
+        return await Promise.race([readPromise, timeoutPromise])
+      } catch {
+        return null
+      }
+    }
+
     // 폴더와 파일 처리
+    const skippedFiles: string[] = []
     const processEntry = async (entry: FileSystemEntry, path: string = ''): Promise<void> => {
       if (entry.isFile) {
         const fileEntry = entry as FileSystemFileEntry
         return new Promise((resolve) => {
-          fileEntry.file((file) => {
-            // 이미지/비디오만 필터링
-            if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
-              filesWithPath.push({ file, folderPath: path })
+          fileEntry.file(
+            async (file) => {
+              // iCloud 파일 준비 (다운로드 대기)
+              const preparedFile = await prepareFile(file)
+              if (preparedFile) {
+                filesWithPath.push({ file: preparedFile, folderPath: path })
+              } else {
+                skippedFiles.push(file.name)
+              }
+              resolve()
+            },
+            (error) => {
+              // iCloud 파일 접근 에러 처리
+              console.warn(`파일 접근 실패: ${entry.name}`, error)
+              skippedFiles.push(entry.name)
+              resolve()
             }
-            resolve()
-          })
+          )
         })
       } else if (entry.isDirectory) {
         hasDroppedFolders = true
@@ -674,10 +831,26 @@ export default function DrivePage() {
         }
       }
 
+      // iCloud 등에서 다운로드되지 않은 파일 경고
+      if (skippedFiles.length > 0) {
+        alert(`다음 ${skippedFiles.length}개 파일을 업로드할 수 없습니다.\niCloud에서 기기로 다운로드 후 다시 시도해주세요.\n\n${skippedFiles.slice(0, 5).join('\n')}${skippedFiles.length > 5 ? `\n... 외 ${skippedFiles.length - 5}개` : ''}`)
+      }
+
       // 파일이 있으면 바로 업로드 (폴더 피커 없이)
       if (filesWithPath.length > 0) {
         const uploadId = Date.now().toString()
-        const newItems = filesWithPath.map((f, i) => ({ id: `${uploadId}-${i}`, name: f.file.name, status: 'pending' as const }))
+        // 현재 폴더명 가져오기
+        const currentFolderName = currentFolderId
+          ? folders.find(f => f.id === currentFolderId)?.name || '내 드라이브'
+          : '내 드라이브'
+        const newItems = filesWithPath.map((f, i) => ({
+          id: `${uploadId}-${i}`,
+          name: f.file.name,
+          status: 'pending' as const,
+          fileType: f.file.name.split('.').pop()?.toUpperCase() || '',
+          fileSize: f.file.size,
+          folderName: f.folderPath || currentFolderName,
+        }))
         addToQueue(newItems)
         setShowUploadPanel(true)
 
@@ -694,24 +867,21 @@ export default function DrivePage() {
             targetFolderId = folderIdMap[folderPath]
           }
 
-          updateQueueItem(itemId, 'uploading')
+          updateQueueItem(itemId, { status: 'uploading', progress: 0, startedAt: Date.now() })
 
           const timestamp = Date.now()
           const uniqueFileName = `${timestamp}_${index}_${file.name}`
 
           try {
-            // 1. 원본 업로드
+            // 1. 원본 업로드 (진행률 추적)
             const formData = new FormData()
             formData.append('file', file)
             formData.append('fileName', uniqueFileName)
 
-            const uploadRes = await fetch('/api/upload', {
-              method: 'POST',
-              body: formData,
+            const { url } = await uploadWithProgress('/api/upload', formData, (percent, loaded) => {
+              // 원본 업로드는 90%까지, 썸네일은 10%
+              updateQueueItem(itemId, { progress: Math.round(percent * 0.9), uploadedSize: loaded })
             })
-
-            if (!uploadRes.ok) throw new Error('Upload failed')
-            const { url } = await uploadRes.json()
 
             // 2. 썸네일 생성 및 업로드
             let thumbnailUrl: string | null = null
@@ -733,6 +903,7 @@ export default function DrivePage() {
                 thumbnailUrl = thumbData.url
               }
             }
+            updateQueueItem(itemId, { progress: 100 })
 
             const isVideo = file.type.startsWith('video/')
             uploadResults.push({
@@ -760,13 +931,16 @@ export default function DrivePage() {
                   order: prev.length + 1,
                   folder_id: targetFolderId,
                   created_at: new Date().toISOString(),
+                  file_type: truncateFileType(file.type),
+                  file_size: file.size,
+                  is_video: isVideo,
                 }]
               })
             }
 
-            updateQueueItem(itemId, 'done')
+            updateQueueItem(itemId, { status: 'done', progress: 100, url, uploadedSize: file.size })
           } catch {
-            updateQueueItem(itemId, 'error')
+            updateQueueItem(itemId, { status: 'error' })
           }
 
           completedCount++
@@ -805,13 +979,19 @@ export default function DrivePage() {
               order: baseOrder + idx + 1,
               folder_id: folderId,
               user_id: user?.id,
-              file_type: item.fileType,
+              file_type: truncateFileType(item.fileType),
               file_size: item.fileSize,
               is_video: item.isVideo,
               hls_status: item.isVideo ? 'pending' : 'not_applicable',
             }))
 
-            await supabase.from('photos').insert(insertData)
+            console.log('[Upload Folder] Inserting to DB:', insertData)
+            const { error: insertError } = await supabase.from('photos').insert(insertData)
+            if (insertError) {
+              console.error('[Upload Folder] DB insert error:', insertError)
+            } else {
+              console.log('[Upload Folder] DB insert success')
+            }
           }
         }
 
@@ -927,7 +1107,18 @@ export default function DrivePage() {
 
     const fileList = filesToUpload
     const uploadId = Date.now().toString()
-    const newItems = fileList.map((f, i) => ({ id: `${uploadId}-${i}`, name: f.name, status: 'pending' as const }))
+    // 폴더명 가져오기
+    const targetFolderName = targetFolderId
+      ? folders.find(f => f.id === targetFolderId)?.name || '내 드라이브'
+      : '내 드라이브'
+    const newItems = fileList.map((f, i) => ({
+      id: `${uploadId}-${i}`,
+      name: f.name,
+      status: 'pending' as const,
+      fileType: f.name.split('.').pop()?.toUpperCase() || '',
+      fileSize: f.size,
+      folderName: targetFolderName,
+    }))
     addToQueue(newItems)
     setShowUploadPanel(true)
 
@@ -940,24 +1131,21 @@ export default function DrivePage() {
       const file = fileList[index]
       const itemId = `${uploadId}-${index}`
 
-      updateQueueItem(itemId, 'uploading')
+      updateQueueItem(itemId, { status: 'uploading', progress: 0, startedAt: Date.now() })
 
       const timestamp = Date.now()
       const uniqueFileName = `${timestamp}_${index}_${file.name}`
 
       try {
-        // 1. 원본 업로드
+        // 1. 원본 업로드 (진행률 추적)
         const formData = new FormData()
         formData.append('file', file)
         formData.append('fileName', uniqueFileName)
 
-        const uploadRes = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
+        const { url } = await uploadWithProgress('/api/upload', formData, (percent, loaded) => {
+          // 원본 업로드는 90%까지, 썸네일은 10%
+          updateQueueItem(itemId, { progress: Math.round(percent * 0.9), uploadedSize: loaded })
         })
-
-        if (!uploadRes.ok) throw new Error('Upload failed')
-        const { url } = await uploadRes.json()
 
         // 2. 썸네일 생성 및 업로드
         let thumbnailUrl: string | null = null
@@ -979,6 +1167,7 @@ export default function DrivePage() {
             thumbnailUrl = thumbData.url
           }
         }
+        updateQueueItem(itemId, { progress: 100 })
 
         const isVideo = file.type.startsWith('video/')
         uploadResults.push({
@@ -1006,14 +1195,16 @@ export default function DrivePage() {
               order: prev.length + 1,
               folder_id: targetFolderId,
               created_at: new Date().toISOString(),
+              file_type: truncateFileType(file.type),
+              file_size: file.size,
               is_video: isVideo,
             }]
           })
         }
 
-        updateQueueItem(itemId, 'done')
+        updateQueueItem(itemId, { status: 'done', progress: 100, url, uploadedSize: file.size })
       } catch {
-        updateQueueItem(itemId, 'error')
+        updateQueueItem(itemId, { status: 'error' })
       }
 
       completedCount++
@@ -1046,13 +1237,19 @@ export default function DrivePage() {
         order: baseOrder + idx + 1,
         folder_id: targetFolderId,
         user_id: user?.id,
-        file_type: item.fileType,
+        file_type: truncateFileType(item.fileType),
         file_size: item.fileSize,
         is_video: item.isVideo,
         hls_status: item.isVideo ? 'pending' : 'not_applicable',
       }))
 
-      await supabase.from('photos').insert(insertData)
+      console.log('[Upload] Inserting to DB:', insertData)
+      const { error: insertError } = await supabase.from('photos').insert(insertData)
+      if (insertError) {
+        console.error('[Upload] DB insert error:', insertError)
+      } else {
+        console.log('[Upload] DB insert success')
+      }
     }
 
     setPendingFiles([])
@@ -1099,114 +1296,27 @@ export default function DrivePage() {
   const handleDeleteSelected = async () => {
     const totalItems = selectedIds.size + selectedFolderIds.size
     if (totalItems === 0) return
-    if (!confirm(`${totalItems}개 항목을 삭제할까요?`)) return
+    if (!confirm(`${totalItems}개 항목을 휴지통으로 이동할까요?`)) return
 
     setDeleting(true)
+    setDeleteStatus('휴지통으로 이동 중...')
 
     try {
-      // R2 파일 삭제 헬퍼 함수 (타임아웃 10초)
-      const deleteFileFromR2 = async (fileName: string) => {
-        const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), 10000)
-        try {
-          const res = await fetch('/api/delete', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fileName }),
-            signal: controller.signal,
-          })
-          if (!res.ok) {
-            console.warn(`R2 delete failed for ${fileName}: ${res.status}`)
-          }
-        } catch (e) {
-          console.warn(`R2 delete error for ${fileName}:`, e)
-        } finally {
-          clearTimeout(timeout)
-        }
-      }
+      // 휴지통 API 호출 (soft delete)
+      const res = await fetch('/api/trash', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || '',
+        },
+        body: JSON.stringify({
+          photoIds: Array.from(selectedIds),
+          folderIds: Array.from(selectedFolderIds),
+        }),
+      })
 
-      // 폴더 삭제
-      const foldersToDelete = folders.filter(f => selectedFolderIds.has(f.id))
-      for (let i = 0; i < foldersToDelete.length; i++) {
-        const folder = foldersToDelete[i]
-        setDeleteStatus(`폴더 삭제 중... (${i + 1}/${foldersToDelete.length})`)
-
-        // 폴더 내 모든 항목 수집 및 삭제 (handleDeleteFolder 로직 재사용)
-        const collectItems = async (id: string): Promise<{ folders: string[], photos: { id: string, url: string, thumbnail_url: string | null }[] }> => {
-          const result = { folders: [id], photos: [] as { id: string, url: string, thumbnail_url: string | null }[] }
-          const { data: childFolders } = await supabase.from('folders').select('id').eq('parent_id', id)
-          if (childFolders) {
-            for (const child of childFolders) {
-              const childItems = await collectItems(child.id)
-              result.folders.push(...childItems.folders)
-              result.photos.push(...childItems.photos)
-            }
-          }
-          const { data: folderPhotos } = await supabase.from('photos').select('id, url, thumbnail_url').eq('folder_id', id)
-          if (folderPhotos) result.photos.push(...folderPhotos)
-          return result
-        }
-
-        const items = await collectItems(folder.id)
-
-        // R2 파일 삭제 (병렬) - 원본 + 썸네일
-        if (items.photos.length > 0) {
-          const deletePromises: Promise<void>[] = []
-          items.photos.forEach(photo => {
-            // 원본 삭제
-            const fileName = photo.url.split('/').pop()
-            if (fileName) {
-              deletePromises.push(deleteFileFromR2(decodeURIComponent(fileName)))
-            }
-            // 썸네일 삭제
-            if (photo.thumbnail_url) {
-              const thumbName = photo.thumbnail_url.split('/').pop()
-              if (thumbName) {
-                deletePromises.push(deleteFileFromR2(decodeURIComponent(thumbName)))
-              }
-            }
-          })
-          await Promise.all(deletePromises)
-
-          // DB에서 사진 삭제 (배치) - 소유자 확인
-          const photoIds = items.photos.map(p => p.id)
-          const { error: dbError } = await supabase.from('photos').delete().in('id', photoIds).eq('user_id', user?.id)
-          if (dbError) console.error('DB delete error:', dbError)
-        }
-
-        // 폴더 삭제 (역순으로 - 하위 폴더부터) - 소유자 확인
-        for (let j = items.folders.length - 1; j >= 0; j--) {
-          await supabase.from('folders').delete().eq('id', items.folders[j]).eq('user_id', user?.id)
-        }
-      }
-
-      // 사진 삭제 (병렬 처리)
-      const photosToDelete = photos.filter(p => selectedIds.has(p.id))
-      if (photosToDelete.length > 0) {
-        setDeleteStatus(`파일 삭제 중... (${photosToDelete.length}개)`)
-
-        // R2 파일 삭제 (병렬)
-        const deletePromises: Promise<void>[] = []
-        photosToDelete.forEach(photo => {
-          // 원본 삭제
-          const fileName = photo.url.split('/').pop()
-          if (fileName) {
-            deletePromises.push(deleteFileFromR2(decodeURIComponent(fileName)))
-          }
-          // 썸네일 삭제
-          if (photo.thumbnail_url) {
-            const thumbName = photo.thumbnail_url.split('/').pop()
-            if (thumbName) {
-              deletePromises.push(deleteFileFromR2(decodeURIComponent(thumbName)))
-            }
-          }
-        })
-        await Promise.all(deletePromises)
-
-        // DB 삭제 (배치) - 소유자 확인
-        const photoIds = photosToDelete.map(p => p.id)
-        const { error: dbError } = await supabase.from('photos').delete().in('id', photoIds).eq('user_id', user?.id)
-        if (dbError) console.error('DB delete error:', dbError)
+      if (!res.ok) {
+        throw new Error('Failed to move to trash')
       }
 
       setSelectedIds(new Set())
@@ -1214,7 +1324,6 @@ export default function DrivePage() {
       dataCache.invalidateFolders()
       dataCache.invalidatePhotos()
       await fetchData(currentFolderId, searchParams.get('category') || 'all')
-      await fetchStorageUsage()
     } catch (error) {
       console.error('Delete error:', error)
       alert('삭제 중 오류가 발생했습니다.')
@@ -1280,18 +1389,66 @@ export default function DrivePage() {
     }
   }
 
-  // 선택된 사진 다운로드
+  // 선택된 사진/폴더 다운로드
   const handleDownloadSelected = async () => {
-    if (selectedIds.size === 0) return
+    if (selectedIds.size === 0 && selectedFolderIds.size === 0) return
 
     const selectedPhotos = photos.filter(p => selectedIds.has(p.id))
-    const downloadItems = selectedPhotos.map(photo => ({
-      id: photo.id,
-      name: photo.name,
-      url: photo.url,
-    }))
+    const selectedFolders = folders.filter(f => selectedFolderIds.has(f.id))
 
-    await startDownload(downloadItems)
+    // 단일 파일이고 폴더가 없으면 개별 다운로드
+    if (selectedPhotos.length === 1 && selectedFolders.length === 0) {
+      await startDownload(selectedPhotos.map(photo => ({
+        id: photo.id,
+        name: photo.name,
+        url: photo.url,
+      })))
+    } else {
+      // 여러 파일이거나 폴더가 포함된 경우 ZIP 다운로드
+      const items: { id: string; name: string; url: string; type: 'photo' | 'folder'; folderId?: string | null }[] = [
+        ...selectedPhotos.map(photo => ({
+          id: photo.id,
+          name: photo.name,
+          url: photo.url,
+          type: 'photo' as const,
+          folderId: photo.folder_id,
+        })),
+        ...selectedFolders.map(folder => ({
+          id: folder.id,
+          name: folder.name,
+          url: '',
+          type: 'folder' as const,
+        })),
+      ]
+
+      // 폴더 내용 가져오는 함수
+      const fetchFolderContents = async (folderId: string) => {
+        const { data: folderPhotos } = await supabase
+          .from('photos')
+          .select('id, name, url')
+          .eq('folder_id', folderId)
+          .eq('user_id', user?.id)
+          .is('deleted_at', null)
+
+        const { data: subFolders } = await supabase
+          .from('folders')
+          .select('id, name')
+          .eq('parent_id', folderId)
+          .eq('user_id', user?.id)
+          .is('deleted_at', null)
+
+        return [
+          ...(folderPhotos || []).map(p => ({ id: p.id, name: p.name, url: p.url, type: 'photo' as const })),
+          ...(subFolders || []).map(f => ({ id: f.id, name: f.name, url: '', type: 'folder' as const })),
+        ]
+      }
+
+      await startZipDownload(
+        items,
+        allFolders.map(f => ({ id: f.id, name: f.name, parentId: f.parent_id })),
+        fetchFolderContents
+      )
+    }
 
     // 선택 해제
     setSelectedIds(new Set())
@@ -1514,6 +1671,59 @@ export default function DrivePage() {
     }
   }, [isTouchDragging])
 
+  // Pull to refresh 핸들러 (모바일)
+  const handlePullStart = useCallback((e: React.TouchEvent) => {
+    // 선택 모드, 검색 모드, 업로드 패널, 더보기 화면에서는 비활성화
+    if (isSelecting || searchQuery || showUploadPanel || showMoreScreen) return
+    // 스크롤이 맨 위가 아니면 비활성화
+    if (window.scrollY > 0) return
+
+    pullStartY.current = e.touches[0].clientY
+    isPulling.current = true
+  }, [isSelecting, searchQuery, showUploadPanel, showMoreScreen])
+
+  const handlePullMove = useCallback((e: React.TouchEvent) => {
+    if (!isPulling.current || pullStartY.current === null || isRefreshing) return
+    if (window.scrollY > 0) {
+      isPulling.current = false
+      setPullDistance(0)
+      return
+    }
+
+    const currentY = e.touches[0].clientY
+    const diff = currentY - pullStartY.current
+
+    if (diff > 0) {
+      // 저항감 있는 당기기 효과 (점점 느려짐)
+      const resistance = 0.4
+      const newDistance = Math.min(diff * resistance, PULL_THRESHOLD * 1.5)
+      setPullDistance(newDistance)
+    }
+  }, [isRefreshing, PULL_THRESHOLD])
+
+  const handlePullEnd = useCallback(async () => {
+    if (!isPulling.current) return
+    isPulling.current = false
+    pullStartY.current = null
+
+    if (pullDistance >= PULL_THRESHOLD && !isRefreshing) {
+      setIsRefreshing(true)
+      setPullDistance(PULL_THRESHOLD) // 새로고침 중에는 고정
+
+      try {
+        // 캐시 무효화 후 새로 로드
+        dataCache.invalidateAll()
+        const category = searchParams.get('category') || 'all'
+        await fetchData(currentFolderId, category)
+      } finally {
+        setIsRefreshing(false)
+        setPullDistance(0)
+      }
+    } else {
+      setPullDistance(0)
+    }
+  }, [pullDistance, isRefreshing, PULL_THRESHOLD, dataCache, searchParams, fetchData, currentFolderId])
+
   // 선택 모드에서 아이템 탭으로 선택 토글
   const handleItemTap = useCallback((e: React.MouseEvent | React.TouchEvent, itemId: string, isFolder: boolean, index?: number) => {
     // 터치 드래그 중이거나 스크롤 중이면 무시
@@ -1543,91 +1753,38 @@ export default function DrivePage() {
   const handleDeleteFolder = async (folderId: string) => {
     closeFolderMenu()
 
-    if (!confirm('폴더와 모든 내용을 삭제할까요?')) return
+    if (!confirm('폴더와 모든 내용을 휴지통으로 이동할까요?')) return
 
     setDeleting(true)
-    setDeleteStatus('삭제 준비 중...')
+    setDeleteStatus('휴지통으로 이동 중...')
 
-    // 먼저 모든 삭제할 항목 수집
-    const collectItems = async (id: string): Promise<{ folders: string[], photos: { id: string, url: string, thumbnail_url: string | null }[] }> => {
-      const result = { folders: [id], photos: [] as { id: string, url: string, thumbnail_url: string | null }[] }
-
-      const { data: childFolders } = await supabase
-        .from('folders')
-        .select('id')
-        .eq('parent_id', id)
-
-      if (childFolders) {
-        for (const child of childFolders) {
-          const childItems = await collectItems(child.id)
-          result.folders.push(...childItems.folders)
-          result.photos.push(...childItems.photos)
-        }
-      }
-
-      const { data: folderPhotos } = await supabase
-        .from('photos')
-        .select('id, url, thumbnail_url')
-        .eq('folder_id', id)
-
-      if (folderPhotos) {
-        result.photos.push(...folderPhotos)
-      }
-
-      return result
-    }
-
-    const items = await collectItems(folderId)
-    const totalPhotos = items.photos.length
-    const totalFolders = items.folders.length
-
-    // 사진 삭제 (병렬 처리) - 원본 + 썸네일
-    if (totalPhotos > 0) {
-      setDeleteStatus(`파일 삭제 중... (${totalPhotos}개)`)
-
-      // R2 파일 삭제 (병렬)
-      const deletePromises: Promise<Response | undefined>[] = []
-      items.photos.forEach(photo => {
-        // 원본 삭제
-        const fileName = photo.url.split('/').pop()
-        if (fileName) {
-          deletePromises.push(fetch('/api/delete', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fileName }),
-          }))
-        }
-        // 썸네일 삭제
-        if (photo.thumbnail_url) {
-          const thumbName = photo.thumbnail_url.split('/').pop()
-          if (thumbName) {
-            deletePromises.push(fetch('/api/delete', {
-              method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ fileName: thumbName }),
-            }))
-          }
-        }
+    try {
+      // 휴지통 API 호출 (soft delete)
+      const res = await fetch('/api/trash', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user?.id || '',
+        },
+        body: JSON.stringify({
+          folderIds: [folderId],
+        }),
       })
-      await Promise.all(deletePromises)
 
-      // DB에서 사진 삭제 (배치) - 소유자 확인
-      const photoIds = items.photos.map(p => p.id)
-      await supabase.from('photos').delete().in('id', photoIds).eq('user_id', user?.id)
+      if (!res.ok) {
+        throw new Error('Failed to move to trash')
+      }
+
+      dataCache.invalidateFolders()
+      dataCache.invalidatePhotos()
+      await fetchData(currentFolderId, searchParams.get('category') || 'all')
+    } catch (error) {
+      console.error('Delete error:', error)
+      alert('삭제 중 오류가 발생했습니다.')
+    } finally {
+      setDeleting(false)
+      setDeleteStatus('')
     }
-
-    // 폴더 삭제 (역순으로 - 하위 폴더부터) - 소유자 확인
-    setDeleteStatus(`폴더 삭제 중... (${totalFolders}개)`)
-    for (let i = items.folders.length - 1; i >= 0; i--) {
-      await supabase.from('folders').delete().eq('id', items.folders[i]).eq('user_id', user?.id)
-    }
-
-    setDeleting(false)
-    setDeleteStatus('')
-    dataCache.invalidateFolders()
-    dataCache.invalidatePhotos()
-    await fetchData(currentFolderId, searchParams.get('category') || 'all')
-    await fetchStorageUsage()
   }
 
   const toggleSelect = (id: string, e: React.MouseEvent, index: number) => {
@@ -1720,8 +1877,21 @@ export default function DrivePage() {
   // 사진/동영상 카테고리는 무조건 그리드 뷰
   const effectiveViewMode = (currentCategory === 'photos' || currentCategory === 'videos') ? 'grid' : viewMode
 
+  // 한국어 정렬을 위한 Collator (재사용하여 성능 최적화)
+  const koreanCollator = useMemo(() => new Intl.Collator('ko', { sensitivity: 'base' }), [])
+
   const filteredPhotos = useMemo(() => {
-    const result = photos.filter(photo => {
+    const query = searchQuery.toLowerCase().trim()
+
+    // 검색어가 있으면 전체 파일에서 검색
+    const sourcePhotos = query ? allPhotosForSearch : photos
+
+    const result = sourcePhotos.filter(photo => {
+      // 검색 필터
+      if (query && !photo.name?.toLowerCase().includes(query)) {
+        return false
+      }
+
       if (currentCategory === 'all') return true
       const ext = photo.name?.split('.').pop()?.toLowerCase() || ''
       const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif']
@@ -1734,7 +1904,7 @@ export default function DrivePage() {
       return true
     })
     return result
-  }, [photos, currentCategory])
+  }, [photos, allPhotosForSearch, currentCategory, searchQuery])
 
   // 정렬된 사진 목록
   const sortedPhotos = useMemo(() => {
@@ -1748,37 +1918,82 @@ export default function DrivePage() {
       if (sortBy === 'name') {
         const nameA = (a.name || a.url.split('/').pop() || '').toLowerCase()
         const nameB = (b.name || b.url.split('/').pop() || '').toLowerCase()
-        return sortOrder === 'asc'
-          ? nameA.localeCompare(nameB, 'ko')
-          : nameB.localeCompare(nameA, 'ko')
+        const cmp = koreanCollator.compare(nameA, nameB)
+        return sortOrder === 'asc' ? cmp : -cmp
       } else {
         const dateA = new Date(a.created_at).getTime()
         const dateB = new Date(b.created_at).getTime()
         return sortOrder === 'asc' ? dateA - dateB : dateB - dateA
       }
     })
-  }, [filteredPhotos, sortBy, sortOrder, currentCategory])
+  }, [filteredPhotos, sortBy, sortOrder, currentCategory, koreanCollator])
 
   // 정렬된 폴더 목록
   const sortedFolders = useMemo(() => {
-    return [...folders].sort((a, b) => {
-      if (sortBy === 'name') {
-        return sortOrder === 'asc'
-          ? a.name.localeCompare(b.name, 'ko')
-          : b.name.localeCompare(a.name, 'ko')
-      } else {
-        const dateA = new Date(a.created_at).getTime()
-        const dateB = new Date(b.created_at).getTime()
-        return sortOrder === 'asc' ? dateA - dateB : dateB - dateA
-      }
-    })
-  }, [folders, sortBy, sortOrder])
+    const query = searchQuery.toLowerCase().trim()
+    // 검색어가 있으면 전체 폴더에서 검색, 없으면 현재 폴더만
+    const sourceFolders = query ? allFolders : folders
+    return [...sourceFolders]
+      .filter(folder => !query || folder.name.toLowerCase().includes(query))
+      .sort((a, b) => {
+        if (sortBy === 'name') {
+          const cmp = koreanCollator.compare(a.name, b.name)
+          return sortOrder === 'asc' ? cmp : -cmp
+        } else {
+          const dateA = new Date(a.created_at).getTime()
+          const dateB = new Date(b.created_at).getTime()
+          return sortOrder === 'asc' ? dateA - dateB : dateB - dateA
+        }
+      })
+  }, [folders, allFolders, sortBy, sortOrder, searchQuery, koreanCollator])
 
   // refs 업데이트 (범위 선택용)
   useEffect(() => {
     sortedFoldersRef.current = sortedFolders
     sortedPhotosRef.current = sortedPhotos
   }, [sortedFolders, sortedPhotos])
+
+  // 폴더 ID → 폴더 객체 Map (O(1) 조회용)
+  const folderMap = useMemo(() => {
+    const map = new Map<string, Folder>()
+    allFolders.forEach(f => map.set(f.id, f))
+    return map
+  }, [allFolders])
+
+  // 폴더 경로 캐시 (재귀 호출 최적화)
+  const folderPathCache = useMemo(() => {
+    const cache = new Map<string, string>()
+
+    const getPath = (folderId: string | null): string => {
+      if (!folderId) return '내 드라이브'
+
+      const cached = cache.get(folderId)
+      if (cached) return cached
+
+      const folder = folderMap.get(folderId)
+      if (!folder) return '내 드라이브'
+
+      const path = !folder.parent_id
+        ? folder.name
+        : `${getPath(folder.parent_id)} / ${folder.name}`
+
+      cache.set(folderId, path)
+      return path
+    }
+
+    // 모든 폴더 경로 미리 계산
+    allFolders.forEach(f => getPath(f.id))
+    return cache
+  }, [allFolders, folderMap])
+
+  // 검색 결과에서 파일의 폴더 경로 가져오기 (캐시 사용)
+  const getFolderPath = useCallback((folderId: string | null): string => {
+    if (!folderId) return '내 드라이브'
+    return folderPathCache.get(folderId) || '내 드라이브'
+  }, [folderPathCache])
+
+  // 검색 모드 여부
+  const isSearchMode = searchQuery.trim().length > 0
 
   // 메뉴 외부 클릭 시 닫기
   useEffect(() => {
@@ -1797,6 +2012,49 @@ export default function DrivePage() {
     document.addEventListener('click', handleClickOutside)
     return () => document.removeEventListener('click', handleClickOutside)
   }, [])
+
+  // 검색 단축키 (Ctrl+K 또는 Cmd+K)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setIsSearchFocused(true)
+        setTimeout(() => searchInputRef.current?.focus(), 50)
+      }
+      // ESC로 검색 닫기
+      if (e.key === 'Escape' && isSearchFocused) {
+        setSearchQuery('')
+        setIsSearchFocused(false)
+        searchInputRef.current?.blur()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isSearchFocused])
+
+  // 검색어 입력 시 전체 파일 로드 (디바운스 적용)
+  useEffect(() => {
+    if (!searchQuery.trim() || !user?.id) {
+      setAllPhotosForSearch([])
+      return
+    }
+
+    // 300ms 디바운스로 타이핑 중 과도한 API 호출 방지
+    const debounceTimer = setTimeout(async () => {
+      setSearchLoading(true)
+      try {
+        const allPhotos = await dataCache.getAllPhotos(user.id)
+        setAllPhotosForSearch(allPhotos)
+      } catch (e) {
+        console.error('Failed to load all photos for search:', e)
+      } finally {
+        setSearchLoading(false)
+      }
+    }, 300)
+
+    return () => clearTimeout(debounceTimer)
+  }, [searchQuery, user?.id, dataCache])
 
   // 폴더 컨텍스트 메뉴 컴포넌트
   const FolderContextMenu = ({ folder }: { folder: Folder }) => {
@@ -2170,15 +2428,19 @@ export default function DrivePage() {
             onClick={async (e) => {
               e.stopPropagation()
               closePhotoMenu()
-              if (!confirm('이 파일을 삭제하시겠습니까?')) return
+              if (!confirm('이 파일을 휴지통으로 이동하시겠습니까?')) return
               try {
-                const res = await fetch('/api/delete', {
+                const res = await fetch('/api/trash', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'x-user-id': user?.id || '',
+                  },
                   body: JSON.stringify({ photoIds: [photo.id] }),
                 })
                 if (res.ok) {
                   setPhotos(prev => prev.filter(p => p.id !== photo.id))
+                  dataCache.invalidatePhotos()
                 }
               } catch (error) {
                 console.error('Delete error:', error)
@@ -2244,7 +2506,47 @@ export default function DrivePage() {
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      onTouchStart={handlePullStart}
+      onTouchMove={handlePullMove}
+      onTouchEnd={handlePullEnd}
     >
+      {/* Pull to Refresh 인디케이터 (모바일) */}
+      {(pullDistance > 0 || isRefreshing) && (
+        <div
+          className="fixed left-0 right-0 z-[250] flex items-center justify-center xl:hidden transition-transform duration-200"
+          style={{
+            top: 'env(safe-area-inset-top, 0px)',
+            transform: `translateY(${Math.min(pullDistance, PULL_THRESHOLD)}px)`,
+            opacity: Math.min(pullDistance / PULL_THRESHOLD, 1),
+          }}
+        >
+          <div
+            className="w-10 h-10 rounded-full flex items-center justify-center shadow-lg"
+            style={{ background: 'var(--background-elevated)' }}
+          >
+            {isRefreshing ? (
+              <div
+                className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin"
+                style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }}
+              />
+            ) : (
+              <svg
+                className="w-5 h-5 transition-transform duration-200"
+                style={{
+                  color: 'var(--accent-primary)',
+                  transform: pullDistance >= PULL_THRESHOLD ? 'rotate(180deg)' : 'rotate(0deg)',
+                }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+              </svg>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 사이드바 */}
       <Sidebar
         isOpen={isSidebarOpen}
@@ -2281,9 +2583,45 @@ export default function DrivePage() {
         </div>
       )}
 
-      {/* 메인 컨텐츠 (사이드바 여백 + 모바일 하단 탭 여백) */}
+      {/* iCloud 다운로드 진행률 오버레이 */}
+      {iCloudDownloading && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center animate-fade-in" style={{ background: 'rgba(0, 0, 0, 0.5)', backdropFilter: 'blur(4px)' }}>
+          <div className="p-8 rounded-2xl glass animate-fade-in-scale max-w-sm w-full mx-4">
+            <div className="text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #5AC8FA 0%, #007AFF 100%)' }}>
+                <svg className="w-8 h-8 text-white animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                </svg>
+              </div>
+              <p className="text-lg font-semibold mb-2">iCloud에서 다운로드 중...</p>
+              <p className="text-sm mb-4" style={{ color: 'var(--foreground-secondary)' }}>
+                {iCloudProgress.current}/{iCloudProgress.total} 파일 준비 중
+              </p>
+              {iCloudProgress.fileName && (
+                <p className="text-xs truncate px-4" style={{ color: 'var(--foreground-muted)' }}>
+                  {iCloudProgress.fileName}
+                </p>
+              )}
+              <div className="mt-4 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--background-secondary)' }}>
+                <div
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{
+                    width: `${iCloudProgress.total > 0 ? (iCloudProgress.current / iCloudProgress.total) * 100 : 0}%`,
+                    background: 'linear-gradient(90deg, #5AC8FA 0%, #007AFF 100%)'
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 메인 컨텐츠 (사이드바 여백 + 모바일 하단 탭 여백 + safe area) */}
       {/* 모바일에서 업로드/더보기 탭 활성화시 숨김 */}
-      <div className={`xl:pl-64 pb-20 xl:pb-0 ${(showUploadPanel || showMoreScreen) ? 'hidden xl:block' : ''}`}>
+      <div
+        className={`xl:pl-64 xl:pb-0 ${(showUploadPanel || showMoreScreen) ? 'hidden xl:block' : ''}`}
+        style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom, 0px))' }}
+      >
         {/* 헤더 */}
         <header className="header safe-area-top">
           <div className="header-content">
@@ -2352,8 +2690,22 @@ export default function DrivePage() {
               </div>
             </div>
 
-            {/* 모바일 오른쪽: 보기 옵션 */}
+            {/* 모바일 오른쪽: 검색 + 보기 옵션 */}
             <div className="flex xl:hidden items-center gap-1">
+              {/* 검색 버튼 */}
+              <button
+                onClick={() => {
+                  setIsSearchFocused(true)
+                  setTimeout(() => searchInputRef.current?.focus(), 100)
+                }}
+                className="p-2 rounded-lg transition-colors"
+                style={{ color: 'var(--foreground-secondary)' }}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </button>
+
               {/* 뷰 모드 토글 */}
               {currentCategory === 'all' && (
                 <div className="flex items-center rounded-lg p-0.5" style={{ background: 'var(--background-tertiary)' }}>
@@ -2379,6 +2731,47 @@ export default function DrivePage() {
               )}
             </div>
 
+            {/* 검색창 - 데스크톱 */}
+            <div className="hidden xl:flex flex-1 max-w-md mx-4">
+              <div className="relative w-full">
+                <svg
+                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
+                  style={{ color: 'var(--foreground-muted)' }}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="파일 검색..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => setIsSearchFocused(false)}
+                  className="w-full h-9 pl-9 pr-8 rounded-lg text-sm transition-all outline-none"
+                  style={{
+                    background: isSearchFocused ? 'var(--background)' : 'var(--background-secondary)',
+                    border: isSearchFocused ? '1px solid var(--accent-primary)' : '1px solid transparent',
+                    color: 'var(--foreground)',
+                  }}
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/5"
+                    style={{ color: 'var(--foreground-muted)' }}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* 오른쪽: 데스크톱 액션 버튼들 - 1280px 이상에서만 표시 */}
             <div className="hidden xl:flex items-center gap-2">
               {/* 업로드 버튼 */}
@@ -2391,7 +2784,6 @@ export default function DrivePage() {
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.hwp,.hwpx,.zip,.rar"
                   onChange={handleFileSelect}
                   disabled={uploading}
                   className="hidden"
@@ -2476,6 +2868,52 @@ export default function DrivePage() {
           </div>
         </header>
 
+        {/* 모바일 검색바 */}
+        {isSearchFocused && (
+          <div className="xl:hidden px-4 py-3 border-b" style={{ background: 'var(--background)', borderColor: 'var(--border-default)' }}>
+            <div className="relative">
+              <svg
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
+                style={{ color: 'var(--foreground-muted)' }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                ref={searchInputRef}
+                type="text"
+                placeholder="파일 검색..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onBlur={() => {
+                  if (!searchQuery) setIsSearchFocused(false)
+                }}
+                autoFocus
+                className="w-full h-10 pl-10 pr-10 rounded-lg text-sm outline-none"
+                style={{
+                  background: 'var(--background-secondary)',
+                  border: '1px solid var(--accent-primary)',
+                  color: 'var(--foreground)',
+                }}
+              />
+              <button
+                onClick={() => {
+                  setSearchQuery('')
+                  setIsSearchFocused(false)
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full"
+                style={{ color: 'var(--foreground-muted)' }}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+
       {/* 선택 모드 툴바 */}
       {isSelecting && (
         <div className="selection-toolbar">
@@ -2508,11 +2946,11 @@ export default function DrivePage() {
           {/* 오른쪽: 액션 버튼들 */}
           <div className="flex items-center gap-0.5">
             {/* 다운로드 */}
-            {selectedIds.size > 0 && (
+            {(selectedIds.size > 0 || selectedFolderIds.size > 0) && (
               <button
                 onClick={handleDownloadSelected}
                 className="selection-toolbar-btn success"
-                title="다운로드"
+                title={selectedIds.size + selectedFolderIds.size > 1 || selectedFolderIds.size > 0 ? 'ZIP으로 다운로드' : '다운로드'}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -2652,10 +3090,25 @@ export default function DrivePage() {
               </div>
             )}
 
+            {/* 검색 결과 헤더 */}
+            {isSearchMode && (
+              <div className="mb-4 flex items-center gap-2">
+                <h2 className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                  &quot;{searchQuery}&quot; 검색 결과
+                </h2>
+                <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--accent-primary-alpha)', color: 'var(--accent-primary)' }}>
+                  {sortedPhotos.length + sortedFolders.length}개
+                </span>
+                {searchLoading && (
+                  <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
+                )}
+              </div>
+            )}
+
             {/* 사진 그리드 */}
             {sortedPhotos.length > 0 && (
               <div className="animate-fade-in">
-                {currentCategory === 'all' && sortedFolders.length > 0 && (
+                {currentCategory === 'all' && sortedFolders.length > 0 && !isSearchMode && (
                   <h2 className="text-xs sm:text-sm font-medium mb-3 sm:mb-4 uppercase tracking-wide" style={{ color: 'var(--foreground-muted)' }}>파일</h2>
                 )}
                 <div className="image-grid view-grid">
@@ -2669,6 +3122,12 @@ export default function DrivePage() {
                         if (isTouchDragging || touchMovedRef.current) return
                         if (isSelecting) {
                           toggleSelect(photo.id, e, index)
+                        } else if (isSearchMode) {
+                          // 검색 모드: 해당 파일의 폴더로 이동 후 뷰어 열기
+                          setSearchQuery('')
+                          setIsSearchFocused(false)
+                          const folderId = photo.folder_id
+                          router.push(`/viewer?photoId=${photo.id}${folderId ? `&folder=${folderId}` : ''}&sortBy=${sortBy}&sortOrder=${sortOrder}`)
                         } else {
                           router.push(`/viewer?index=${index}${currentFolderId ? `&folder=${currentFolderId}` : ''}${currentCategory !== 'all' ? `&category=${currentCategory}` : ''}&sortBy=${sortBy}&sortOrder=${sortOrder}`)
                         }
@@ -2677,14 +3136,22 @@ export default function DrivePage() {
                       onTouchMove={handleItemTouchMove}
                       onTouchEnd={handleItemTouchEnd}
                     >
-                      <img
-                        src={toProxyUrl(photo.thumbnail_url || photo.url)}
-                        alt=""
-                        className={`transition-transform duration-300 ${selectedIds.has(photo.id) ? 'scale-90' : ''}`}
-                        draggable={false}
-                        loading="lazy"
-                        decoding="async"
-                      />
+                      {/* 미디어 파일이면 썸네일, 아니면 파일 아이콘 */}
+                      {isMediaFile(photo.name) ? (
+                        <img
+                          src={toProxyUrl(photo.thumbnail_url || photo.url)}
+                          alt=""
+                          className={`transition-transform duration-300 ${selectedIds.has(photo.id) ? 'scale-90' : ''}`}
+                          draggable={false}
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      ) : (
+                        <FileThumbnail
+                          filename={photo.name}
+                          className={`transition-transform duration-300 ${selectedIds.has(photo.id) ? 'scale-90' : ''}`}
+                        />
+                      )}
 
                       {/* 선택 체크박스 */}
                       <div
@@ -2731,6 +3198,11 @@ export default function DrivePage() {
                       {/* 파일명 호버 시 표시 */}
                       <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                         <p className="text-white text-xs truncate">{photo.name}</p>
+                        {isSearchMode && photo.folder_id !== currentFolderId && (
+                          <p className="text-white/70 text-[10px] truncate mt-0.5">
+                            📁 {getFolderPath(photo.folder_id)}
+                          </p>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -2936,6 +3408,12 @@ export default function DrivePage() {
                   if (isTouchDragging || touchMovedRef.current) return
                   if (isSelecting) {
                     toggleSelect(photo.id, e, index)
+                  } else if (isSearchMode) {
+                    // 검색 모드: 해당 파일의 폴더로 이동 후 뷰어 열기
+                    setSearchQuery('')
+                    setIsSearchFocused(false)
+                    const folderId = photo.folder_id
+                    router.push(`/viewer?photoId=${photo.id}${folderId ? `&folder=${folderId}` : ''}&sortBy=${sortBy}&sortOrder=${sortOrder}`)
                   } else {
                     router.push(`/viewer?index=${index}${currentFolderId ? `&folder=${currentFolderId}` : ''}${currentCategory !== 'all' ? `&category=${currentCategory}` : ''}&sortBy=${sortBy}&sortOrder=${sortOrder}`)
                   }
@@ -2967,18 +3445,26 @@ export default function DrivePage() {
                 <div className="flex items-center gap-3.5 sm:gap-3 min-w-0 flex-1">
                   {/* 모바일: 더 큰 썸네일 */}
                   <div className="w-12 h-12 sm:w-10 sm:h-10 rounded-xl sm:rounded-lg overflow-hidden flex-shrink-0" style={{ background: 'var(--background-tertiary)' }}>
-                    <img src={toProxyUrl(photo.thumbnail_url || photo.url)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                    {isMediaFile(photo.name) ? (
+                      <img src={toProxyUrl(photo.thumbnail_url || photo.url)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                    ) : (
+                      <FileThumbnail filename={photo.name} />
+                    )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="font-medium truncate text-[15px] sm:text-sm">{photo.name || photo.url.split('/').pop()}</p>
                     <p className="text-xs sm:hidden mt-0.5" style={{ color: 'var(--foreground-muted)' }}>
-                      {photo.is_video ? '동영상' : '이미지'} · {formatDate(photo.created_at)}
+                      {isSearchMode && photo.folder_id !== currentFolderId ? (
+                        <>📁 {getFolderPath(photo.folder_id)}</>
+                      ) : (
+                        <>{getFileTypeLabel(photo.name)} · {formatDate(photo.created_at)}</>
+                      )}
                     </p>
                   </div>
                 </div>
                 {/* 데스크톱 추가 컬럼 */}
-                <div className="text-sm hidden sm:block" style={{ color: 'var(--foreground-muted)' }}>
-                  {photo.is_video ? '동영상' : '이미지'}
+                <div className="text-sm hidden sm:block truncate" style={{ color: 'var(--foreground-muted)' }}>
+                  {isSearchMode && photo.folder_id !== currentFolderId ? getFolderPath(photo.folder_id) : getFileTypeLabel(photo.name)}
                 </div>
                 <div className="text-sm hidden sm:block" style={{ color: 'var(--foreground-muted)' }}>{formatDate(photo.created_at)}</div>
                 {/* 더보기 버튼 */}
@@ -3014,14 +3500,29 @@ export default function DrivePage() {
               <div className="py-16 text-center">
                 <div className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{ background: 'var(--background-secondary)' }}>
                   <svg className="w-8 h-8" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    {searchQuery ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    )}
                   </svg>
                 </div>
-                <p className="font-medium mb-1">아직 비어있어요</p>
-                <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>
-                  <span className="xl:hidden">+ 버튼을 눌러 파일을 추가하세요</span>
-                  <span className="hidden xl:inline">업로드 버튼 또는 드래그앤드롭으로 추가해보세요</span>
-                </p>
+                {searchQuery ? (
+                  <>
+                    <p className="font-medium mb-1">&quot;{searchQuery}&quot; 검색 결과 없음</p>
+                    <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>
+                      다른 검색어로 시도해보세요
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium mb-1">아직 비어있어요</p>
+                    <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>
+                      <span className="xl:hidden">+ 버튼을 눌러 파일을 추가하세요</span>
+                      <span className="hidden xl:inline">업로드 버튼 또는 드래그앤드롭으로 추가해보세요</span>
+                    </p>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -3032,14 +3533,29 @@ export default function DrivePage() {
           <div className="empty-state h-[60vh] animate-fade-in">
             <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl flex items-center justify-center mb-4 sm:mb-6" style={{ background: 'var(--background-secondary)' }}>
               <svg className="empty-state-icon !w-10 !h-10 sm:!w-12 sm:!h-12 !mb-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                {searchQuery ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                )}
               </svg>
             </div>
-            <p className="empty-state-title text-base sm:text-lg">아직 비어있어요</p>
-            <p className="empty-state-description text-xs sm:text-sm">
-              <span className="xl:hidden">+ 버튼을 눌러 파일을 추가하세요</span>
-              <span className="hidden xl:inline">업로드 버튼 또는 드래그앤드롭으로 추가해보세요</span>
-            </p>
+            {searchQuery ? (
+              <>
+                <p className="empty-state-title text-base sm:text-lg">&quot;{searchQuery}&quot; 검색 결과 없음</p>
+                <p className="empty-state-description text-xs sm:text-sm">
+                  다른 검색어로 시도해보세요
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="empty-state-title text-base sm:text-lg">아직 비어있어요</p>
+                <p className="empty-state-description text-xs sm:text-sm">
+                  <span className="xl:hidden">+ 버튼을 눌러 파일을 추가하세요</span>
+                  <span className="hidden xl:inline">업로드 버튼 또는 드래그앤드롭으로 추가해보세요</span>
+                </p>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -3466,42 +3982,46 @@ export default function DrivePage() {
               </button>
             </div>
 
-            <div className="tds-modal-body space-y-5">
+            <div className="tds-modal-body space-y-5 !px-0">
               {/* 썸네일 프리뷰 */}
               <div className="w-full aspect-square max-w-[120px] mx-auto rounded-xl overflow-hidden" style={{ background: 'var(--background-tertiary)' }}>
-                {infoPhoto.is_video ? (
-                  <video
-                    src={toProxyUrl(infoPhoto.url)}
-                    className="w-full h-full object-cover"
-                  />
+                {isMediaFile(infoPhoto.name) ? (
+                  infoPhoto.is_video ? (
+                    <video
+                      src={toProxyUrl(infoPhoto.url)}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <img
+                      src={toProxyUrl(infoPhoto.thumbnail_url || infoPhoto.url)}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  )
                 ) : (
-                  <img
-                    src={toProxyUrl(infoPhoto.thumbnail_url || infoPhoto.url)}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
+                  <FileThumbnail filename={infoPhoto.name} />
                 )}
               </div>
 
               {/* 속성 섹션 */}
               <div>
-                <h3 className="text-xs font-medium uppercase tracking-wide mb-3" style={{ color: 'var(--foreground-muted)' }}>속성</h3>
+                <h3 className="text-xs font-medium uppercase tracking-wide mb-3 px-5" style={{ color: 'var(--foreground-muted)' }}>속성</h3>
                 <div className="space-y-0">
-                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>이름</span>
-                    <span className="text-sm font-medium truncate ml-4 max-w-[180px]" style={{ color: 'var(--foreground)' }}>
+                  <div className="flex justify-between items-center py-2.5 px-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>이름</span>
+                    <span className="text-sm font-medium truncate ml-4 text-right" style={{ color: 'var(--foreground)' }}>
                       {infoPhoto.name || infoPhoto.url.split('/').pop()}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>저장 위치</span>
-                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                  <div className="flex justify-between items-center py-2.5 px-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>저장 위치</span>
+                    <span className="text-sm font-medium text-right" style={{ color: 'var(--foreground)' }}>
                       Cloody{infoPhoto.folder_id ? ` > ${allFolders.find(f => f.id === infoPhoto.folder_id)?.name || '폴더'}` : ''}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>크기</span>
-                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                  <div className="flex justify-between items-center py-2.5 px-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>크기</span>
+                    <span className="text-sm font-medium text-right" style={{ color: 'var(--foreground)' }}>
                       {infoPhoto.file_size ? (
                         infoPhoto.file_size >= 1024 * 1024
                           ? `${(infoPhoto.file_size / (1024 * 1024)).toFixed(2)} MB`
@@ -3509,9 +4029,15 @@ export default function DrivePage() {
                       ) : '-'}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>수정 일시</span>
-                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                  <div className="flex justify-between items-center py-2.5 px-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>유형</span>
+                    <span className="text-sm font-medium text-right" style={{ color: 'var(--foreground)' }}>
+                      {getFileTypeLabel(infoPhoto.name)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-2.5 px-5">
+                    <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>수정 일시</span>
+                    <span className="text-sm font-medium text-right" style={{ color: 'var(--foreground)' }}>
                       {new Date(infoPhoto.created_at).toLocaleDateString('ko-KR', {
                         year: 'numeric',
                         month: '2-digit',
@@ -3522,33 +4048,6 @@ export default function DrivePage() {
                       })}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>유형</span>
-                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-                      {infoPhoto.is_video ? '동영상' : '이미지'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>업로드한 날짜</span>
-                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-                      {new Date(infoPhoto.created_at).toLocaleDateString('ko-KR', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                      })} {new Date(infoPhoto.created_at).toLocaleTimeString('ko-KR', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </span>
-                  </div>
-                  {(infoPhoto.width && infoPhoto.height) && (
-                    <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                      <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>크기</span>
-                      <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
-                        {infoPhoto.width} x {infoPhoto.height}
-                      </span>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -3579,7 +4078,7 @@ export default function DrivePage() {
               </button>
             </div>
 
-            <div className="tds-modal-body space-y-5">
+            <div className="tds-modal-body space-y-5 !px-0">
               {/* 폴더 아이콘 프리뷰 */}
               <div className="w-32 h-32 mx-auto rounded-xl flex items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
                 <svg className="w-16 h-16" style={{ color: 'var(--accent-primary)', opacity: 0.7 }} fill="currentColor" viewBox="0 0 24 24">
@@ -3589,21 +4088,21 @@ export default function DrivePage() {
 
               {/* 속성 섹션 */}
               <div>
-                <h3 className="text-xs font-medium uppercase tracking-wide mb-3" style={{ color: 'var(--foreground-muted)' }}>속성</h3>
+                <h3 className="text-xs font-medium uppercase tracking-wide mb-3 px-5" style={{ color: 'var(--foreground-muted)' }}>속성</h3>
                 <div className="space-y-0">
-                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>이름</span>
-                    <span className="text-sm font-medium truncate ml-4 max-w-[180px]" style={{ color: 'var(--foreground)' }}>{infoFolder.name}</span>
+                  <div className="flex justify-between items-center py-2.5 px-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>이름</span>
+                    <span className="text-sm font-medium truncate ml-4 text-right" style={{ color: 'var(--foreground)' }}>{infoFolder.name}</span>
                   </div>
-                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>저장 위치</span>
-                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                  <div className="flex justify-between items-center py-2.5 px-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>저장 위치</span>
+                    <span className="text-sm font-medium text-right" style={{ color: 'var(--foreground)' }}>
                       {infoFolder.parent_id ? folders.find(f => f.id === infoFolder.parent_id)?.name || 'Cloody' : 'Cloody'}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>항목</span>
-                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                  <div className="flex justify-between items-center py-2.5 px-5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                    <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>항목</span>
+                    <span className="text-sm font-medium text-right" style={{ color: 'var(--foreground)' }}>
                       {infoFolderCounts ? (() => {
                         const { files: fileCount, folders: folderCount } = infoFolderCounts
                         const total = fileCount + folderCount
@@ -3617,9 +4116,9 @@ export default function DrivePage() {
                       })() : '불러오는 중...'}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-2.5" style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                    <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>수정 일시</span>
-                    <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                  <div className="flex justify-between items-center py-2.5 px-5">
+                    <span className="text-sm shrink-0" style={{ color: 'var(--foreground-secondary)' }}>수정 일시</span>
+                    <span className="text-sm font-medium text-right" style={{ color: 'var(--foreground)' }}>
                       {new Date(infoFolder.created_at).toLocaleDateString('ko-KR', {
                         year: 'numeric',
                         month: '2-digit',
@@ -3749,7 +4248,6 @@ export default function DrivePage() {
                   ref={fabFileInputRef}
                   type="file"
                   multiple
-                  accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.hwp,.hwpx,.zip,.rar"
                   onChange={(e) => {
                     setShowFabMenu(false)
                     handleFileSelect(e)

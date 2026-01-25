@@ -8,8 +8,16 @@ const MAX_HISTORY_ITEMS = 100
 export interface UploadItem {
   id: string
   name: string
-  status: 'pending' | 'uploading' | 'done' | 'error'
+  status: 'pending' | 'uploading' | 'done' | 'error' | 'cancelled'
+  progress?: number // 0-100
   createdAt?: number
+  // 추가 정보
+  fileType?: string // 파일 확장자 (FIG, PDF, PNG 등)
+  fileSize?: number // 파일 크기 (bytes)
+  uploadedSize?: number // 업로드된 크기 (bytes)
+  folderName?: string // 저장 폴더명
+  url?: string // 완료 후 파일 URL
+  startedAt?: number // 업로드 시작 시간
 }
 
 interface UploadContextType {
@@ -19,8 +27,10 @@ interface UploadContextType {
   showUploadPanel: boolean
   setShowUploadPanel: (value: boolean) => void
   addToQueue: (items: UploadItem[]) => void
-  updateQueueItem: (id: string, status: UploadItem['status']) => void
+  updateQueueItem: (id: string, updates: Partial<Omit<UploadItem, 'id'>>) => void
   removeFromQueue: (id: string) => void
+  cancelItem: (id: string) => void
+  cancelAll: () => void
   clearCompleted: () => void
   clearAll: () => void
 }
@@ -34,11 +44,13 @@ function loadUploadHistory(): UploadItem[] {
     const stored = localStorage.getItem(UPLOAD_HISTORY_KEY)
     if (stored) {
       const items = JSON.parse(stored) as UploadItem[]
-      // 진행 중이던 항목은 에러로 처리
-      return items.map(item => ({
-        ...item,
-        status: item.status === 'uploading' || item.status === 'pending' ? 'error' : item.status
-      }))
+      // 진행 중이던 항목은 취소로 처리, cancelled 항목 제외
+      return items
+        .filter(item => item.status !== 'cancelled')
+        .map(item => ({
+          ...item,
+          status: item.status === 'uploading' || item.status === 'pending' ? 'cancelled' : item.status
+        }))
     }
   } catch {
     // ignore
@@ -81,8 +93,9 @@ export function UploadProvider({ children }: { children: ReactNode }) {
 
   // 진행률은 큐 상태에서 자동 계산
   const uploadProgress = useMemo(() => {
-    const total = uploadQueue.length
-    const current = uploadQueue.filter(item => item.status === 'done' || item.status === 'error').length
+    const activeItems = uploadQueue.filter(item => item.status !== 'cancelled')
+    const total = activeItems.length
+    const current = activeItems.filter(item => item.status === 'done' || item.status === 'error').length
     return { current, total }
   }, [uploadQueue])
 
@@ -100,15 +113,33 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     setUploadQueue(prev => [...prev, ...itemsWithTimestamp])
   }, [])
 
-  // ID로 아이템 상태 업데이트
-  const updateQueueItem = useCallback((id: string, status: UploadItem['status']) => {
+  // ID로 아이템 상태/진행률 업데이트
+  const updateQueueItem = useCallback((id: string, updates: Partial<Omit<UploadItem, 'id'>>) => {
     setUploadQueue(prev => prev.map(item =>
-      item.id === id ? { ...item, status } : item
+      item.id === id ? { ...item, ...updates } : item
     ))
   }, [])
 
   const removeFromQueue = useCallback((id: string) => {
     setUploadQueue(prev => prev.filter(item => item.id !== id))
+  }, [])
+
+  // 개별 항목 취소
+  const cancelItem = useCallback((id: string) => {
+    setUploadQueue(prev => prev.map(item =>
+      item.id === id && (item.status === 'pending' || item.status === 'uploading')
+        ? { ...item, status: 'cancelled' as const }
+        : item
+    ))
+  }, [])
+
+  // 모든 진행 중인 항목 취소
+  const cancelAll = useCallback(() => {
+    setUploadQueue(prev => prev.map(item =>
+      item.status === 'pending' || item.status === 'uploading'
+        ? { ...item, status: 'cancelled' as const }
+        : item
+    ))
   }, [])
 
   const clearCompleted = useCallback(() => {
@@ -130,6 +161,8 @@ export function UploadProvider({ children }: { children: ReactNode }) {
         addToQueue,
         updateQueueItem,
         removeFromQueue,
+        cancelItem,
+        cancelAll,
         clearCompleted,
         clearAll,
       }}

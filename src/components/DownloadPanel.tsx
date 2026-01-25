@@ -14,15 +14,98 @@ export default function DownloadPanel() {
     removeFromDownloadQueue,
     clearCompletedDownloads,
     clearAllDownloads,
+    zipProgress,
+    isZipDownloading,
+    cancelZipDownload,
   } = useDownload()
 
   const isDark = theme === 'dark'
 
-  // 다운로드 중이거나 큐에 항목이 있을 때만 표시
-  if (!downloading && downloadQueue.length === 0) return null
+  // 다운로드 중이거나 큐에 항목이 있거나 ZIP 다운로드 중일 때만 표시
+  if (!downloading && downloadQueue.length === 0 && !isZipDownloading && !zipProgress) return null
 
   const completedCount = downloadQueue.filter(item => item.status === 'done').length
   const hasCompleted = completedCount > 0
+
+  // ZIP 다운로드 진행률 패널
+  if (isZipDownloading || zipProgress) {
+    const getZipStatusText = () => {
+      if (!zipProgress) return '준비 중...'
+      switch (zipProgress.phase) {
+        case 'preparing': return '파일 정보 수집 중...'
+        case 'downloading': return `파일 다운로드 중 (${zipProgress.current}/${zipProgress.total})`
+        case 'zipping': return `ZIP 파일 생성 중 (${zipProgress.current}%)`
+        case 'done': return '다운로드 완료!'
+        case 'error': return zipProgress.error || '오류 발생'
+        default: return '처리 중...'
+      }
+    }
+
+    const getZipProgress = () => {
+      if (!zipProgress) return 0
+      switch (zipProgress.phase) {
+        case 'preparing': return 0
+        case 'downloading': return zipProgress.total > 0 ? (zipProgress.current / zipProgress.total) * 70 : 0
+        case 'zipping': return 70 + (zipProgress.current / 100) * 30
+        case 'done': return 100
+        default: return 0
+      }
+    }
+
+    return (
+      <div className={`fixed bottom-20 left-6 z-[9999] w-80 rounded-xl shadow-2xl overflow-hidden ${isDark ? 'bg-zinc-900 border border-zinc-800' : 'bg-white border border-gray-200'}`}>
+        <div className={`flex items-center justify-between px-4 py-3 ${isDark ? 'bg-zinc-800' : 'bg-gray-50'}`}>
+          <div className="flex items-center gap-2">
+            {zipProgress?.phase === 'done' ? (
+              <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : zipProgress?.phase === 'error' ? (
+              <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <div className={`w-5 h-5 border-2 rounded-full animate-spin ${isDark ? 'border-zinc-600 border-t-white' : 'border-gray-300 border-t-green-500'}`} />
+            )}
+            <span className={`text-sm font-medium ${isDark ? 'text-white' : 'text-gray-900'}`}>
+              ZIP 다운로드
+            </span>
+          </div>
+          {zipProgress?.phase !== 'done' && zipProgress?.phase !== 'error' && (
+            <button
+              onClick={cancelZipDownload}
+              className={`p-1.5 rounded transition-colors ${isDark ? 'hover:bg-zinc-700 text-zinc-400' : 'hover:bg-gray-200 text-gray-500'}`}
+              title="취소"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* ZIP 프로그레스 바 */}
+        <div className={`h-1.5 ${isDark ? 'bg-zinc-800' : 'bg-gray-200'}`}>
+          <div
+            className={`h-full transition-all duration-300 ${zipProgress?.phase === 'error' ? 'bg-red-500' : 'bg-green-500'}`}
+            style={{ width: `${getZipProgress()}%` }}
+          />
+        </div>
+
+        {/* 상태 표시 */}
+        <div className="px-4 py-3">
+          <p className={`text-sm ${zipProgress?.phase === 'error' ? 'text-red-500' : (isDark ? 'text-zinc-300' : 'text-gray-600')}`}>
+            {getZipStatusText()}
+          </p>
+          {zipProgress?.currentFile && zipProgress.phase === 'downloading' && (
+            <p className={`text-xs mt-1 truncate ${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>
+              {zipProgress.currentFile}
+            </p>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={`fixed bottom-20 left-6 z-[9999] w-80 rounded-xl shadow-2xl overflow-hidden ${isDark ? 'bg-zinc-900 border border-zinc-800' : 'bg-white border border-gray-200'}`}>

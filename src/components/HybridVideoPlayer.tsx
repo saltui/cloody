@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
-import Hls from 'hls.js'
+import { useEffect, useRef, useState, useCallback, memo } from 'react'
+import type Hls from 'hls.js'
 
 interface HybridVideoPlayerProps {
   src: string // 원본 비디오 URL
@@ -24,7 +24,7 @@ type QualityLevel = {
   name: string
 }
 
-export default function HybridVideoPlayer({
+export default memo(function HybridVideoPlayer({
   src,
   hlsSrc,
   hlsStatus,
@@ -39,6 +39,7 @@ export default function HybridVideoPlayer({
 }: HybridVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<Hls | null>(null)
+  const HlsClass = useRef<typeof Hls | null>(null)
   const [currentSource, setCurrentSource] = useState<'original' | 'hls'>('original')
   const [qualityLevels, setQualityLevels] = useState<QualityLevel[]>([])
   const [currentQuality, setCurrentQuality] = useState<number>(-1) // -1 = auto
@@ -47,8 +48,8 @@ export default function HybridVideoPlayer({
   const [error, setError] = useState<string | null>(null)
   const savedTimeRef = useRef<number>(0)
 
-  // HLS 초기화
-  const initHls = useCallback(() => {
+  // HLS 초기화 (동적 import로 번들 사이즈 최적화)
+  const initHls = useCallback(async () => {
     if (!videoRef.current || !hlsSrc) return
 
     // 이미 HLS 사용 중이면 무시
@@ -60,8 +61,21 @@ export default function HybridVideoPlayer({
       hlsRef.current = null
     }
 
-    if (Hls.isSupported()) {
-      const hls = new Hls({
+    // HLS.js 동적 로드
+    if (!HlsClass.current) {
+      try {
+        const HlsModule = await import('hls.js')
+        HlsClass.current = HlsModule.default
+      } catch (e) {
+        console.error('Failed to load hls.js:', e)
+        return
+      }
+    }
+
+    const HlsLib = HlsClass.current
+
+    if (HlsLib.isSupported()) {
+      const hls = new HlsLib({
         enableWorker: true,
         lowLatencyMode: false,
         backBufferLength: 90,
@@ -72,8 +86,8 @@ export default function HybridVideoPlayer({
       hls.loadSource(hlsSrc)
       hls.attachMedia(videoRef.current)
 
-      hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
-        const levels = data.levels.map((level, index) => ({
+      hls.on(HlsLib.Events.MANIFEST_PARSED, (_event, data) => {
+        const levels = data.levels.map((level) => ({
           height: level.height,
           width: level.width,
           bitrate: level.bitrate,
@@ -94,20 +108,20 @@ export default function HybridVideoPlayer({
         }
       })
 
-      hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
+      hls.on(HlsLib.Events.LEVEL_SWITCHED, (_event, data) => {
         setCurrentQuality(data.level)
       })
 
-      hls.on(Hls.Events.ERROR, (_event, data) => {
+      hls.on(HlsLib.Events.ERROR, (_event, data) => {
         console.error('HLS Error:', data)
         if (data.fatal) {
           // HLS 오류 시 원본으로 폴백
           switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
+            case HlsLib.ErrorTypes.NETWORK_ERROR:
               console.log('HLS network error, trying to recover...')
               hls.startLoad()
               break
-            case Hls.ErrorTypes.MEDIA_ERROR:
+            case HlsLib.ErrorTypes.MEDIA_ERROR:
               console.log('HLS media error, trying to recover...')
               hls.recoverMediaError()
               break
@@ -296,4 +310,4 @@ export default function HybridVideoPlayer({
       )}
     </div>
   )
-}
+})

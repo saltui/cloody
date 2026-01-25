@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
+import { FileThumbnail, isMediaFile, getFileTypeLabel } from '@/lib/file-icons'
 
 interface SharedPhoto {
   id: string
@@ -144,6 +145,7 @@ export default function SharePage() {
 
   const imageUrl = toProxyUrl(photo.url)
   const isVideo = photo.is_video || photo.name.match(/\.(mp4|webm|mov|avi|mkv)$/i)
+  const isMedia = isMediaFile(photo.name)
 
   return (
     <main className="min-h-screen flex flex-col tds-safe-area-top tds-safe-area-bottom" style={{ background: 'var(--background)' }}>
@@ -182,19 +184,34 @@ export default function SharePage() {
       <div className="flex-1 flex items-center justify-center p-3 sm:p-4 md:p-6">
         <div className="max-w-4xl w-full animate-fade-in">
           <div className="tds-card overflow-hidden">
-            {isVideo ? (
-              <video
-                src={imageUrl}
-                controls
-                playsInline
-                className="w-full max-h-[70vh] sm:max-h-[75vh] object-contain"
-              />
+            {isMedia ? (
+              isVideo ? (
+                <video
+                  src={imageUrl}
+                  controls
+                  playsInline
+                  className="w-full max-h-[70vh] sm:max-h-[75vh] object-contain"
+                />
+              ) : (
+                <img
+                  src={imageUrl}
+                  alt={photo.name}
+                  className="w-full max-h-[70vh] sm:max-h-[75vh] object-contain"
+                />
+              )
             ) : (
-              <img
-                src={imageUrl}
-                alt={photo.name}
-                className="w-full max-h-[70vh] sm:max-h-[75vh] object-contain"
-              />
+              /* 문서 파일인 경우 아이콘 표시 */
+              <div className="flex flex-col items-center justify-center py-16 sm:py-24 px-4">
+                <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-2xl overflow-hidden mb-6">
+                  <FileThumbnail filename={photo.name} />
+                </div>
+                <p className="text-lg sm:text-xl font-medium text-center" style={{ color: 'var(--foreground)' }}>
+                  {getFileTypeLabel(photo.name)}
+                </p>
+                <p className="text-sm mt-2" style={{ color: 'var(--foreground-muted)' }}>
+                  다운로드 버튼을 눌러 파일을 저장하세요
+                </p>
+              </div>
             )}
           </div>
 
