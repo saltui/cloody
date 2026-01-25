@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { ThemeProvider } from "@/lib/theme";
 import { UploadProvider } from "@/lib/upload-context";
 import { DownloadProvider } from "@/lib/download-context";
@@ -14,6 +14,19 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Cloody",
   description: "Jaden's Private Cloud",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Cloody",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

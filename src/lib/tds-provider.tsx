@@ -349,8 +349,22 @@ const globalStyles = css`
     display: flex;
     background: var(--background, #ffffff);
     border-top: 1px solid var(--glass-border, rgba(0, 0, 0, 0.04));
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     z-index: 100;
+  }
+
+  /* PWA 모드에서 safe area 지원 */
+  @supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .tds-bottom-nav {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
+
+  /* iOS PWA standalone 모드에서 safe area 강제 적용 */
+  @media all and (display-mode: standalone) {
+    .tds-bottom-nav {
+      padding-bottom: max(env(safe-area-inset-bottom, 0px), 20px);
+    }
   }
 
   /* PC 해상도에서 하단 탭 숨김 (xl: 1280px) */

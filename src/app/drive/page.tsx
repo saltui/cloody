@@ -2751,8 +2751,9 @@ export default function DrivePage() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onFocus={() => setIsSearchFocused(true)}
                   onBlur={() => setIsSearchFocused(false)}
-                  className="w-full h-9 pl-9 pr-8 rounded-lg text-sm transition-all outline-none"
+                  className="w-full h-9 pl-9 pr-8 rounded-lg transition-all outline-none"
                   style={{
+                    fontSize: 16,
                     background: isSearchFocused ? 'var(--background)' : 'var(--background-secondary)',
                     border: isSearchFocused ? '1px solid var(--accent-primary)' : '1px solid transparent',
                     color: 'var(--foreground)',
@@ -2891,8 +2892,9 @@ export default function DrivePage() {
                   if (!searchQuery) setIsSearchFocused(false)
                 }}
                 autoFocus
-                className="w-full h-10 pl-10 pr-10 rounded-lg text-sm outline-none"
+                className="w-full h-10 pl-10 pr-10 rounded-lg outline-none"
                 style={{
+                  fontSize: 16,
                   background: 'var(--background-secondary)',
                   border: '1px solid var(--accent-primary)',
                   color: 'var(--foreground)',
