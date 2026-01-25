@@ -604,16 +604,36 @@ export default function DrivePage() {
     fetchFolderCounts()
   }, [infoFolder, user])
 
-  // 모달이 열릴 때 body 스크롤 차단
+  // 모달이 열릴 때 body 스크롤 차단 (스크롤바 너비 보정 포함)
   useEffect(() => {
     const isModalOpen = !!infoPhoto || !!infoFolder || showNewFolderInput || !!editingFolder || !!editingPhoto || showFolderPicker
     if (isModalOpen) {
+      // 스크롤바 너비 계산
+      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
       document.body.style.overflow = 'hidden'
+      document.body.style.paddingRight = `${scrollbarWidth}px`
+      // iOS Safari에서 추가 스크롤 방지
+      document.body.style.position = 'fixed'
+      document.body.style.width = '100%'
+      document.body.style.top = `-${window.scrollY}px`
     } else {
+      const scrollY = document.body.style.top
       document.body.style.overflow = ''
+      document.body.style.paddingRight = ''
+      document.body.style.position = ''
+      document.body.style.width = ''
+      document.body.style.top = ''
+      // 스크롤 위치 복원
+      if (scrollY) {
+        window.scrollTo(0, parseInt(scrollY || '0') * -1)
+      }
     }
     return () => {
       document.body.style.overflow = ''
+      document.body.style.paddingRight = ''
+      document.body.style.position = ''
+      document.body.style.width = ''
+      document.body.style.top = ''
     }
   }, [infoPhoto, infoFolder, showNewFolderInput, editingFolder, editingPhoto, showFolderPicker])
 
