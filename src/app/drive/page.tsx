@@ -604,36 +604,50 @@ export default function DrivePage() {
     fetchFolderCounts()
   }, [infoFolder, user])
 
-  // 모달이 열릴 때 body 스크롤 차단 (스크롤바 너비 보정 포함)
+  // 모달이 열릴 때 body 스크롤 차단 (입력 모달 제외 - 키보드 문제 방지)
   useEffect(() => {
-    const isModalOpen = !!infoPhoto || !!infoFolder || showNewFolderInput || !!editingFolder || !!editingPhoto || showFolderPicker
-    if (isModalOpen) {
-      // 스크롤바 너비 계산
+    const isInputModal = showNewFolderInput || !!editingFolder || !!editingPhoto
+    const isInfoModal = !!infoPhoto || !!infoFolder || showFolderPicker
+
+    if (isInfoModal && !isInputModal) {
+      // 정보 모달: position fixed로 완전 차단
+      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
+      const scrollY = window.scrollY
+      document.body.style.overflow = 'hidden'
+      document.body.style.paddingRight = `${scrollbarWidth}px`
+      document.body.style.position = 'fixed'
+      document.body.style.width = '100%'
+      document.body.style.top = `-${scrollY}px`
+      document.body.dataset.scrollY = String(scrollY)
+    } else if (isInputModal) {
+      // 입력 모달: overflow hidden만 (키보드 동작 허용)
       const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
       document.body.style.overflow = 'hidden'
       document.body.style.paddingRight = `${scrollbarWidth}px`
-      // iOS Safari에서 추가 스크롤 방지
-      document.body.style.position = 'fixed'
-      document.body.style.width = '100%'
-      document.body.style.top = `-${window.scrollY}px`
     } else {
-      const scrollY = document.body.style.top
+      // 모달 닫힘
+      const scrollY = document.body.dataset.scrollY
       document.body.style.overflow = ''
       document.body.style.paddingRight = ''
       document.body.style.position = ''
       document.body.style.width = ''
       document.body.style.top = ''
-      // 스크롤 위치 복원
+      delete document.body.dataset.scrollY
       if (scrollY) {
-        window.scrollTo(0, parseInt(scrollY || '0') * -1)
+        window.scrollTo(0, parseInt(scrollY))
       }
     }
     return () => {
+      const scrollY = document.body.dataset.scrollY
       document.body.style.overflow = ''
       document.body.style.paddingRight = ''
       document.body.style.position = ''
       document.body.style.width = ''
       document.body.style.top = ''
+      delete document.body.dataset.scrollY
+      if (scrollY) {
+        window.scrollTo(0, parseInt(scrollY))
+      }
     }
   }, [infoPhoto, infoFolder, showNewFolderInput, editingFolder, editingPhoto, showFolderPicker])
 
@@ -3584,7 +3598,7 @@ export default function DrivePage() {
 
       {/* 새 폴더 모달 - TDS Style (입력 모달: 상단에서 내려옴) */}
       {showNewFolderInput && (
-        <div className="tds-modal-backdrop" onClick={() => { setShowNewFolderInput(false); setNewFolderName('') }}>
+        <div className="tds-modal-input-backdrop" onClick={() => { setShowNewFolderInput(false); setNewFolderName('') }}>
           <div className="tds-modal-input" onClick={(e) => e.stopPropagation()}>
             <div className="tds-modal-header">
               <h2>새 폴더</h2>
@@ -3625,7 +3639,7 @@ export default function DrivePage() {
 
       {/* 폴더 이름 수정 모달 - TDS Style (입력 모달: 상단에서 내려옴) */}
       {editingFolder && (
-        <div className="tds-modal-backdrop" onClick={() => { setEditingFolder(null); setEditFolderName('') }}>
+        <div className="tds-modal-input-backdrop" onClick={() => { setEditingFolder(null); setEditFolderName('') }}>
           <div className="tds-modal-input" onClick={(e) => e.stopPropagation()}>
             <div className="tds-modal-header">
               <h2>폴더 이름 변경</h2>
@@ -3930,7 +3944,7 @@ export default function DrivePage() {
 
       {/* 파일 이름 변경 모달 (입력 모달: 상단에서 내려옴) */}
       {editingPhoto && (
-        <div className="tds-modal-backdrop" onClick={() => { setEditingPhoto(null); setEditPhotoName('') }}>
+        <div className="tds-modal-input-backdrop" onClick={() => { setEditingPhoto(null); setEditPhotoName('') }}>
           <div className="tds-modal-input" onClick={(e) => e.stopPropagation()}>
             <div className="tds-modal-header">
               <h2>파일 이름 변경</h2>
