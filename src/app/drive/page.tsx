@@ -3562,11 +3562,10 @@ export default function DrivePage() {
         )}
       </div>
 
-      {/* 새 폴더 모달 - TDS Style */}
+      {/* 새 폴더 모달 - TDS Style (입력 모달: 상단에서 내려옴) */}
       {showNewFolderInput && (
         <div className="tds-modal-backdrop" onClick={() => { setShowNewFolderInput(false); setNewFolderName('') }}>
-          <div className="tds-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="tds-modal-handle" />
+          <div className="tds-modal-input" onClick={(e) => e.stopPropagation()}>
             <div className="tds-modal-header">
               <h2>새 폴더</h2>
             </div>
@@ -3577,6 +3576,7 @@ export default function DrivePage() {
                 onChange={(e) => setNewFolderName(e.target.value)}
                 placeholder="폴더 이름을 입력하세요"
                 className="tds-input"
+                style={{ fontSize: 16 }}
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
               />
@@ -3603,11 +3603,10 @@ export default function DrivePage() {
         </div>
       )}
 
-      {/* 폴더 이름 수정 모달 - TDS Style */}
+      {/* 폴더 이름 수정 모달 - TDS Style (입력 모달: 상단에서 내려옴) */}
       {editingFolder && (
         <div className="tds-modal-backdrop" onClick={() => { setEditingFolder(null); setEditFolderName('') }}>
-          <div className="tds-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="tds-modal-handle" />
+          <div className="tds-modal-input" onClick={(e) => e.stopPropagation()}>
             <div className="tds-modal-header">
               <h2>폴더 이름 변경</h2>
             </div>
@@ -3618,6 +3617,7 @@ export default function DrivePage() {
                 onChange={(e) => setEditFolderName(e.target.value)}
                 placeholder="새 폴더 이름을 입력하세요"
                 className="tds-input"
+                style={{ fontSize: 16 }}
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleRenameFolder()}
               />
@@ -3908,11 +3908,10 @@ export default function DrivePage() {
         </div>
       )}
 
-      {/* 파일 이름 변경 모달 */}
+      {/* 파일 이름 변경 모달 (입력 모달: 상단에서 내려옴) */}
       {editingPhoto && (
         <div className="tds-modal-backdrop" onClick={() => { setEditingPhoto(null); setEditPhotoName('') }}>
-          <div className="tds-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="tds-modal-handle" />
+          <div className="tds-modal-input" onClick={(e) => e.stopPropagation()}>
             <div className="tds-modal-header">
               <h2>파일 이름 변경</h2>
             </div>
@@ -3923,6 +3922,7 @@ export default function DrivePage() {
                 onChange={(e) => setEditPhotoName(e.target.value)}
                 placeholder="새 파일 이름을 입력하세요"
                 className="tds-input"
+                style={{ fontSize: 16 }}
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleRenamePhoto()}
               />

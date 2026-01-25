@@ -748,6 +748,61 @@ const globalStyles = css`
     }
   }
 
+  /* 입력 필드가 있는 모달 - 키보드 위로 표시 */
+  .tds-modal-input {
+    position: fixed;
+    top: env(safe-area-inset-top, 0);
+    left: 0;
+    right: 0;
+    bottom: auto;
+    background: var(--background, #ffffff);
+    border-radius: 0 0 20px 20px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    z-index: 101;
+    animation: tds-slide-down 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+    max-height: 85vh;
+  }
+
+  @keyframes tds-slide-down {
+    from {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  html.dark .tds-modal-input {
+    background: var(--background-elevated, #26262d);
+  }
+
+  @media (min-width: 640px) {
+    .tds-modal-input {
+      position: relative;
+      top: auto;
+      left: auto;
+      right: auto;
+      width: 100%;
+      max-width: 400px;
+      max-height: calc(100vh - 48px);
+      border-radius: 20px;
+      animation: tds-dialog-in 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+
+    html.dark .tds-modal-input {
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+  }
+
+  .tds-modal-input .tds-modal-handle {
+    display: none;
+  }
+
   .tds-modal-header {
     padding: 16px 20px 0;
   }
