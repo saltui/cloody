@@ -66,8 +66,8 @@ export function getContractAddress(chainId: number): `0x${string}` | null {
   const address = CONTRACT_ADDRESSES[chainId as keyof typeof CONTRACT_ADDRESSES]
   if (!address) return null
   try {
-    // EIP-55 체크섬으로 주소 정규화
-    return getAddress(address)
+    // 소문자로 변환 후 EIP-55 체크섬으로 정규화 (잘못된 체크섬 주소도 허용)
+    return getAddress(address.toLowerCase() as `0x${string}`)
   } catch {
     console.error('Invalid contract address:', address)
     return null
