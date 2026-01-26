@@ -857,7 +857,8 @@ function CreateVaultModal({
   const [selectedFileId, setSelectedFileId] = useState('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [approverEmails, setApproverEmails] = useState<string[]>([''])
+  const [approverEmails, setApproverEmails] = useState<string[]>([])
+  const [newApproverEmail, setNewApproverEmail] = useState('')
   const [requiredApprovals, setRequiredApprovals] = useState(1)
   const [restrictDomain, setRestrictDomain] = useState(true)
   const [registerOnChain, setRegisterOnChain] = useState(false)
@@ -888,26 +889,28 @@ function CreateVaultModal({
   }, [userId])
 
   const addApprover = () => {
-    if (approverEmails.length < 10) {
-      setApproverEmails([...approverEmails, ''])
+    const email = newApproverEmail.trim()
+    if (!email) return
+    if (email.toLowerCase() === userEmail.toLowerCase()) {
+      return // 본인은 추가 불가
     }
+    if (approverEmails.some(e => e.toLowerCase() === email.toLowerCase())) {
+      return // 중복 불가
+    }
+    if (approverEmails.length >= 9) {
+      return // 최대 10명 (본인 포함)
+    }
+    setApproverEmails([...approverEmails, email])
+    setNewApproverEmail('')
   }
 
   const removeApprover = (index: number) => {
-    if (approverEmails.length > 1) {
-      setApproverEmails(approverEmails.filter((_, i) => i !== index))
-    }
-  }
-
-  const updateApprover = (index: number, value: string) => {
-    const updated = [...approverEmails]
-    updated[index] = value
-    setApproverEmails(updated)
+    setApproverEmails(approverEmails.filter((_, i) => i !== index))
   }
 
   // 모든 승인자 (생성자 포함)
-  const allApprovers = [userEmail, ...approverEmails.filter(e => e.trim() && e.toLowerCase() !== userEmail.toLowerCase())]
-  const validApprovers = allApprovers.filter(e => e.trim())
+  const allApprovers = [userEmail, ...approverEmails]
+  const validApprovers = allApprovers
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1058,13 +1061,14 @@ function CreateVaultModal({
           {/* Title */}
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground-secondary)' }}>
-              제목 *
+              제목 * <span className="font-normal" style={{ color: 'var(--foreground-muted)' }}>({title.length}/100)</span>
             </label>
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => setTitle(e.target.value.slice(0, 100))}
               required
+              maxLength={100}
               placeholder="문서 제목"
               className="input w-full"
             />
@@ -1073,11 +1077,12 @@ function CreateVaultModal({
           {/* Description */}
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground-secondary)' }}>
-              설명
+              설명 <span className="font-normal" style={{ color: 'var(--foreground-muted)' }}>({description.length}/500)</span>
             </label>
             <textarea
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => setDescription(e.target.value.slice(0, 500))}
+              maxLength={500}
               placeholder="문서에 대한 설명 (선택사항)"
               rows={2}
               className="input w-full resize-none"
@@ -1115,69 +1120,63 @@ function CreateVaultModal({
               </div>
 
               {/* 추가된 승인자들 */}
-              {approverEmails.map((email, index) => {
-                const trimmedEmail = email.trim()
-                if (!trimmedEmail || trimmedEmail.toLowerCase() === userEmail.toLowerCase()) return null
-                return (
+              {approverEmails.map((email, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-3 p-2.5 rounded-lg"
+                  style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+                >
                   <div
-                    key={index}
-                    className="flex items-center gap-3 p-2.5 rounded-lg"
-                    style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium"
+                    style={{ background: 'var(--background)', color: 'var(--foreground-muted)', border: '1px solid var(--glass-border)' }}
                   >
-                    <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium"
-                      style={{ background: 'var(--background)', color: 'var(--foreground-muted)', border: '1px solid var(--glass-border)' }}
-                    >
-                      {trimmedEmail[0].toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm truncate" style={{ color: 'var(--foreground-secondary)' }}>
-                        {trimmedEmail}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeApprover(index)}
-                      className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
-                      style={{ color: 'var(--foreground-muted)' }}
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
+                    {email[0].toUpperCase()}
                   </div>
-                )
-              })}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate" style={{ color: 'var(--foreground-secondary)' }}>
+                      {email}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeApprover(index)}
+                    className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
+                    style={{ color: 'var(--foreground-muted)' }}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
             </div>
 
             {/* 승인자 추가 입력 */}
             <div className="flex gap-2">
               <input
                 type="email"
-                value={approverEmails[approverEmails.length - 1] || ''}
-                onChange={(e) => updateApprover(approverEmails.length - 1, e.target.value)}
+                value={newApproverEmail}
+                onChange={(e) => setNewApproverEmail(e.target.value)}
                 placeholder={restrictDomain ? `추가할 승인자 이메일 (@${userDomain})` : '추가할 승인자 이메일'}
                 className="input flex-1"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault()
-                    const lastEmail = approverEmails[approverEmails.length - 1]?.trim()
-                    if (lastEmail && lastEmail.toLowerCase() !== userEmail.toLowerCase()) {
-                      addApprover()
-                    }
+                    addApprover()
                   }
                 }}
               />
               <button
                 type="button"
-                onClick={() => {
-                  const lastEmail = approverEmails[approverEmails.length - 1]?.trim()
-                  if (lastEmail && lastEmail.toLowerCase() !== userEmail.toLowerCase()) {
-                    addApprover()
-                  }
+                onClick={addApprover}
+                disabled={!newApproverEmail.trim()}
+                className="px-3 py-2 rounded-lg text-sm font-medium transition-opacity"
+                style={{
+                  background: 'var(--glass-bg)',
+                  color: 'var(--foreground-secondary)',
+                  border: '1px solid var(--glass-border)',
+                  opacity: newApproverEmail.trim() ? 1 : 0.5,
                 }}
-                className="px-3 py-2 rounded-lg text-sm font-medium"
-                style={{ background: 'var(--glass-bg)', color: 'var(--foreground-secondary)', border: '1px solid var(--glass-border)' }}
               >
                 추가
               </button>

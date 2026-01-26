@@ -1,7 +1,6 @@
 import { http, createConfig, fallback } from 'wagmi'
 import { sepolia, baseSepolia, base } from 'wagmi/chains'
 import { injected, walletConnect } from 'wagmi/connectors'
-import { getAddress } from 'viem'
 
 // WalletConnect Project ID (https://cloud.walletconnect.com에서 발급)
 const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || ''
@@ -65,13 +64,12 @@ export const CONTRACT_ADDRESSES = {
 export function getContractAddress(chainId: number): `0x${string}` | null {
   const address = CONTRACT_ADDRESSES[chainId as keyof typeof CONTRACT_ADDRESSES]
   if (!address) return null
-  try {
-    // 소문자로 변환 후 EIP-55 체크섬으로 정규화 (잘못된 체크섬 주소도 허용)
-    return getAddress(address.toLowerCase() as `0x${string}`)
-  } catch {
-    console.error('Invalid contract address:', address)
+  // 간단한 주소 형식 검증 (0x + 40 hex chars)
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    console.error('Invalid contract address format:', address)
     return null
   }
+  return address as `0x${string}`
 }
 
 // 블록 익스플로러 URL
