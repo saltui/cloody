@@ -33,7 +33,7 @@ export function useRegisterDocument() {
     const expiresInSeconds = params.expiresInSeconds || 365 * 24 * 60 * 60 // 기본 1년
 
     const txHash = await writeContractAsync({
-      address: contractAddress as `0x${string}`,
+      address: contractAddress,
       abi: DocumentRegistryABI,
       functionName: 'registerDocument',
       args: [
@@ -76,7 +76,7 @@ export function useSignDocument() {
     }
 
     writeContract({
-      address: contractAddress as `0x${string}`,
+      address: contractAddress,
       abi: DocumentRegistryABI,
       functionName: 'signDocument',
       args: [documentId, comment],
@@ -100,7 +100,7 @@ export function useVerifyHash(fileHash: string | undefined) {
   const contractAddress = getContractAddress(chainId)
 
   const { data, isLoading, error, refetch } = useReadContract({
-    address: contractAddress as `0x${string}`,
+    address: contractAddress ?? '0x0000000000000000000000000000000000000000',
     abi: DocumentRegistryABI,
     functionName: 'verifyHash',
     args: fileHash ? [hashToBytes32(fileHash)] : undefined,
@@ -128,7 +128,7 @@ export function useDocument(documentId: bigint | undefined) {
   const contractAddress = getContractAddress(chainId)
 
   const { data, isLoading, error, refetch } = useReadContract({
-    address: contractAddress as `0x${string}`,
+    address: contractAddress ?? '0x0000000000000000000000000000000000000000',
     abi: DocumentRegistryABI,
     functionName: 'getDocument',
     args: documentId ? [documentId] : undefined,
@@ -151,7 +151,7 @@ export function useDocumentByHash(fileHash: string | undefined) {
   const contractAddress = getContractAddress(chainId)
 
   const { data, isLoading, error, refetch } = useReadContract({
-    address: contractAddress as `0x${string}`,
+    address: contractAddress ?? '0x0000000000000000000000000000000000000000',
     abi: DocumentRegistryABI,
     functionName: 'getDocumentByHash',
     args: fileHash ? [hashToBytes32(fileHash)] : undefined,
@@ -177,7 +177,7 @@ export function useHasApproved(documentId: bigint | undefined, approver: `0x${st
   const contractAddress = getContractAddress(chainId)
 
   const { data, isLoading, error, refetch } = useReadContract({
-    address: contractAddress as `0x${string}`,
+    address: contractAddress ?? '0x0000000000000000000000000000000000000000',
     abi: DocumentRegistryABI,
     functionName: 'hasApproved',
     args: documentId && approver ? [documentId, approver] : undefined,
