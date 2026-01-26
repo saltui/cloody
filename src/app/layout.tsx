@@ -7,6 +7,7 @@ import { UserProvider } from "@/lib/user-context";
 import { TdsProvider } from "@/lib/tds-provider";
 import { DataCacheProvider } from "@/lib/data-cache";
 import { ToastProvider } from "@/components/Toast";
+import { Web3Provider } from "@/lib/web3/provider";
 import UploadPanel from "@/components/UploadPanel";
 import DownloadPanel from "@/components/DownloadPanel";
 import NavigationBlocker from "@/components/NavigationBlocker";
@@ -40,8 +41,9 @@ export default function RootLayout({
       <body>
         <ThemeProvider>
           <TdsProvider>
-            <ToastProvider>
-              <UserProvider>
+            <Web3Provider>
+              <ToastProvider>
+                <UserProvider>
                 <DataCacheProvider>
                   <SignedUrlProvider>
                     <UploadProvider>
@@ -54,8 +56,9 @@ export default function RootLayout({
                     </UploadProvider>
                   </SignedUrlProvider>
                 </DataCacheProvider>
-              </UserProvider>
-            </ToastProvider>
+                </UserProvider>
+              </ToastProvider>
+            </Web3Provider>
           </TdsProvider>
         </ThemeProvider>
       </body>
