@@ -62,13 +62,19 @@ export const CONTRACT_ADDRESSES = {
 } as const
 
 export function getContractAddress(chainId: number): `0x${string}` | null {
-  const address = CONTRACT_ADDRESSES[chainId as keyof typeof CONTRACT_ADDRESSES]
+  const rawAddress = CONTRACT_ADDRESSES[chainId as keyof typeof CONTRACT_ADDRESSES]
+  if (!rawAddress) return null
+
+  // 공백 제거 후 검증
+  const address = rawAddress.trim()
   if (!address) return null
-  // 간단한 주소 형식 검증 (0x + 40 hex chars)
-  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
-    console.error('Invalid contract address format:', address)
+
+  // 0x로 시작하고 그 뒤에 hex 문자가 있으면 허용
+  if (!address.startsWith('0x') || address.length !== 42) {
+    console.error('Invalid contract address format:', address, 'length:', address.length)
     return null
   }
+
   return address as `0x${string}`
 }
 
