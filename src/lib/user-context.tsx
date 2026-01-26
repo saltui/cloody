@@ -8,6 +8,7 @@ export interface User {
   email_verified: boolean
   display_name: string | null
   avatar_url: string | null
+  wallet_address: string | null
   totp_enabled: boolean
   is_admin: boolean
 }

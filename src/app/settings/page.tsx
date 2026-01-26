@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation'
 import { useTheme } from '@/lib/theme'
 import { useUser } from '@/lib/user-context'
 import { useToast } from '@/components/Toast'
+import { useAccount, useSignMessage, useDisconnect } from 'wagmi'
+import { useConnectModal } from '@rainbow-me/rainbowkit'
+import { truncateHash } from '@/lib/hash'
 
 type SettingsTab = 'profile' | 'account' | 'security' | 'preferences'
 
@@ -49,12 +52,28 @@ export default function SettingsPage() {
   // 스토리지 사용량
   const [storageUsed, setStorageUsed] = useState<number>(0)
 
+  // 지갑 상태
+  const { address: connectedAddress, isConnected } = useAccount()
+  const { openConnectModal } = useConnectModal()
+  const { disconnect } = useDisconnect()
+  const { signMessageAsync } = useSignMessage()
+  const [linkedWallet, setLinkedWallet] = useState<string | null>(null)
+  const [isLinkingWallet, setIsLinkingWallet] = useState(false)
+
   useEffect(() => {
     if (user) {
       setDisplayName(user.display_name || '')
       setAvatarPreview(user.avatar_url)
     }
   }, [user])
+
+  // 연결된 지갑 정보 가져오기
+  useEffect(() => {
+    fetch('/api/user/wallet')
+      .then(res => res.json())
+      .then(data => setLinkedWallet(data.wallet_address || null))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     // 스토리지 사용량 가져오기
@@ -193,6 +212,66 @@ export default function SettingsPage() {
     if (file) {
       setAvatarFile(file)
       setAvatarPreview(URL.createObjectURL(file))
+    }
+  }
+
+  // 지갑 연결 (서명 포함)
+  const handleLinkWallet = async () => {
+    if (!connectedAddress) {
+      openConnectModal?.()
+      return
+    }
+
+    setIsLinkingWallet(true)
+    try {
+      const message = `Cloody 계정에 지갑을 연결합니다.\n\n지갑 주소: ${connectedAddress}\n시간: ${new Date().toISOString()}`
+
+      const signature = await signMessageAsync({ message })
+
+      const res = await fetch('/api/user/wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          wallet_address: connectedAddress,
+          signature,
+          message,
+        }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || '지갑 연결에 실패했습니다.')
+      }
+
+      setLinkedWallet(connectedAddress.toLowerCase())
+      showToast('지갑이 연결되었습니다!', 'success')
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('rejected')) {
+        showToast('서명이 취소되었습니다.', 'error')
+      } else {
+        showToast(err instanceof Error ? err.message : '지갑 연결에 실패했습니다.', 'error')
+      }
+    } finally {
+      setIsLinkingWallet(false)
+    }
+  }
+
+  // 지갑 연결 해제
+  const handleUnlinkWallet = async () => {
+    if (!confirm('지갑 연결을 해제하시겠습니까?\n\nVault에서 블록체인 서명이 불가능해집니다.')) return
+
+    try {
+      const res = await fetch('/api/user/wallet', { method: 'DELETE' })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || '지갑 연결 해제에 실패했습니다.')
+      }
+
+      setLinkedWallet(null)
+      showToast('지갑 연결이 해제되었습니다.', 'success')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '지갑 연결 해제에 실패했습니다.', 'error')
     }
   }
 
@@ -430,6 +509,148 @@ export default function SettingsPage() {
             {/* 보안 탭 */}
             {activeTab === 'security' && (
               <div className="space-y-4 sm:space-y-6 animate-fade-in">
+                {/* Web3 지갑 */}
+                <div className="tds-card p-4 sm:p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(139, 92, 246, 0.1)' }}>
+                      <svg className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: '#8b5cf6' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 className="tds-text-body font-semibold">Web3 지갑</h2>
+                      <p className="tds-text-caption tds-text-secondary">
+                        블록체인 문서 서명을 위한 지갑 연결
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 연결된 지갑 표시 */}
+                  {linkedWallet ? (
+                    <div className="space-y-3">
+                      <div
+                        className="flex items-center gap-3 p-3 rounded-xl"
+                        style={{ background: 'var(--background-secondary)' }}
+                      >
+                        <div
+                          className="w-10 h-10 rounded-full"
+                          style={{
+                            background: `linear-gradient(135deg, #${linkedWallet.slice(2, 8)}, #${linkedWallet.slice(-6)})`,
+                          }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="tds-text-body font-medium font-mono">
+                            {truncateHash(linkedWallet, 8, 6)}
+                          </p>
+                          <p className="tds-text-caption tds-text-tertiary">연결됨</p>
+                        </div>
+                        <span className="tds-badge tds-badge-success">활성</span>
+                      </div>
+
+                      <div className="flex gap-2">
+                        {/* 다른 지갑으로 변경 */}
+                        {isConnected && connectedAddress?.toLowerCase() !== linkedWallet ? (
+                          <button
+                            onClick={handleLinkWallet}
+                            disabled={isLinkingWallet}
+                            className="tds-btn tds-btn-secondary flex-1 flex items-center justify-center gap-2"
+                          >
+                            {isLinkingWallet ? (
+                              <>
+                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
+                                연결 중...
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                지갑 변경
+                              </>
+                            )}
+                          </button>
+                        ) : null}
+
+                        {/* 연결 해제 */}
+                        <button
+                          onClick={handleUnlinkWallet}
+                          className="tds-btn flex items-center justify-center gap-2"
+                          style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                          </svg>
+                          연결 해제
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="tds-text-body tds-text-secondary">
+                        지갑을 연결하면 Vault에서 문서에 블록체인 서명을 할 수 있습니다.
+                      </p>
+
+                      {isConnected ? (
+                        <div className="space-y-3">
+                          <div
+                            className="flex items-center gap-3 p-3 rounded-xl"
+                            style={{ background: 'var(--background-secondary)' }}
+                          >
+                            <div
+                              className="w-10 h-10 rounded-full"
+                              style={{
+                                background: `linear-gradient(135deg, #${connectedAddress?.slice(2, 8) || '000000'}, #${connectedAddress?.slice(-6) || '000000'})`,
+                              }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="tds-text-body font-medium font-mono">
+                                {connectedAddress ? truncateHash(connectedAddress, 8, 6) : ''}
+                              </p>
+                              <p className="tds-text-caption tds-text-tertiary">연결된 지갑</p>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={handleLinkWallet}
+                            disabled={isLinkingWallet}
+                            className="tds-btn tds-btn-primary w-full flex items-center justify-center gap-2"
+                          >
+                            {isLinkingWallet ? (
+                              <>
+                                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
+                                서명 중...
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                </svg>
+                                이 지갑으로 계정 연결
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => openConnectModal?.()}
+                          className="tds-btn tds-btn-secondary w-full flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                          지갑 연결
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {/* 패스키 */}
                 <div className="tds-card p-4 sm:p-6">
                   <div className="flex items-center gap-3 mb-4">

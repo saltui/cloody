@@ -20,6 +20,7 @@ export interface User {
   email_verified: boolean
   display_name: string | null
   avatar_url: string | null
+  wallet_address: string | null
   totp_enabled: boolean
   is_admin: boolean
   created_at: string
@@ -49,7 +50,7 @@ export async function findUserByEmail(email: string): Promise<UserWithSecret | n
 export async function findUserById(id: string): Promise<User | null> {
   const { data, error } = await supabase
     .from('users')
-    .select('id, email, email_verified, display_name, avatar_url, totp_enabled, is_admin, created_at')
+    .select('id, email, email_verified, display_name, avatar_url, wallet_address, totp_enabled, is_admin, created_at')
     .eq('id', id)
     .single()
 
@@ -147,6 +148,7 @@ export async function verifyMagicLinkToken(token: string): Promise<User | null> 
     email_verified: true,
     display_name: data.display_name,
     avatar_url: data.avatar_url,
+    wallet_address: data.wallet_address || null,
     totp_enabled: data.totp_enabled,
     is_admin: data.is_admin,
     created_at: data.created_at,
@@ -315,7 +317,7 @@ export function refreshUserSessionToken(token: string, currentIp: string): strin
 // 사용자 프로필 업데이트
 export async function updateUserProfile(
   userId: string,
-  updates: { display_name?: string; avatar_url?: string }
+  updates: { display_name?: string; avatar_url?: string; wallet_address?: string | null }
 ): Promise<boolean> {
   const { error } = await supabase
     .from('users')
@@ -326,6 +328,34 @@ export async function updateUserProfile(
     .eq('id', userId)
 
   return !error
+}
+
+// 지갑 주소 업데이트
+export async function updateWalletAddress(
+  userId: string,
+  walletAddress: string | null
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('users')
+    .update({
+      wallet_address: walletAddress,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', userId)
+
+  return !error
+}
+
+// 지갑 주소로 사용자 찾기
+export async function findUserByWalletAddress(walletAddress: string): Promise<User | null> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, email, email_verified, display_name, avatar_url, wallet_address, totp_enabled, is_admin, created_at')
+    .eq('wallet_address', walletAddress.toLowerCase())
+    .single()
+
+  if (error || !data) return null
+  return data as User
 }
 
 // 비밀번호 변경

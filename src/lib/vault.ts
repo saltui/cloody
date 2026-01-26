@@ -10,6 +10,8 @@ export interface VaultDocument {
   status: 'pending' | 'approved' | 'rejected' | 'expired'
   allowed_domain: string | null
   expires_at: string | null
+  file_hash: string | null
+  blockchain_tx_hash: string | null
   created_at: string
   // Joined data
   file?: {
@@ -33,6 +35,8 @@ export interface VaultApproval {
   comment: string | null
   ip_address: string | null
   user_agent: string | null
+  wallet_address: string | null
+  wallet_signature: string | null
   decided_at: string | null
   created_at: string
 }
@@ -60,8 +64,9 @@ export async function createVaultDocument(params: {
   approverEmails: string[]
   allowedDomain?: string
   expiresInDays?: number
+  fileHash?: string
 }): Promise<{ document: VaultDocument | null; error: string | null }> {
-  const { fileId, ownerId, title, description, requiredApprovals, approverEmails, allowedDomain, expiresInDays = DEFAULT_EXPIRY_DAYS } = params
+  const { fileId, ownerId, title, description, requiredApprovals, approverEmails, allowedDomain, expiresInDays = DEFAULT_EXPIRY_DAYS, fileHash } = params
 
   // 최소 승인 수 검증
   if (requiredApprovals < 1 || requiredApprovals > approverEmails.length) {
@@ -72,18 +77,25 @@ export async function createVaultDocument(params: {
   const expiresAt = new Date()
   expiresAt.setDate(expiresAt.getDate() + expiresInDays)
 
-  // 문서 생성
+  // 문서 생성 (file_hash는 DB 컬럼이 있을 때만 포함)
+  const insertData: Record<string, unknown> = {
+    file_id: fileId,
+    owner_id: ownerId,
+    title,
+    description: description || null,
+    required_approvals: requiredApprovals,
+    allowed_domain: allowedDomain || null,
+    expires_at: expiresAt.toISOString(),
+  }
+
+  // file_hash 컬럼이 있는 경우에만 추가 (마이그레이션 후)
+  if (fileHash) {
+    insertData.file_hash = fileHash
+  }
+
   const { data: document, error: docError } = await supabase
     .from('vault_documents')
-    .insert({
-      file_id: fileId,
-      owner_id: ownerId,
-      title,
-      description: description || null,
-      required_approvals: requiredApprovals,
-      allowed_domain: allowedDomain || null,
-      expires_at: expiresAt.toISOString(),
-    })
+    .insert(insertData)
     .select()
     .single()
 
@@ -179,8 +191,10 @@ export async function processApproval(params: {
   comment?: string
   ipAddress?: string
   userAgent?: string
+  walletAddress?: string
+  signature?: string
 }): Promise<{ success: boolean; error: string | null; documentStatus?: string }> {
-  const { documentId, approverEmail, decision, comment, ipAddress, userAgent } = params
+  const { documentId, approverEmail, decision, comment, ipAddress, userAgent, walletAddress, signature } = params
 
   // 승인 레코드 찾기
   const { data: approval, error: findError } = await supabase
@@ -219,16 +233,26 @@ export async function processApproval(params: {
     return { success: false, error: '만료된 문서입니다.' }
   }
 
-  // 승인 업데이트
+  // 승인 업데이트 (지갑 서명은 DB 컬럼이 있을 때만 포함)
+  const updateData: Record<string, unknown> = {
+    decision,
+    comment: comment || null,
+    ip_address: ipAddress || null,
+    user_agent: userAgent || null,
+    decided_at: new Date().toISOString(),
+  }
+
+  // wallet 필드는 마이그레이션 후에 추가
+  if (walletAddress) {
+    updateData.wallet_address = walletAddress
+  }
+  if (signature) {
+    updateData.wallet_signature = signature
+  }
+
   const { error: updateError } = await supabase
     .from('vault_approvals')
-    .update({
-      decision,
-      comment: comment || null,
-      ip_address: ipAddress || null,
-      user_agent: userAgent || null,
-      decided_at: new Date().toISOString(),
-    })
+    .update(updateData)
     .eq('id', approval.id)
 
   if (updateError) {

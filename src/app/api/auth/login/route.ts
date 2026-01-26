@@ -138,6 +138,7 @@ export async function POST(request: NextRequest) {
       email_verified: user.email_verified,
       display_name: user.display_name,
       avatar_url: user.avatar_url,
+      wallet_address: user.wallet_address || null,
       totp_enabled: user.totp_enabled,
       is_admin: user.is_admin,
       created_at: user.created_at,

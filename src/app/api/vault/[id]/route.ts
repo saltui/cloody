@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getVaultDocument, processApproval } from '@/lib/vault'
 import { supabase } from '@/lib/supabase'
+import { verifyMessage } from 'viem'
 
 function getClientIP(request: NextRequest): string {
   const forwardedFor = request.headers.get('cf-connecting-ip')
@@ -48,7 +49,7 @@ export async function GET(
   }
 }
 
-// POST: 승인/거절 처리
+// POST: 승인/거절 처리 (지갑 서명 검증 포함)
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -65,10 +66,52 @@ export async function POST(
   const userAgent = request.headers.get('user-agent') || undefined
 
   try {
-    const { decision, comment } = await request.json()
+    const { decision, comment, walletAddress, signature, signedMessage, timestamp } = await request.json()
 
     if (!decision || !['approved', 'rejected'].includes(decision)) {
       return NextResponse.json({ error: '잘못된 요청입니다.' }, { status: 400 })
+    }
+
+    // 지갑 서명 검증
+    if (!walletAddress || !signature || !signedMessage) {
+      return NextResponse.json({ error: '지갑 서명이 필요합니다.' }, { status: 400 })
+    }
+
+    // 사용자의 등록된 지갑 주소 확인
+    const { data: user } = await supabase
+      .from('users')
+      .select('wallet_address')
+      .eq('id', userId)
+      .single()
+
+    if (!user?.wallet_address) {
+      return NextResponse.json({ error: '계정에 연결된 지갑이 없습니다.' }, { status: 400 })
+    }
+
+    if (user.wallet_address.toLowerCase() !== walletAddress.toLowerCase()) {
+      return NextResponse.json({ error: '등록된 지갑과 다른 지갑입니다.' }, { status: 400 })
+    }
+
+    // 타임스탬프 검증 (10분 이내)
+    const signatureAge = Date.now() - timestamp
+    if (signatureAge > 10 * 60 * 1000) {
+      return NextResponse.json({ error: '서명이 만료되었습니다. 다시 시도해주세요.' }, { status: 400 })
+    }
+
+    // 서명 검증
+    try {
+      const isValid = await verifyMessage({
+        address: walletAddress as `0x${string}`,
+        message: signedMessage,
+        signature: signature as `0x${string}`,
+      })
+
+      if (!isValid) {
+        return NextResponse.json({ error: '서명 검증에 실패했습니다.' }, { status: 400 })
+      }
+    } catch (verifyError) {
+      console.error('Signature verification error:', verifyError)
+      return NextResponse.json({ error: '서명 검증에 실패했습니다.' }, { status: 400 })
     }
 
     const result = await processApproval({
@@ -78,6 +121,8 @@ export async function POST(
       comment,
       ipAddress: ip,
       userAgent,
+      walletAddress,
+      signature,
     })
 
     if (!result.success) {

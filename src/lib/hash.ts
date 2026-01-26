@@ -16,9 +16,12 @@ export async function computeFileHash(file: File): Promise<string> {
   return '0x' + bufferToHex(hashBuffer)
 }
 
-// URL에서 파일을 가져와 해시 계산
-export async function computeHashFromUrl(url: string): Promise<string> {
-  const response = await fetch(url)
+// URL에서 파일을 가져와 해시 계산 (with AbortSignal support)
+export async function computeHashFromUrl(url: string, signal?: AbortSignal): Promise<string> {
+  const response = await fetch(url, { signal })
+  if (!response.ok) {
+    throw new Error(`Failed to fetch: ${response.status}`)
+  }
   const arrayBuffer = await response.arrayBuffer()
   const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer)
   return '0x' + bufferToHex(hashBuffer)

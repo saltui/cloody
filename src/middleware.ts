@@ -40,7 +40,8 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
     "img-src 'self' data: blob: https://*.r2.dev https://*.supabase.co",
     "media-src 'self' blob: https://*.r2.dev", // 비디오 썸네일 + R2 미디어
     "font-src 'self' data:",
-    "connect-src 'self' https://*.supabase.co https://*.r2.dev",
+    // Web3 RPC 엔드포인트 추가
+    "connect-src 'self' https://*.supabase.co https://*.r2.dev https://rpc.sepolia.org https://*.infura.io https://*.alchemy.com wss://*.walletconnect.com wss://*.walletconnect.org https://*.walletconnect.com https://*.walletconnect.org https://sepolia.basescan.org https://basescan.org https://sepolia.etherscan.io",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",

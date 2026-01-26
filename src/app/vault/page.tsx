@@ -5,10 +5,13 @@ import { useRouter } from 'next/navigation'
 import { useUser } from '@/lib/user-context'
 import { useToast } from '@/components/Toast'
 import Sidebar from '@/components/Sidebar'
-import ConnectWallet from '@/components/ConnectWallet'
 import BlockchainBadge from '@/components/BlockchainBadge'
 import { supabase } from '@/lib/supabase'
 import { VaultDocument, VaultApproval, getApprovalProgress, getTimeRemaining, isDocumentExpired } from '@/lib/vault'
+import { useAccount, useSignMessage } from 'wagmi'
+import { useConnectModal } from '@rainbow-me/rainbowkit'
+import { useSignDocument, useVerifyHash, useRegisterDocument } from '@/lib/web3'
+import { computeHashFromUrl } from '@/lib/hash'
 
 type TabType = 'owned' | 'pending'
 
@@ -16,6 +19,11 @@ export default function VaultPage() {
   const router = useRouter()
   const { user, isLoading: userLoading } = useUser()
   const { showToast } = useToast()
+
+  // Wallet hooks
+  const { address, isConnected } = useAccount()
+  const { openConnectModal } = useConnectModal()
+  const { signMessageAsync } = useSignMessage()
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [documents, setDocuments] = useState<VaultDocument[]>([])
@@ -25,6 +33,7 @@ export default function VaultPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [approvalComment, setApprovalComment] = useState('')
+  const [showWalletPrompt, setShowWalletPrompt] = useState(false)
 
   // 문서 목록 조회
   const fetchDocuments = async () => {
@@ -62,14 +71,51 @@ export default function VaultPage() {
     }
   })
 
-  // 승인/거절 처리
+  // 승인/거절 처리 (지갑 서명 필요)
   const handleDecision = async (docId: string, decision: 'approved' | 'rejected') => {
+    // 1. 계정에 연결된 지갑 확인
+    if (!user?.wallet_address) {
+      setShowWalletPrompt(true)
+      showToast('승인/거절하려면 먼저 설정에서 지갑을 연결해주세요.', 'error')
+      return
+    }
+
+    // 2. 지갑 연결 확인
+    if (!isConnected || !address) {
+      if (openConnectModal) {
+        openConnectModal()
+      }
+      showToast('지갑을 연결해주세요.', 'error')
+      return
+    }
+
+    // 3. 연결된 지갑이 계정에 등록된 지갑과 일치하는지 확인
+    if (address.toLowerCase() !== user.wallet_address.toLowerCase()) {
+      showToast(`등록된 지갑(${user.wallet_address.slice(0, 6)}...${user.wallet_address.slice(-4)})으로 연결해주세요.`, 'error')
+      return
+    }
+
     setProcessing(true)
     try {
+      // 4. 서명 메시지 생성
+      const timestamp = Date.now()
+      const message = `Cloody Vault ${decision === 'approved' ? 'Approval' : 'Rejection'}\n\nDocument ID: ${docId}\nDecision: ${decision}\nComment: ${approvalComment || 'N/A'}\nTimestamp: ${timestamp}`
+
+      // 5. 지갑 서명 요청
+      const signature = await signMessageAsync({ message })
+
+      // 6. API에 서명과 함께 전송
       const res = await fetch(`/api/vault/${docId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision, comment: approvalComment || undefined }),
+        body: JSON.stringify({
+          decision,
+          comment: approvalComment || undefined,
+          walletAddress: address,
+          signature,
+          signedMessage: message,
+          timestamp,
+        }),
       })
 
       if (!res.ok) {
@@ -82,7 +128,11 @@ export default function VaultPage() {
       await fetchDocuments()
       setSelectedDoc(null)
     } catch (error) {
-      showToast(error instanceof Error ? error.message : '처리에 실패했습니다.', 'error')
+      if (error instanceof Error && error.message.includes('User rejected')) {
+        showToast('서명이 취소되었습니다.', 'error')
+      } else {
+        showToast(error instanceof Error ? error.message : '처리에 실패했습니다.', 'error')
+      }
     } finally {
       setProcessing(false)
     }
@@ -166,7 +216,6 @@ export default function VaultPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <ConnectWallet compact className="hidden sm:block" />
             <button
               onClick={() => setShowCreateModal(true)}
               className="btn btn-primary flex items-center gap-2"
@@ -641,29 +690,73 @@ export default function VaultPage() {
                       만료된 문서입니다
                     </div>
                   ) : (
-                    <>
-                      <button
-                        onClick={() => handleDecision(selectedDoc.id, 'rejected')}
-                        disabled={processing}
-                        className="btn flex-1 flex items-center justify-center gap-2"
-                        style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                        {processing ? '처리중...' : '거절'}
-                      </button>
-                      <button
-                        onClick={() => handleDecision(selectedDoc.id, 'approved')}
-                        disabled={processing}
-                        className="btn btn-primary flex-1 flex items-center justify-center gap-2"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        {processing ? '처리중...' : '승인'}
-                      </button>
-                    </>
+                    <div className="flex-1 space-y-2">
+                      {/* Wallet Status Indicator */}
+                      {!user?.wallet_address ? (
+                        <div
+                          className="p-2.5 rounded-lg text-xs flex items-center gap-2"
+                          style={{ background: 'rgba(234, 179, 8, 0.1)', color: 'var(--warning)' }}
+                        >
+                          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <span>승인하려면 먼저 설정에서 지갑을 연결하세요</span>
+                        </div>
+                      ) : !isConnected ? (
+                        <div
+                          className="p-2.5 rounded-lg text-xs flex items-center gap-2"
+                          style={{ background: 'var(--glass-bg)', color: 'var(--foreground-muted)' }}
+                        >
+                          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span>지갑 연결 후 서명이 필요합니다</span>
+                        </div>
+                      ) : address?.toLowerCase() !== user.wallet_address.toLowerCase() ? (
+                        <div
+                          className="p-2.5 rounded-lg text-xs flex items-center gap-2"
+                          style={{ background: 'rgba(234, 179, 8, 0.1)', color: 'var(--warning)' }}
+                        >
+                          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <span>등록된 지갑으로 연결하세요 ({user.wallet_address.slice(0, 6)}...{user.wallet_address.slice(-4)})</span>
+                        </div>
+                      ) : (
+                        <div
+                          className="p-2.5 rounded-lg text-xs flex items-center gap-2"
+                          style={{ background: 'rgba(34, 197, 94, 0.1)', color: 'var(--success)' }}
+                        >
+                          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span>지갑 연결됨 ({address?.slice(0, 6)}...{address?.slice(-4)})</span>
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleDecision(selectedDoc.id, 'rejected')}
+                          disabled={processing}
+                          className="btn flex-1 flex items-center justify-center gap-2"
+                          style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                          {processing ? '처리중...' : '거절'}
+                        </button>
+                        <button
+                          onClick={() => handleDecision(selectedDoc.id, 'approved')}
+                          disabled={processing}
+                          className="btn btn-primary flex-1 flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          {processing ? '처리중...' : '승인'}
+                        </button>
+                      </div>
+                    </div>
                   )
                 )}
               </div>
@@ -684,6 +777,57 @@ export default function VaultPage() {
           userId={user.id}
         />
       )}
+
+      {/* Wallet Connection Prompt Modal */}
+      {showWalletPrompt && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          onClick={() => setShowWalletPrompt(false)}
+        >
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="relative w-full max-w-sm rounded-2xl p-6"
+            style={{ background: 'var(--card-bg)', border: '1px solid var(--glass-border)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-center">
+              <div
+                className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center"
+                style={{ background: 'var(--accent-gradient-subtle)' }}
+              >
+                <svg className="w-8 h-8" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--foreground)' }}>
+                지갑 연결 필요
+              </h3>
+              <p className="text-sm mb-6" style={{ color: 'var(--foreground-muted)' }}>
+                문서 승인/거절을 위해서는 블록체인 서명이 필요합니다.<br />
+                먼저 설정 페이지에서 지갑을 계정에 연결해주세요.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowWalletPrompt(false)}
+                  className="btn flex-1"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={() => router.push('/settings')}
+                  className="btn btn-primary flex-1 flex items-center justify-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  설정으로 이동
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -701,9 +845,14 @@ function CreateVaultModal({
   userId: string
 }) {
   const { showToast } = useToast()
-  const [files, setFiles] = useState<{ id: string; name: string }[]>([])
+  const [files, setFiles] = useState<{ id: string; name: string; url: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
+
+  // Web3 hooks
+  const { address, isConnected } = useAccount()
+  const { openConnectModal } = useConnectModal()
+  const { register, txHash, isPending: isRegistering, isConfirming, isSuccess: isRegisterSuccess } = useRegisterDocument()
 
   const [selectedFileId, setSelectedFileId] = useState('')
   const [title, setTitle] = useState('')
@@ -711,6 +860,8 @@ function CreateVaultModal({
   const [approverEmails, setApproverEmails] = useState<string[]>([''])
   const [requiredApprovals, setRequiredApprovals] = useState(1)
   const [restrictDomain, setRestrictDomain] = useState(true)
+  const [registerOnChain, setRegisterOnChain] = useState(false)
+  const [approverWallets, setApproverWallets] = useState<string[]>([])
 
   const userDomain = userEmail.split('@')[1] || ''
 
@@ -720,7 +871,7 @@ function CreateVaultModal({
       try {
         const { data, error } = await supabase
           .from('photos')
-          .select('id, name')
+          .select('id, name, url')
           .eq('user_id', userId)
           .is('deleted_at', null)
           .order('created_at', { ascending: false })
@@ -754,17 +905,76 @@ function CreateVaultModal({
     setApproverEmails(updated)
   }
 
+  // 모든 승인자 (생성자 포함)
+  const allApprovers = [userEmail, ...approverEmails.filter(e => e.trim() && e.toLowerCase() !== userEmail.toLowerCase())]
+  const validApprovers = allApprovers.filter(e => e.trim())
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    const validEmails = approverEmails.filter(e => e.trim())
-    if (!selectedFileId || !title || validEmails.length === 0) {
+    if (!selectedFileId || !title) {
       showToast('필수 항목을 입력해주세요.', 'error')
+      return
+    }
+
+    // 블록체인 등록 선택 시 지갑 연결 확인
+    if (registerOnChain && !isConnected) {
+      showToast('블록체인 등록을 위해 지갑을 연결해주세요.', 'error')
       return
     }
 
     setCreating(true)
     try {
+      let fileHash: string | undefined
+      let txHash: string | undefined
+
+      // 블록체인 등록 시 - 먼저 블록체인에 등록 (실패하면 문서 생성 안 함)
+      if (registerOnChain) {
+        const selectedFile = files.find(f => f.id === selectedFileId)
+        if (selectedFile?.url) {
+          try {
+            // 프록시 URL로 변환하여 해시 계산
+            const urlObj = new URL(selectedFile.url)
+            const proxyUrl = `/api/image/${urlObj.pathname.substring(1)}`
+            fileHash = await computeHashFromUrl(proxyUrl)
+            showToast('파일 해시 계산 완료', 'success')
+          } catch (hashError) {
+            console.error('Hash computation error:', hashError)
+            showToast('파일 해시 계산에 실패했습니다.', 'error')
+            setCreating(false)
+            return
+          }
+
+          // 블록체인에 먼저 등록
+          try {
+            showToast('블록체인에 등록 중... 지갑에서 트랜잭션을 승인해주세요.', 'info')
+
+            txHash = await register({
+              fileHash,
+              metaData: JSON.stringify({
+                title,
+                createdAt: new Date().toISOString(),
+              }),
+              approvers: [],
+              requiredApprovals: 0,
+              expiresInSeconds: 365 * 24 * 60 * 60, // 1년
+            })
+
+            showToast(`블록체인 등록 완료! TX: ${txHash.slice(0, 10)}...`, 'success')
+          } catch (chainError) {
+            console.error('Blockchain registration error:', chainError)
+            if (chainError instanceof Error && chainError.message.includes('User rejected')) {
+              showToast('트랜잭션이 취소되었습니다. 문서가 생성되지 않았습니다.', 'error')
+            } else {
+              showToast('블록체인 등록에 실패했습니다. 문서가 생성되지 않았습니다.', 'error')
+            }
+            setCreating(false)
+            return // 블록체인 등록 실패 시 문서 생성 중단
+          }
+        }
+      }
+
+      // 오프체인 문서 생성 (블록체인 등록 성공 후 또는 블록체인 미사용 시)
       const res = await fetch('/api/vault', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -772,9 +982,12 @@ function CreateVaultModal({
           fileId: selectedFileId,
           title,
           description,
-          requiredApprovals: Math.min(requiredApprovals, validEmails.length),
-          approverEmails: validEmails,
+          requiredApprovals: Math.min(requiredApprovals, validApprovers.length),
+          approverEmails: validApprovers,
           restrictDomain,
+          registerOnChain,
+          fileHash,
+          txHash,
         }),
       })
 
@@ -874,44 +1087,101 @@ function CreateVaultModal({
           {/* Approvers */}
           <div>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--foreground-secondary)' }}>
-              승인자 이메일 *
+              승인자
             </label>
-            <div className="space-y-2">
-              {approverEmails.map((email, index) => (
-                <div key={index} className="flex gap-2">
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => updateApprover(index, e.target.value)}
-                    placeholder={restrictDomain ? `example@${userDomain}` : 'email@example.com'}
-                    className="input flex-1"
-                  />
-                  {approverEmails.length > 1 && (
+
+            {/* 승인자 목록 (생성자 포함) */}
+            <div className="space-y-2 mb-3">
+              {/* 생성자 (나) - 항상 포함 */}
+              <div
+                className="flex items-center gap-3 p-2.5 rounded-lg"
+                style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+              >
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium"
+                  style={{ background: 'var(--accent-gradient)', color: 'white' }}
+                >
+                  {userEmail[0].toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate" style={{ color: 'var(--foreground)' }}>
+                    {userEmail}
+                  </p>
+                  <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>생성자 (나)</p>
+                </div>
+                <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--accent-gradient-subtle)', color: 'var(--accent-primary)' }}>
+                  필수
+                </span>
+              </div>
+
+              {/* 추가된 승인자들 */}
+              {approverEmails.map((email, index) => {
+                const trimmedEmail = email.trim()
+                if (!trimmedEmail || trimmedEmail.toLowerCase() === userEmail.toLowerCase()) return null
+                return (
+                  <div
+                    key={index}
+                    className="flex items-center gap-3 p-2.5 rounded-lg"
+                    style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium"
+                      style={{ background: 'var(--background)', color: 'var(--foreground-muted)', border: '1px solid var(--glass-border)' }}
+                    >
+                      {trimmedEmail[0].toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate" style={{ color: 'var(--foreground-secondary)' }}>
+                        {trimmedEmail}
+                      </p>
+                    </div>
                     <button
                       type="button"
                       onClick={() => removeApprover(index)}
-                      className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
+                      className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
                       style={{ color: 'var(--foreground-muted)' }}
                     >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
-                  )}
-                </div>
-              ))}
+                  </div>
+                )
+              })}
             </div>
-            <button
-              type="button"
-              onClick={addApprover}
-              className="mt-2 text-sm flex items-center gap-1"
-              style={{ color: 'var(--accent-primary)' }}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              승인자 추가
-            </button>
+
+            {/* 승인자 추가 입력 */}
+            <div className="flex gap-2">
+              <input
+                type="email"
+                value={approverEmails[approverEmails.length - 1] || ''}
+                onChange={(e) => updateApprover(approverEmails.length - 1, e.target.value)}
+                placeholder={restrictDomain ? `추가할 승인자 이메일 (@${userDomain})` : '추가할 승인자 이메일'}
+                className="input flex-1"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    const lastEmail = approverEmails[approverEmails.length - 1]?.trim()
+                    if (lastEmail && lastEmail.toLowerCase() !== userEmail.toLowerCase()) {
+                      addApprover()
+                    }
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const lastEmail = approverEmails[approverEmails.length - 1]?.trim()
+                  if (lastEmail && lastEmail.toLowerCase() !== userEmail.toLowerCase()) {
+                    addApprover()
+                  }
+                }}
+                className="px-3 py-2 rounded-lg text-sm font-medium"
+                style={{ background: 'var(--glass-bg)', color: 'var(--foreground-secondary)', border: '1px solid var(--glass-border)' }}
+              >
+                추가
+              </button>
+            </div>
           </div>
 
           {/* Required Approvals */}
@@ -924,14 +1194,14 @@ function CreateVaultModal({
               onChange={(e) => setRequiredApprovals(Number(e.target.value))}
               className="input w-full"
             >
-              {Array.from({ length: Math.max(approverEmails.filter(e => e.trim()).length, 1) }, (_, i) => i + 1).map((n) => (
+              {Array.from({ length: validApprovers.length }, (_, i) => i + 1).map((n) => (
                 <option key={n} value={n}>
-                  {n}명 중 {n}명 ({approverEmails.filter(e => e.trim()).length}명 중)
+                  {validApprovers.length}명 중 {n}명 승인 필요
                 </option>
               ))}
             </select>
             <p className="text-xs mt-1" style={{ color: 'var(--foreground-muted)' }}>
-              M-of-N: 지정된 수 이상의 승인을 받아야 문서가 승인됩니다.
+              M-of-N 다중서명: 총 {validApprovers.length}명 중 {requiredApprovals}명의 승인이 필요합니다.
             </p>
           </div>
 
@@ -947,6 +1217,74 @@ function CreateVaultModal({
             <label htmlFor="restrictDomain" className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>
               같은 조직(@{userDomain})만 승인자로 허용
             </label>
+          </div>
+
+          {/* Blockchain Registration Option */}
+          <div
+            className="p-4 rounded-xl"
+            style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+          >
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="checkbox"
+                id="registerOnChain"
+                checked={registerOnChain}
+                onChange={(e) => setRegisterOnChain(e.target.checked)}
+                className="w-4 h-4 rounded"
+              />
+              <label htmlFor="registerOnChain" className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+                블록체인에 등록 (선택사항)
+              </label>
+            </div>
+            <p className="text-xs ml-6" style={{ color: 'var(--foreground-muted)' }}>
+              문서 해시를 블록체인에 기록하여 위변조 방지 및 검증이 가능합니다.
+            </p>
+
+            {registerOnChain && (
+              <div className="mt-4 space-y-3">
+                {/* Wallet Connection Status */}
+                {!isConnected ? (
+                  <div
+                    className="p-3 rounded-lg flex items-center justify-between"
+                    style={{ background: 'rgba(234, 179, 8, 0.1)' }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4" style={{ color: 'var(--warning)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      <span className="text-sm" style={{ color: 'var(--warning)' }}>
+                        지갑 연결이 필요합니다
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openConnectModal?.()}
+                      className="text-sm px-3 py-1.5 rounded-lg font-medium"
+                      style={{ background: 'var(--accent-gradient)', color: 'white' }}
+                    >
+                      연결
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    className="p-3 rounded-lg flex items-center gap-2"
+                    style={{ background: 'rgba(34, 197, 94, 0.1)' }}
+                  >
+                    <svg className="w-4 h-4" style={{ color: 'var(--success)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-sm" style={{ color: 'var(--success)' }}>
+                      지갑 연결됨: {address?.slice(0, 6)}...{address?.slice(-4)}
+                    </span>
+                  </div>
+                )}
+
+                {/* Approver Wallets Info */}
+                <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
+                  * 블록체인 등록 시 승인자들의 지갑 주소가 필요합니다. 현재는 오프체인 승인만 기록됩니다.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Submit */}

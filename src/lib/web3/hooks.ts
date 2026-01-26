@@ -10,7 +10,7 @@ export function useRegisterDocument() {
   const chainId = useChainId()
   const contractAddress = getContractAddress(chainId)
 
-  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const { writeContractAsync, data: hash, isPending, error } = useWriteContract()
 
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
@@ -19,26 +19,33 @@ export function useRegisterDocument() {
   const register = async (params: {
     fileHash: string
     metaData: string
-    approvers: `0x${string}`[]
-    requiredApprovals: number
-    expiresInSeconds: number
+    approvers?: `0x${string}`[]
+    requiredApprovals?: number
+    expiresInSeconds?: number
   }) => {
     if (!contractAddress) {
       throw new Error('Contract not deployed on this chain')
     }
 
-    writeContract({
+    // 기본값: 승인자 없이 해시만 등록 (위변조 방지용)
+    const approvers = params.approvers || []
+    const requiredApprovals = params.requiredApprovals || 0
+    const expiresInSeconds = params.expiresInSeconds || 365 * 24 * 60 * 60 // 기본 1년
+
+    const txHash = await writeContractAsync({
       address: contractAddress as `0x${string}`,
       abi: DocumentRegistryABI,
       functionName: 'registerDocument',
       args: [
         hashToBytes32(params.fileHash),
         params.metaData,
-        params.approvers,
-        BigInt(params.requiredApprovals),
-        BigInt(params.expiresInSeconds),
+        approvers,
+        BigInt(requiredApprovals),
+        BigInt(expiresInSeconds),
       ],
     })
+
+    return txHash
   }
 
   return {
@@ -99,6 +106,9 @@ export function useVerifyHash(fileHash: string | undefined) {
     args: fileHash ? [hashToBytes32(fileHash)] : undefined,
     query: {
       enabled: !!fileHash && !!contractAddress,
+      staleTime: 60 * 1000, // 1분간 캐시
+      gcTime: 5 * 60 * 1000, // 5분간 GC 방지
+      retry: 1, // 실패 시 1회만 재시도
     },
   })
 
@@ -147,6 +157,9 @@ export function useDocumentByHash(fileHash: string | undefined) {
     args: fileHash ? [hashToBytes32(fileHash)] : undefined,
     query: {
       enabled: !!fileHash && !!contractAddress,
+      staleTime: 60 * 1000, // 1분간 캐시
+      gcTime: 5 * 60 * 1000, // 5분간 GC 방지
+      retry: 1, // 실패 시 1회만 재시도
     },
   })
 

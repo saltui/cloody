@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { fileId, title, description, requiredApprovals, approverEmails, restrictDomain } = body
+    const { fileId, title, description, requiredApprovals, approverEmails, restrictDomain, registerOnChain, fileHash } = body
 
     if (!fileId || !title || !approverEmails?.length) {
       return NextResponse.json({ error: '필수 항목이 누락되었습니다.' }, { status: 400 })
@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
       requiredApprovals: requiredApprovals || approverEmails.length,
       approverEmails,
       allowedDomain: restrictDomain ? ownerDomain : undefined,
+      fileHash: registerOnChain ? fileHash : undefined,
     })
 
     if (error || !document) {

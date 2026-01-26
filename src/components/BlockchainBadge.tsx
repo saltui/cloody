@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useVerifyHash, useDocumentByHash, getExplorerUrl, getTxUrl } from '@/lib/web3'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useVerifyHash, useDocumentByHash, getExplorerUrl, getExplorerName, getContractAddress } from '@/lib/web3'
 import { computeHashFromUrl, truncateHash, compareHashes } from '@/lib/hash'
 import { useChainId } from 'wagmi'
 
@@ -12,53 +12,112 @@ interface BlockchainBadgeProps {
 
 type VerificationStatus = 'loading' | 'verified' | 'not_registered' | 'tampered' | 'error'
 
+// 해시 캐시 (같은 URL의 해시를 여러 번 계산하지 않기 위해)
+const hashCache = new Map<string, string>()
+
 export default function BlockchainBadge({ fileUrl, className = '' }: BlockchainBadgeProps) {
   const chainId = useChainId()
   const [currentHash, setCurrentHash] = useState<string | null>(null)
   const [status, setStatus] = useState<VerificationStatus>('loading')
   const [showModal, setShowModal] = useState(false)
+  const [hashError, setHashError] = useState(false)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
-  // 현재 파일의 해시 계산
+  // 프록시 URL 생성
+  const getProxyUrl = useCallback((url: string) => {
+    if (url.startsWith('/api/image/')) return url
+    try {
+      const urlObj = new URL(url)
+      return `/api/image/${urlObj.pathname.substring(1)}`
+    } catch {
+      return url
+    }
+  }, [])
+
+  // 현재 파일의 해시 계산 (AbortController 사용)
   useEffect(() => {
     if (!fileUrl) return
 
+    // 이전 요청 취소
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+
+    // 캐시 확인
+    const proxyUrl = getProxyUrl(fileUrl)
+    const cachedHash = hashCache.get(proxyUrl)
+    if (cachedHash) {
+      setCurrentHash(cachedHash)
+      setHashError(false)
+      return
+    }
+
+    // 새 AbortController 생성
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     const computeHash = async () => {
       try {
-        // 프록시 URL로 변환
-        const proxyUrl = fileUrl.startsWith('/api/image/')
-          ? fileUrl
-          : (() => {
-              try {
-                const urlObj = new URL(fileUrl)
-                return `/api/image/${urlObj.pathname.substring(1)}`
-              } catch {
-                return fileUrl
-              }
-            })()
+        setHashError(false)
+        const hash = await computeHashFromUrl(proxyUrl, controller.signal)
 
-        const hash = await computeHashFromUrl(proxyUrl)
-        setCurrentHash(hash)
+        // 요청이 취소되지 않았으면 상태 업데이트
+        if (!controller.signal.aborted) {
+          hashCache.set(proxyUrl, hash)
+          setCurrentHash(hash)
+        }
       } catch (error) {
+        // AbortError는 정상적인 취소이므로 무시
+        if (error instanceof Error && error.name === 'AbortError') {
+          return
+        }
         console.error('Hash computation error:', error)
-        setStatus('error')
+        if (!controller.signal.aborted) {
+          setHashError(true)
+          setStatus('error')
+        }
       }
     }
 
     computeHash()
-  }, [fileUrl])
 
-  // 블록체인에서 해시 검증
-  const { exists, isFinalized, isLoading } = useVerifyHash(currentHash || undefined)
-  const { document: onChainDoc } = useDocumentByHash(currentHash || undefined)
+    // 클린업: 컴포넌트 언마운트 또는 fileUrl 변경 시 요청 취소
+    return () => {
+      controller.abort()
+    }
+  }, [fileUrl, getProxyUrl])
+
+  // 블록체인에서 해시 검증 (1단계: 존재 여부만 확인)
+  const { exists, isFinalized, isLoading: isVerifying } = useVerifyHash(currentHash || undefined)
+
+  // 블록체인 문서 조회 (2단계: 존재할 때만 상세 조회)
+  const { document: onChainDoc, isLoading: isLoadingDoc } = useDocumentByHash(
+    exists ? currentHash || undefined : undefined // exists가 true일 때만 조회
+  )
+
+  const isLoading = isVerifying || (exists && isLoadingDoc)
 
   // 상태 결정
   useEffect(() => {
-    if (!currentHash) return
+    // 해시 계산 에러 시
+    if (hashError) {
+      setStatus('error')
+      return
+    }
+
+    // 해시 계산 중
+    if (!currentHash) {
+      setStatus('loading')
+      return
+    }
+
+    // 블록체인 조회 중
     if (isLoading) {
       setStatus('loading')
       return
     }
 
+    // 블록체인에 등록되지 않은 경우
     if (!exists) {
       setStatus('not_registered')
     } else if (onChainDoc && compareHashes(currentHash, onChainDoc.fileHash)) {
@@ -66,7 +125,10 @@ export default function BlockchainBadge({ fileUrl, className = '' }: BlockchainB
     } else {
       setStatus('tampered')
     }
-  }, [currentHash, exists, isLoading, onChainDoc])
+  }, [currentHash, exists, isLoading, onChainDoc, hashError])
+
+  // 컨트랙트 주소 가져오기
+  const contractAddress = getContractAddress(chainId)
 
   const getStatusConfig = () => {
     switch (status) {
@@ -278,10 +340,10 @@ export default function BlockchainBadge({ fileUrl, className = '' }: BlockchainB
                 </div>
               )}
 
-              {/* Explorer Link */}
-              {exists && (
+              {/* Explorer Link - 항상 표시 */}
+              {contractAddress && (
                 <a
-                  href={getExplorerUrl(chainId)}
+                  href={`${getExplorerUrl(chainId)}/address/${contractAddress}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-center gap-2 p-3 rounded-lg text-sm font-medium transition-colors hover:opacity-80"
@@ -290,7 +352,7 @@ export default function BlockchainBadge({ fileUrl, className = '' }: BlockchainB
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                   </svg>
-                  BaseScan에서 보기
+                  {getExplorerName(chainId)}에서 컨트랙트 보기
                 </a>
               )}
             </div>
