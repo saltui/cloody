@@ -21,7 +21,6 @@ export default function VaultPage() {
   const [activeTab, setActiveTab] = useState<TabType>('owned')
   const [selectedDoc, setSelectedDoc] = useState<VaultDocument | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [showFilePreview, setShowFilePreview] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [approvalComment, setApprovalComment] = useState('')
 
@@ -332,257 +331,331 @@ export default function VaultPage() {
         </div>
       </main>
 
-      {/* Document Detail Modal */}
+      {/* Document Detail Modal - Redesigned for Better UX */}
       {selectedDoc && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          onClick={() => { setSelectedDoc(null); setApprovalComment(''); setShowFilePreview(false); }}
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          onClick={() => { setSelectedDoc(null); setApprovalComment(''); }}
         >
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
+
+          {/* Two-panel layout: File Preview (left) + Document Info (right) */}
           <div
-            className="relative w-full max-w-xl rounded-2xl p-6 max-h-[85vh] overflow-y-auto"
-            style={{ background: 'var(--card-bg)', border: '1px solid var(--glass-border)' }}
+            className="relative w-full h-full md:h-auto md:max-h-[90vh] md:max-w-5xl md:m-4 flex flex-col md:flex-row md:rounded-2xl overflow-hidden"
+            style={{ background: 'var(--card-bg)' }}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Close button */}
             <button
-              onClick={() => { setSelectedDoc(null); setApprovalComment(''); setShowFilePreview(false); }}
-              className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
-              style={{ color: 'var(--foreground-muted)' }}
+              onClick={() => { setSelectedDoc(null); setApprovalComment(''); }}
+              className="absolute top-4 right-4 z-10 p-2 rounded-full transition-colors"
+              style={{ background: 'rgba(0,0,0,0.5)', color: '#fff' }}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
 
-            {/* Header */}
-            <div className="flex items-center gap-2 mb-2">
-              <h2 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>
-                {selectedDoc.title}
-              </h2>
-              {getStatusBadge(selectedDoc.status)}
-            </div>
+            {/* Left Panel: File Preview (takes most space) */}
+            <div
+              className="flex-1 md:flex-[2] flex items-center justify-center p-4 md:p-8 min-h-[40vh] md:min-h-0"
+              style={{ background: '#0a0a0a' }}
+            >
+              {selectedDoc.file ? (
+                <div className="relative w-full h-full flex items-center justify-center">
+                  {/* File Preview - Always visible */}
+                  {(() => {
+                    const fileUrl = selectedDoc.file.url
+                    const fileName = selectedDoc.file.name.toLowerCase()
+                    const isVideo = fileName.endsWith('.mp4') || fileName.endsWith('.mov') || fileName.endsWith('.webm')
+                    const isImage = fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') || fileName.endsWith('.gif') || fileName.endsWith('.webp')
 
-            {/* Expiration */}
-            {selectedDoc.status === 'pending' && (
-              <div className="mb-4">
-                {(() => {
-                  const timeInfo = getTimeRemaining(selectedDoc)
-                  return (
-                    <span
-                      className="text-xs font-medium px-2 py-1 rounded-full"
-                      style={{
-                        background: timeInfo.expired ? 'rgba(239, 68, 68, 0.15)' : timeInfo.hours < 24 ? 'rgba(234, 179, 8, 0.15)' : 'var(--glass-bg)',
-                        color: timeInfo.expired ? 'var(--error)' : timeInfo.hours < 24 ? 'var(--warning)' : 'var(--foreground-muted)',
-                      }}
-                    >
-                      ⏱ {timeInfo.text}
-                    </span>
-                  )
-                })()}
-              </div>
-            )}
+                    // Extract path from R2 URL for proxy
+                    const getProxyUrl = (url: string) => {
+                      try {
+                        const urlObj = new URL(url)
+                        const path = urlObj.pathname.substring(1) // Remove leading /
+                        return `/api/image/${path}`
+                      } catch {
+                        return url
+                      }
+                    }
 
-            {selectedDoc.description && (
-              <p className="text-sm mb-4" style={{ color: 'var(--foreground-muted)' }}>
-                {selectedDoc.description}
-              </p>
-            )}
+                    const proxyUrl = getProxyUrl(fileUrl)
 
-            {/* File Preview */}
-            {selectedDoc.file && (
-              <div className="mb-4">
-                <p className="text-xs font-medium mb-2" style={{ color: 'var(--foreground-muted)' }}>첨부 파일</p>
-                <div
-                  className="rounded-xl overflow-hidden"
-                  style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
-                >
-                  {/* Preview Image/Thumbnail */}
-                  {showFilePreview ? (
-                    <div className="relative">
-                      <img
-                        src={selectedDoc.file.url}
-                        alt={selectedDoc.file.name}
-                        className="w-full max-h-[400px] object-contain"
-                        style={{ background: '#000' }}
-                      />
-                      <button
-                        onClick={() => setShowFilePreview(false)}
-                        className="absolute top-2 right-2 p-1.5 rounded-lg"
-                        style={{ background: 'rgba(0,0,0,0.5)', color: '#fff' }}
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="p-4 flex items-center gap-4">
-                      {selectedDoc.file.thumbnail_url ? (
-                        <img
-                          src={selectedDoc.file.thumbnail_url}
-                          alt=""
-                          className="w-20 h-20 rounded-lg object-cover cursor-pointer hover:opacity-80 transition-opacity"
-                          onClick={() => setShowFilePreview(true)}
+                    if (isVideo) {
+                      return (
+                        <video
+                          src={proxyUrl}
+                          controls
+                          className="max-w-full max-h-[60vh] md:max-h-[70vh] rounded-lg"
+                          style={{ background: '#000' }}
                         />
-                      ) : (
+                      )
+                    }
+
+                    if (isImage || selectedDoc.file.thumbnail_url) {
+                      return (
+                        <img
+                          src={proxyUrl}
+                          alt={selectedDoc.file.name}
+                          className="max-w-full max-h-[60vh] md:max-h-[70vh] object-contain rounded-lg"
+                          onError={(e) => {
+                            // Fallback to thumbnail if main image fails
+                            if (selectedDoc.file?.thumbnail_url) {
+                              (e.target as HTMLImageElement).src = getProxyUrl(selectedDoc.file.thumbnail_url)
+                            }
+                          }}
+                        />
+                      )
+                    }
+
+                    // Non-image/video file
+                    return (
+                      <div className="text-center">
                         <div
-                          className="w-20 h-20 rounded-lg flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity"
-                          style={{ background: 'var(--accent-gradient-subtle)' }}
-                          onClick={() => setShowFilePreview(true)}
+                          className="w-24 h-24 mx-auto mb-4 rounded-2xl flex items-center justify-center"
+                          style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
                         >
-                          <svg className="w-8 h-8" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-12 h-12" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                           </svg>
                         </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate mb-1" style={{ color: 'var(--foreground)' }}>
+                        <p className="text-sm font-medium" style={{ color: 'var(--foreground-muted)' }}>
                           {selectedDoc.file.name}
                         </p>
-                        <button
-                          onClick={() => setShowFilePreview(true)}
-                          className="text-xs flex items-center gap-1 hover:underline"
-                          style={{ color: 'var(--accent-primary)' }}
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                          미리보기
-                        </button>
                       </div>
-                    </div>
+                    )
+                  })()}
+                </div>
+              ) : (
+                <div className="text-center">
+                  <div
+                    className="w-24 h-24 mx-auto mb-4 rounded-2xl flex items-center justify-center"
+                    style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+                  >
+                    <svg className="w-12 h-12" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>파일 없음</p>
+                </div>
+              )}
+            </div>
+
+            {/* Right Panel: Document Info */}
+            <div
+              className="md:flex-1 md:w-96 p-6 overflow-y-auto max-h-[50vh] md:max-h-[90vh]"
+              style={{ borderLeft: '1px solid var(--glass-border)' }}
+            >
+              {/* Header with Status */}
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-lg font-semibold mb-1" style={{ color: 'var(--foreground)' }}>
+                    {selectedDoc.title}
+                  </h2>
+                  {selectedDoc.file && (
+                    <p className="text-xs truncate" style={{ color: 'var(--foreground-muted)' }}>
+                      {selectedDoc.file.name}
+                    </p>
                   )}
                 </div>
+                {getStatusBadge(selectedDoc.status)}
               </div>
-            )}
 
-            {/* Approvals */}
-            <div className="mb-4">
-              <h3 className="text-sm font-medium mb-2" style={{ color: 'var(--foreground)' }}>
-                승인 현황 ({getApprovalProgress(selectedDoc).approved}/{getApprovalProgress(selectedDoc).required})
-              </h3>
-              <div className="space-y-2">
-                {selectedDoc.approvals?.map((approval) => (
+              {/* Expiration Badge */}
+              {selectedDoc.status === 'pending' && (
+                <div className="mb-4">
+                  {(() => {
+                    const timeInfo = getTimeRemaining(selectedDoc)
+                    return (
+                      <div
+                        className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full"
+                        style={{
+                          background: timeInfo.expired ? 'rgba(239, 68, 68, 0.15)' : timeInfo.hours < 24 ? 'rgba(234, 179, 8, 0.15)' : 'var(--glass-bg)',
+                          color: timeInfo.expired ? 'var(--error)' : timeInfo.hours < 24 ? 'var(--warning)' : 'var(--foreground-muted)',
+                        }}
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {timeInfo.text}
+                      </div>
+                    )
+                  })()}
+                </div>
+              )}
+
+              {/* Description */}
+              {selectedDoc.description && (
+                <div className="mb-4">
+                  <p className="text-sm leading-relaxed" style={{ color: 'var(--foreground-secondary)' }}>
+                    {selectedDoc.description}
+                  </p>
+                </div>
+              )}
+
+              {/* Approval Progress Bar */}
+              <div className="mb-4">
+                <div className="flex items-center justify-between text-sm mb-2">
+                  <span className="font-medium" style={{ color: 'var(--foreground)' }}>승인 현황</span>
+                  <span style={{ color: 'var(--accent-primary)' }}>
+                    {getApprovalProgress(selectedDoc).approved} / {getApprovalProgress(selectedDoc).required}
+                  </span>
+                </div>
+                <div className="progress-bar h-2">
                   <div
-                    key={approval.id}
-                    className="p-3 rounded-lg"
-                    style={{ background: 'var(--glass-bg)' }}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-8 h-8 rounded-full text-sm flex items-center justify-center font-medium"
+                    className="progress-bar-fill"
+                    style={{ width: `${(getApprovalProgress(selectedDoc).approved / getApprovalProgress(selectedDoc).required) * 100}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Approvers List */}
+              <div className="mb-4">
+                <div className="space-y-2">
+                  {selectedDoc.approvals?.map((approval) => (
+                    <div
+                      key={approval.id}
+                      className="p-3 rounded-xl"
+                      style={{ background: 'var(--glass-bg)' }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className="w-8 h-8 rounded-full text-sm flex items-center justify-center font-medium"
+                            style={{
+                              background: approval.decision === 'approved'
+                                ? 'rgba(34, 197, 94, 0.2)'
+                                : approval.decision === 'rejected'
+                                ? 'rgba(239, 68, 68, 0.2)'
+                                : 'var(--background)',
+                              color: approval.decision === 'approved'
+                                ? 'var(--success)'
+                                : approval.decision === 'rejected'
+                                ? 'var(--error)'
+                                : 'var(--foreground-muted)',
+                              border: '1px solid var(--glass-border)',
+                            }}
+                          >
+                            {approval.decision === 'approved' ? (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : approval.decision === 'rejected' ? (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            ) : (
+                              approval.approver_email[0].toUpperCase()
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm truncate" style={{ color: 'var(--foreground-secondary)' }}>
+                              {approval.approver_email}
+                            </p>
+                          </div>
+                        </div>
+                        <span
+                          className="text-xs font-medium shrink-0"
                           style={{
-                            background: approval.decision === 'approved'
-                              ? 'rgba(34, 197, 94, 0.2)'
-                              : approval.decision === 'rejected'
-                              ? 'rgba(239, 68, 68, 0.2)'
-                              : 'var(--glass-bg)',
                             color: approval.decision === 'approved'
                               ? 'var(--success)'
                               : approval.decision === 'rejected'
                               ? 'var(--error)'
                               : 'var(--foreground-muted)',
-                            border: '1px solid var(--glass-border)',
                           }}
                         >
-                          {approval.approver_email[0].toUpperCase()}
-                        </div>
-                        <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>
-                          {approval.approver_email}
+                          {approval.decision === 'approved' ? '승인됨' : approval.decision === 'rejected' ? '거절됨' : '대기중'}
                         </span>
                       </div>
-                      <span
-                        className="text-xs font-medium"
-                        style={{
-                          color: approval.decision === 'approved'
-                            ? 'var(--success)'
-                            : approval.decision === 'rejected'
-                            ? 'var(--error)'
-                            : 'var(--foreground-muted)',
-                        }}
-                      >
-                        {approval.decision === 'approved' ? '승인' : approval.decision === 'rejected' ? '거절' : '대기'}
-                      </span>
+                      {/* Comment */}
+                      {approval.comment && (
+                        <div
+                          className="mt-2 text-xs p-2.5 rounded-lg italic"
+                          style={{ background: 'var(--background)', color: 'var(--foreground-muted)' }}
+                        >
+                          "{approval.comment}"
+                        </div>
+                      )}
                     </div>
-                    {/* Comment */}
-                    {approval.comment && (
-                      <div
-                        className="mt-2 ml-10 text-xs p-2 rounded"
-                        style={{ background: 'var(--background)', color: 'var(--foreground-muted)' }}
-                      >
-                        "{approval.comment}"
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
 
-            {/* Comment Input for Approvers */}
-            {selectedDoc.owner_id !== user?.id &&
-             selectedDoc.status === 'pending' &&
-             getMyApprovalStatus(selectedDoc) === 'pending' &&
-             !isDocumentExpired(selectedDoc) && (
-              <div className="mb-4">
-                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--foreground-muted)' }}>
-                  코멘트 (선택사항)
-                </label>
-                <textarea
-                  value={approvalComment}
-                  onChange={(e) => setApprovalComment(e.target.value)}
-                  placeholder="승인/거절 사유를 입력하세요..."
-                  rows={2}
-                  className="input w-full resize-none text-sm"
-                />
-              </div>
-            )}
-
-            {/* Actions */}
-            <div className="flex gap-2">
-              {/* 내가 소유자인 경우 */}
-              {selectedDoc.owner_id === user?.id && (
-                <button
-                  onClick={() => handleDelete(selectedDoc.id)}
-                  className="btn flex-1"
-                  style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
-                >
-                  삭제
-                </button>
-              )}
-
-              {/* 내가 승인자이고 아직 pending인 경우 */}
+              {/* Comment Input for Approvers */}
               {selectedDoc.owner_id !== user?.id &&
                selectedDoc.status === 'pending' &&
-               getMyApprovalStatus(selectedDoc) === 'pending' && (
-                isDocumentExpired(selectedDoc) ? (
-                  <div
-                    className="flex-1 py-2 text-center text-sm rounded-lg"
+               getMyApprovalStatus(selectedDoc) === 'pending' &&
+               !isDocumentExpired(selectedDoc) && (
+                <div className="mb-4">
+                  <label className="block text-xs font-medium mb-2" style={{ color: 'var(--foreground-muted)' }}>
+                    코멘트 (선택사항)
+                  </label>
+                  <textarea
+                    value={approvalComment}
+                    onChange={(e) => setApprovalComment(e.target.value)}
+                    placeholder="승인 또는 거절 사유를 입력하세요..."
+                    rows={2}
+                    className="input w-full resize-none text-sm"
+                  />
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2">
+                {/* Owner Actions */}
+                {selectedDoc.owner_id === user?.id && (
+                  <button
+                    onClick={() => handleDelete(selectedDoc.id)}
+                    className="btn flex-1 flex items-center justify-center gap-2"
                     style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
                   >
-                    만료된 문서입니다
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => handleDecision(selectedDoc.id, 'rejected')}
-                      disabled={processing}
-                      className="btn flex-1"
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    문서 삭제
+                  </button>
+                )}
+
+                {/* Approver Actions */}
+                {selectedDoc.owner_id !== user?.id &&
+                 selectedDoc.status === 'pending' &&
+                 getMyApprovalStatus(selectedDoc) === 'pending' && (
+                  isDocumentExpired(selectedDoc) ? (
+                    <div
+                      className="flex-1 py-3 text-center text-sm rounded-xl font-medium"
                       style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
                     >
-                      {processing ? '처리중...' : '거절'}
-                    </button>
-                    <button
-                      onClick={() => handleDecision(selectedDoc.id, 'approved')}
-                      disabled={processing}
-                      className="btn btn-primary flex-1"
-                    >
-                      {processing ? '처리중...' : '승인'}
-                    </button>
-                  </>
-                )
-              )}
+                      만료된 문서입니다
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => handleDecision(selectedDoc.id, 'rejected')}
+                        disabled={processing}
+                        className="btn flex-1 flex items-center justify-center gap-2"
+                        style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        {processing ? '처리중...' : '거절'}
+                      </button>
+                      <button
+                        onClick={() => handleDecision(selectedDoc.id, 'approved')}
+                        disabled={processing}
+                        className="btn btn-primary flex-1 flex items-center justify-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        {processing ? '처리중...' : '승인'}
+                      </button>
+                    </>
+                  )
+                )}
+              </div>
             </div>
           </div>
         </div>
