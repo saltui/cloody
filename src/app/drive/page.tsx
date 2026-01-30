@@ -782,9 +782,11 @@ export default function DrivePage() {
 
   const fetchStorageUsage = useCallback(async () => {
     try {
-      const res = await fetch('/api/storage')
+      const res = await fetch('/api/storage', {
+        credentials: 'include', // 쿠키 포함
+      })
       if (!res.ok) {
-        console.error('Storage usage error')
+        console.error('Storage usage error:', res.status)
         return
       }
       const { usage } = await res.json()
@@ -1324,9 +1326,20 @@ export default function DrivePage() {
         await fetchData(currentFolderId, searchParams.get('category') || 'all')
       }
     } else if (filesWithPath.length > 0) {
-      // 폴더 없이 파일만 드롭한 경우: 기존 동작 (폴더 피커 표시)
-      setPendingFiles(filesWithPath.map(f => f.file))
-      setShowFolderPicker(true)
+      // 폴더 없이 파일만 드롭한 경우: 현재 디렉토리에 바로 업로드
+      const files = filesWithPath.map(f => f.file)
+
+      // 중복 체크 후 업로드
+      const { duplicates, nonDuplicates } = await checkDuplicates(files, currentFolderId)
+      if (duplicates.length > 0) {
+        setPendingFiles(files)
+        setPendingUploadFolderId(currentFolderId)
+        setDuplicateFiles(duplicates)
+        setNonDuplicateFiles(nonDuplicates)
+        setShowDuplicateModal(true)
+      } else {
+        await executeUpload(files, currentFolderId)
+      }
     }
   }
 
