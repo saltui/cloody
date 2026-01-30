@@ -105,3 +105,21 @@ export async function copyObject(sourceKey: string, destinationKey: string) {
   await r2Client.send(command)
   return `${R2_PUBLIC_URL}/${destinationKey}`
 }
+
+// 업로드용 Presigned URL 생성 (15분 유효)
+export async function getPresignedUploadUrl(
+  fileName: string,
+  contentType: string,
+  expiresIn = 900
+): Promise<{ uploadUrl: string; publicUrl: string }> {
+  const command = new PutObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: fileName,
+    ContentType: contentType,
+  })
+
+  const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn })
+  const publicUrl = `${R2_PUBLIC_URL}/${fileName}`
+
+  return { uploadUrl, publicUrl }
+}

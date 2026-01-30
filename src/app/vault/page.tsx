@@ -6,11 +6,12 @@ import { useUser } from '@/lib/user-context'
 import { useToast } from '@/components/Toast'
 import Sidebar from '@/components/Sidebar'
 import BlockchainBadge from '@/components/BlockchainBadge'
+import VaultAuthModal from '@/components/VaultAuthModal'
 import { supabase } from '@/lib/supabase'
 import { VaultDocument, VaultApproval, getApprovalProgress, getTimeRemaining, isDocumentExpired } from '@/lib/vault'
 import { useAccount, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { useSignDocument, useVerifyHash, useRegisterDocument } from '@/lib/web3'
+import { useSignDocument, useVerifyHash, useRegisterDocument, useDocumentByHash, useHasApproved, useDocument } from '@/lib/web3'
 import { computeHashFromUrl } from '@/lib/hash'
 
 type TabType = 'owned' | 'pending'
@@ -35,6 +36,12 @@ export default function VaultPage() {
   const [approvalComment, setApprovalComment] = useState('')
   const [showWalletPrompt, setShowWalletPrompt] = useState(false)
 
+  // 패스키 인증 상태
+  const [authChecking, setAuthChecking] = useState(true)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [hasPasskey, setHasPasskey] = useState<boolean | null>(null)
+
   // 문서 목록 조회
   const fetchDocuments = async () => {
     try {
@@ -58,6 +65,61 @@ export default function VaultPage() {
       fetchDocuments()
     }
   }, [user, userLoading, router])
+
+  // 패스키 인증 필요 여부 체크
+  useEffect(() => {
+    const checkAuth = async () => {
+      if (!user) {
+        setAuthChecking(false)
+        return
+      }
+
+      // 1. localStorage 먼저 체크 (네트워크 호출 없이 빠르게)
+      const intervalStr = localStorage.getItem('vault_auth_interval')
+      const interval = intervalStr ? parseInt(intervalStr, 10) : 5 // 기본값 5분
+      const lastAuthStr = localStorage.getItem('vault_last_auth')
+      const lastAuth = lastAuthStr ? parseInt(lastAuthStr, 10) : 0
+      const now = Date.now()
+      const elapsed = now - lastAuth
+      const intervalMs = interval * 60 * 1000
+
+      // 2. 인증이 아직 유효하면 API 호출 없이 바로 통과
+      if (interval !== 0 && lastAuth > 0 && elapsed <= intervalMs) {
+        setIsAuthenticated(true)
+        setAuthChecking(false)
+        return
+      }
+
+      // 3. 인증이 필요한 경우에만 API 호출 (패스키 유무 확인)
+      try {
+        const res = await fetch('/api/vault/verify')
+        const data = await res.json()
+
+        if (!data.hasPasskey) {
+          // 패스키가 없으면 인증 불필요
+          setHasPasskey(false)
+          setIsAuthenticated(true)
+          setAuthChecking(false)
+          return
+        }
+
+        setHasPasskey(true)
+
+        // 4. 재인증 필요
+        setIsAuthenticated(false)
+        setShowAuthModal(true)
+      } catch {
+        // 오류 시 인증 없이 접근 허용
+        setIsAuthenticated(true)
+      } finally {
+        setAuthChecking(false)
+      }
+    }
+
+    if (!userLoading && user) {
+      checkAuth()
+    }
+  }, [user, userLoading])
 
   // 필터링된 문서
   const filteredDocs = documents.filter(doc => {
@@ -181,7 +243,24 @@ export default function VaultPage() {
     return myApproval?.decision || 'pending'
   }
 
-  if (userLoading || loading) {
+  // 패스키 인증 모달
+  if (showAuthModal && !isAuthenticated) {
+    return (
+      <div className="min-h-screen" style={{ background: 'var(--background)' }}>
+        <VaultAuthModal
+          onSuccess={() => {
+            setIsAuthenticated(true)
+            setShowAuthModal(false)
+          }}
+          onCancel={() => {
+            router.push('/drive?tab=more')
+          }}
+        />
+      </div>
+    )
+  }
+
+  if (userLoading || loading || authChecking) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--background)' }}>
         <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
@@ -196,29 +275,41 @@ export default function VaultPage() {
       <main className="xl:ml-64">
         {/* Header */}
         <header
-          className="h-[65px] px-4 flex items-center justify-between border-b sticky top-0 z-30"
+          className="h-[56px] sm:h-[65px] px-3 sm:px-4 flex items-center justify-between border-b sticky top-0 z-30"
           style={{ background: 'var(--background)', borderColor: 'var(--glass-border)' }}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* 모바일: 뒤로가기 버튼 (더보기 탭으로) */}
+            <button
+              onClick={() => router.push('/drive?tab=more')}
+              className="xl:hidden p-2 -ml-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex-shrink-0"
+              style={{ color: 'var(--foreground)' }}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            {/* 데스크톱: 사이드바 토글 */}
             <button
               onClick={() => setSidebarOpen(true)}
-              className="p-2 rounded-lg xl:hidden hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              className="hidden xl:hidden p-2 -ml-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex-shrink-0"
+              style={{ color: 'var(--foreground)' }}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center gap-2 min-w-0">
+              <svg className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
-              <h1 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>Vault</h1>
+              <h1 className="text-base sm:text-lg font-semibold truncate" style={{ color: 'var(--foreground)' }}>Vault</h1>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <button
               onClick={() => setShowCreateModal(true)}
-              className="btn btn-primary flex items-center gap-2"
+              className="btn btn-primary flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 text-sm"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -229,11 +320,11 @@ export default function VaultPage() {
         </header>
 
         {/* Tabs */}
-        <div className="px-4 pt-4">
-          <div className="flex gap-2 border-b" style={{ borderColor: 'var(--glass-border)' }}>
+        <div className="px-3 sm:px-4 pt-3 sm:pt-4">
+          <div className="flex gap-1 sm:gap-2 border-b" style={{ borderColor: 'var(--glass-border)' }}>
             <button
               onClick={() => setActiveTab('owned')}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'owned'
                   ? 'border-current'
                   : 'border-transparent hover:text-opacity-80'
@@ -244,7 +335,7 @@ export default function VaultPage() {
             </button>
             <button
               onClick={() => setActiveTab('pending')}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium border-b-2 transition-colors ${
                 activeTab === 'pending'
                   ? 'border-current'
                   : 'border-transparent hover:text-opacity-80'
@@ -254,7 +345,7 @@ export default function VaultPage() {
               승인 대기
               {documents.filter(d => d.owner_id !== user?.id && d.status === 'pending').length > 0 && (
                 <span
-                  className="ml-2 px-1.5 py-0.5 rounded-full text-xs"
+                  className="ml-1.5 sm:ml-2 px-1.5 py-0.5 rounded-full text-[10px] sm:text-xs"
                   style={{ background: 'var(--error)', color: 'white' }}
                 >
                   {documents.filter(d => d.owner_id !== user?.id && d.status === 'pending').length}
@@ -265,7 +356,7 @@ export default function VaultPage() {
         </div>
 
         {/* Document List */}
-        <div className="p-4">
+        <div className="p-3 sm:p-4">
           {filteredDocs.length === 0 ? (
             <div className="text-center py-16">
               <div
@@ -281,100 +372,84 @@ export default function VaultPage() {
               </p>
             </div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
               {filteredDocs.map((doc) => {
                 const progress = getApprovalProgress(doc)
                 const myStatus = getMyApprovalStatus(doc)
                 const timeInfo = getTimeRemaining(doc)
+                const needsMyApproval = myStatus === 'pending' && doc.status === 'pending' && !timeInfo.expired
 
                 return (
                   <div
                     key={doc.id}
                     onClick={() => setSelectedDoc(doc)}
-                    className="card p-4 cursor-pointer"
+                    className="card p-4 cursor-pointer hover:border-opacity-60 transition-colors"
+                    style={{ opacity: timeInfo.expired ? 0.6 : 1 }}
                   >
-                    <div className="flex items-start justify-between mb-2">
-                      <h3 className="font-medium truncate flex-1" style={{ color: 'var(--foreground)' }}>
+                    {/* 제목 + 상태 배지 */}
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <h3 className="font-medium line-clamp-1" style={{ color: 'var(--foreground)' }}>
                         {doc.title}
                       </h3>
                       {getStatusBadge(doc.status)}
                     </div>
 
-                    {/* Expiration for pending docs */}
-                    {doc.status === 'pending' && (
-                      <div className="mb-3">
-                        <span
-                          className="text-xs px-1.5 py-0.5 rounded"
-                          style={{
-                            background: timeInfo.expired ? 'rgba(239, 68, 68, 0.15)' : timeInfo.hours < 24 ? 'rgba(234, 179, 8, 0.15)' : 'var(--glass-bg)',
-                            color: timeInfo.expired ? 'var(--error)' : timeInfo.hours < 24 ? 'var(--warning)' : 'var(--foreground-muted)',
-                          }}
-                        >
-                          {timeInfo.text}
-                        </span>
-                      </div>
-                    )}
-
-                    {doc.description && (
-                      <p className="text-sm mb-3 line-clamp-2" style={{ color: 'var(--foreground-muted)' }}>
-                        {doc.description}
-                      </p>
-                    )}
-
-                    {/* Progress */}
+                    {/* 승인 진행 바 */}
                     <div className="mb-3">
                       <div className="flex justify-between text-xs mb-1">
-                        <span style={{ color: 'var(--foreground-muted)' }}>승인 진행</span>
-                        <span style={{ color: 'var(--foreground-secondary)' }}>
-                          {progress.approved}/{progress.required}
+                        <span style={{ color: 'var(--foreground-muted)' }}>
+                          {progress.approved}/{progress.required} 승인
                         </span>
+                        {doc.status === 'pending' && (
+                          <span style={{ color: 'var(--foreground-muted)' }}>
+                            {timeInfo.text}
+                          </span>
+                        )}
                       </div>
-                      <div className="progress-bar">
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--glass-bg)' }}>
                         <div
-                          className="progress-bar-fill"
-                          style={{ width: `${(progress.approved / progress.required) * 100}%` }}
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min((progress.approved / progress.required) * 100, 100)}%`,
+                            background: doc.status === 'approved' ? 'var(--success)' : doc.status === 'rejected' ? 'var(--error)' : 'var(--accent-primary)',
+                          }}
                         />
                       </div>
                     </div>
 
-                    {/* Approvers */}
-                    <div className="flex items-center gap-1.5">
-                      {doc.approvals?.slice(0, 3).map((approval, i) => (
+                    {/* 승인자 아바타 */}
+                    <div className="flex items-center gap-1">
+                      {doc.approvals?.slice(0, 5).map((approval, i) => (
                         <div
                           key={i}
-                          className="w-6 h-6 rounded-full text-xs flex items-center justify-center font-medium"
+                          className="w-6 h-6 rounded-full text-[10px] flex items-center justify-center font-medium"
                           style={{
                             background: approval.decision === 'approved'
-                              ? 'rgba(34, 197, 94, 0.2)'
-                              : approval.decision === 'rejected'
-                              ? 'rgba(239, 68, 68, 0.2)'
-                              : 'var(--glass-bg)',
-                            color: approval.decision === 'approved'
                               ? 'var(--success)'
                               : approval.decision === 'rejected'
                               ? 'var(--error)'
-                              : 'var(--foreground-muted)',
-                            border: '1px solid var(--glass-border)',
+                              : 'var(--glass-bg)',
+                            color: approval.decision !== 'pending' ? 'white' : 'var(--foreground-muted)',
                           }}
-                          title={`${approval.approver_email} - ${approval.decision}`}
+                          title={approval.approver_email}
                         >
-                          {approval.approver_email[0].toUpperCase()}
+                          {approval.decision === 'approved' ? '✓' : approval.decision === 'rejected' ? '✗' : approval.approver_email[0].toUpperCase()}
                         </div>
                       ))}
-                      {(doc.approvals?.length || 0) > 3 && (
+                      {(doc.approvals?.length || 0) > 5 && (
                         <span className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
-                          +{doc.approvals!.length - 3}
+                          +{doc.approvals!.length - 5}
                         </span>
                       )}
                     </div>
 
-                    {/* My status indicator for pending tab */}
-                    {activeTab === 'pending' && myStatus === 'pending' && doc.status === 'pending' && (
+                    {/* 내 승인 필요 표시 */}
+                    {needsMyApproval && (
                       <div
-                        className="mt-3 py-1.5 px-2 rounded text-xs text-center font-medium"
-                        style={{ background: 'var(--accent-gradient-subtle)', color: 'var(--accent-primary)' }}
+                        className="mt-3 py-2 text-xs text-center font-medium rounded-lg"
+                        style={{ background: 'var(--accent-primary)', color: 'white' }}
                       >
-                        내 승인이 필요합니다
+                        승인 필요
                       </div>
                     )}
                   </div>
@@ -385,24 +460,27 @@ export default function VaultPage() {
         </div>
       </main>
 
-      {/* Document Detail Modal - Redesigned for Better UX */}
+      {/* Document Detail Modal - Mobile Bottom Sheet / Desktop Modal */}
       {selectedDoc && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
           onClick={() => { setSelectedDoc(null); setApprovalComment(''); }}
         >
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" />
 
           {/* Two-panel layout: File Preview (left) + Document Info (right) */}
           <div
-            className="relative w-full h-full md:h-auto md:max-h-[90vh] md:max-w-5xl md:m-4 flex flex-col md:flex-row md:rounded-2xl overflow-hidden"
+            className="relative w-full h-[90vh] sm:h-auto sm:max-h-[90vh] sm:max-w-5xl sm:m-4 flex flex-col sm:flex-row rounded-t-2xl sm:rounded-2xl overflow-hidden"
             style={{ background: 'var(--card-bg)' }}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Mobile drag handle */}
+            <div className="w-10 h-1 rounded-full mx-auto mt-2 mb-1 sm:hidden" style={{ background: 'var(--glass-border)' }} />
+
             {/* Close button */}
             <button
               onClick={() => { setSelectedDoc(null); setApprovalComment(''); }}
-              className="absolute top-4 right-4 z-10 p-2 rounded-full transition-colors"
+              className="absolute top-3 sm:top-4 right-3 sm:right-4 z-10 p-2 rounded-full transition-colors"
               style={{ background: 'rgba(0,0,0,0.5)', color: '#fff' }}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -412,7 +490,7 @@ export default function VaultPage() {
 
             {/* Left Panel: File Preview (takes most space) */}
             <div
-              className="flex-1 md:flex-[2] flex items-center justify-center p-4 md:p-8 min-h-[40vh] md:min-h-0"
+              className="flex-[1] sm:flex-[2] flex items-center justify-center p-3 sm:p-4 md:p-8 min-h-[30vh] sm:min-h-[40vh] md:min-h-0"
               style={{ background: '#0a0a0a' }}
             >
               {selectedDoc.file ? (
@@ -442,7 +520,7 @@ export default function VaultPage() {
                         <video
                           src={proxyUrl}
                           controls
-                          className="max-w-full max-h-[60vh] md:max-h-[70vh] rounded-lg"
+                          className="max-w-full max-h-[25vh] sm:max-h-[60vh] md:max-h-[70vh] rounded-lg"
                           style={{ background: '#000' }}
                         />
                       )
@@ -453,7 +531,7 @@ export default function VaultPage() {
                         <img
                           src={proxyUrl}
                           alt={selectedDoc.file.name}
-                          className="max-w-full max-h-[60vh] md:max-h-[70vh] object-contain rounded-lg"
+                          className="max-w-full max-h-[25vh] sm:max-h-[60vh] md:max-h-[70vh] object-contain rounded-lg"
                           onError={(e) => {
                             // Fallback to thumbnail if main image fails
                             if (selectedDoc.file?.thumbnail_url) {
@@ -499,8 +577,8 @@ export default function VaultPage() {
 
             {/* Right Panel: Document Info */}
             <div
-              className="md:flex-1 md:w-96 p-6 overflow-y-auto max-h-[50vh] md:max-h-[90vh]"
-              style={{ borderLeft: '1px solid var(--glass-border)' }}
+              className="flex-1 sm:flex-none sm:w-96 p-4 sm:p-6 overflow-y-auto max-h-[55vh] sm:max-h-[90vh] border-t sm:border-t-0 sm:border-l"
+              style={{ borderColor: 'var(--glass-border)' }}
             >
               {/* Header with Status */}
               <div className="flex items-start justify-between gap-3 mb-4">
@@ -643,9 +721,16 @@ export default function VaultPage() {
                 </div>
               </div>
 
-              {/* Comment Input for Approvers */}
-              {selectedDoc.owner_id !== user?.id &&
-               selectedDoc.status === 'pending' &&
+              {/* On-chain Signing Section */}
+              {selectedDoc.file?.url && (
+                <OnChainSigningSection
+                  fileUrl={selectedDoc.file.url}
+                  onSignSuccess={() => fetchDocuments()}
+                />
+              )}
+
+              {/* Comment Input for Approvers - 생성자도 승인자면 표시 */}
+              {selectedDoc.status === 'pending' &&
                getMyApprovalStatus(selectedDoc) === 'pending' &&
                !isDocumentExpired(selectedDoc) && (
                 <div className="mb-4">
@@ -663,101 +748,69 @@ export default function VaultPage() {
               )}
 
               {/* Action Buttons */}
-              <div className="flex gap-2 pt-2">
-                {/* Owner Actions */}
-                {selectedDoc.owner_id === user?.id && (
-                  <button
-                    onClick={() => handleDelete(selectedDoc.id)}
-                    className="btn flex-1 flex items-center justify-center gap-2"
-                    style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                    문서 삭제
-                  </button>
+              <div className="space-y-3 pt-2">
+                {/* 만료된 문서 */}
+                {selectedDoc.status === 'pending' && isDocumentExpired(selectedDoc) && (
+                  <p className="text-sm text-center py-2" style={{ color: 'var(--error)' }}>
+                    만료된 문서입니다
+                  </p>
                 )}
 
-                {/* Approver Actions */}
-                {selectedDoc.owner_id !== user?.id &&
-                 selectedDoc.status === 'pending' &&
-                 getMyApprovalStatus(selectedDoc) === 'pending' && (
-                  isDocumentExpired(selectedDoc) ? (
-                    <div
-                      className="flex-1 py-3 text-center text-sm rounded-xl font-medium"
-                      style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
-                    >
-                      만료된 문서입니다
-                    </div>
-                  ) : (
-                    <div className="flex-1 space-y-2">
-                      {/* Wallet Status Indicator */}
-                      {!user?.wallet_address ? (
-                        <div
-                          className="p-2.5 rounded-lg text-xs flex items-center gap-2"
-                          style={{ background: 'rgba(234, 179, 8, 0.1)', color: 'var(--warning)' }}
-                        >
-                          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          <span>승인하려면 먼저 설정에서 지갑을 연결하세요</span>
-                        </div>
-                      ) : !isConnected ? (
-                        <div
-                          className="p-2.5 rounded-lg text-xs flex items-center gap-2"
-                          style={{ background: 'var(--glass-bg)', color: 'var(--foreground-muted)' }}
-                        >
-                          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <span>지갑 연결 후 서명이 필요합니다</span>
-                        </div>
-                      ) : address?.toLowerCase() !== user.wallet_address.toLowerCase() ? (
-                        <div
-                          className="p-2.5 rounded-lg text-xs flex items-center gap-2"
-                          style={{ background: 'rgba(234, 179, 8, 0.1)', color: 'var(--warning)' }}
-                        >
-                          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          <span>등록된 지갑으로 연결하세요 ({user.wallet_address.slice(0, 6)}...{user.wallet_address.slice(-4)})</span>
-                        </div>
-                      ) : (
-                        <div
-                          className="p-2.5 rounded-lg text-xs flex items-center gap-2"
-                          style={{ background: 'rgba(34, 197, 94, 0.1)', color: 'var(--success)' }}
-                        >
-                          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          <span>지갑 연결됨 ({address?.slice(0, 6)}...{address?.slice(-4)})</span>
-                        </div>
-                      )}
-                      <div className="flex gap-2">
+                {/* 승인 버튼 영역 - 승인 대기 상태일 때만 */}
+                {selectedDoc.status === 'pending' &&
+                 getMyApprovalStatus(selectedDoc) === 'pending' &&
+                 !isDocumentExpired(selectedDoc) && (
+                  <>
+                    {/* 지갑 미연결 시 안내 */}
+                    {!user?.wallet_address ? (
+                      <button
+                        onClick={() => router.push('/settings')}
+                        className="w-full btn py-3 text-sm"
+                      >
+                        설정에서 지갑 연결하기
+                      </button>
+                    ) : !isConnected ? (
+                      <button
+                        onClick={() => openConnectModal?.()}
+                        className="w-full btn btn-primary py-3 text-sm"
+                      >
+                        지갑 연결하고 승인하기
+                      </button>
+                    ) : address?.toLowerCase() !== user.wallet_address.toLowerCase() ? (
+                      <p className="text-xs text-center py-2" style={{ color: 'var(--foreground-muted)' }}>
+                        등록된 지갑({user.wallet_address.slice(0, 6)}...)으로 연결해주세요
+                      </p>
+                    ) : (
+                      /* 승인/거절 버튼 */
+                      <div className="grid grid-cols-2 gap-2">
                         <button
                           onClick={() => handleDecision(selectedDoc.id, 'rejected')}
                           disabled={processing}
-                          className="btn flex-1 flex items-center justify-center gap-2"
-                          style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--error)' }}
+                          className="btn py-3 text-sm"
                         >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
                           {processing ? '처리중...' : '거절'}
                         </button>
                         <button
                           onClick={() => handleDecision(selectedDoc.id, 'approved')}
                           disabled={processing}
-                          className="btn btn-primary flex-1 flex items-center justify-center gap-2"
+                          className="btn btn-primary py-3 text-sm"
                         >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
                           {processing ? '처리중...' : '승인'}
                         </button>
                       </div>
-                    </div>
-                  )
+                    )}
+                  </>
+                )}
+
+                {/* 삭제 버튼 - 소유자만, 미승인 상태에서만 */}
+                {selectedDoc.owner_id === user?.id && selectedDoc.status !== 'approved' && (
+                  <button
+                    onClick={() => handleDelete(selectedDoc.id)}
+                    className="w-full text-sm py-2"
+                    style={{ color: 'var(--foreground-muted)' }}
+                  >
+                    문서 삭제
+                  </button>
                 )}
               </div>
             </div>
@@ -781,41 +834,44 @@ export default function VaultPage() {
       {/* Wallet Connection Prompt Modal */}
       {showWalletPrompt && (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center sm:p-4"
           onClick={() => setShowWalletPrompt(false)}
         >
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
           <div
-            className="relative w-full max-w-sm rounded-2xl p-6"
+            className="relative w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl p-5 sm:p-6"
             style={{ background: 'var(--card-bg)', border: '1px solid var(--glass-border)' }}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Mobile drag handle */}
+            <div className="w-10 h-1 rounded-full mx-auto mb-4 sm:hidden" style={{ background: 'var(--glass-border)' }} />
+
             <div className="text-center">
               <div
-                className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center"
+                className="w-14 h-14 sm:w-16 sm:h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center"
                 style={{ background: 'var(--accent-gradient-subtle)' }}
               >
-                <svg className="w-8 h-8" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-7 h-7 sm:w-8 sm:h-8" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--foreground)' }}>
+              <h3 className="text-base sm:text-lg font-semibold mb-2" style={{ color: 'var(--foreground)' }}>
                 지갑 연결 필요
               </h3>
               <p className="text-sm mb-6" style={{ color: 'var(--foreground-muted)' }}>
                 문서 승인/거절을 위해서는 블록체인 서명이 필요합니다.<br />
                 먼저 설정 페이지에서 지갑을 계정에 연결해주세요.
               </p>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <button
                   onClick={() => setShowWalletPrompt(false)}
-                  className="btn flex-1"
+                  className="btn flex-1 py-3 sm:py-2 order-2 sm:order-1"
                 >
                   취소
                 </button>
                 <button
                   onClick={() => router.push('/settings')}
-                  className="btn btn-primary flex-1 flex items-center justify-center gap-2"
+                  className="btn btn-primary flex-1 py-3 sm:py-2 flex items-center justify-center gap-2 order-1 sm:order-2"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -952,14 +1008,29 @@ function CreateVaultModal({
           try {
             showToast('블록체인에 등록 중... 지갑에서 트랜잭션을 승인해주세요.', 'info')
 
+            // 유효한 지갑 주소 필터링 (0x로 시작하고 42자)
+            const validWallets = approverWallets
+              .map(w => w.trim())
+              .filter(w => /^0x[a-fA-F0-9]{40}$/.test(w)) as `0x${string}`[]
+
+            // 생성자 지갑 주소 포함
+            const allApproverWallets = address ? [address, ...validWallets] : validWallets
+
+            // 온체인 승인자가 있으면 M-of-N 설정, 없으면 해시만 등록
+            const onChainRequired = allApproverWallets.length > 0
+              ? Math.min(requiredApprovals, allApproverWallets.length)
+              : 0
+
             txHash = await register({
               fileHash,
               metaData: JSON.stringify({
                 title,
                 createdAt: new Date().toISOString(),
+                approverCount: allApproverWallets.length,
+                requiredApprovals: onChainRequired,
               }),
-              approvers: [],
-              requiredApprovals: 0,
+              approvers: allApproverWallets,
+              requiredApprovals: onChainRequired,
               expiresInSeconds: 365 * 24 * 60 * 60, // 1년
             })
 
@@ -1010,15 +1081,18 @@ function CreateVaultModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
       onClick={onClose}
     >
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
       <div
-        className="relative w-full max-w-lg rounded-2xl p-6 max-h-[90vh] overflow-y-auto"
+        className="relative w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl p-5 sm:p-6 max-h-[90vh] overflow-y-auto"
         style={{ background: 'var(--card-bg)', border: '1px solid var(--glass-border)' }}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Mobile drag handle */}
+        <div className="w-10 h-1 rounded-full mx-auto mb-4 sm:hidden" style={{ background: 'var(--glass-border)' }} />
+
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
@@ -1029,7 +1103,7 @@ function CreateVaultModal({
           </svg>
         </button>
 
-        <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--foreground)' }}>
+        <h2 className="text-base sm:text-lg font-semibold mb-4" style={{ color: 'var(--foreground)' }}>
           새 Vault 문서
         </h2>
 
@@ -1278,10 +1352,85 @@ function CreateVaultModal({
                   </div>
                 )}
 
-                {/* Approver Wallets Info */}
-                <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
-                  * 블록체인 등록 시 승인자들의 지갑 주소가 필요합니다. 현재는 오프체인 승인만 기록됩니다.
-                </p>
+                {/* On-chain Approvers */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium" style={{ color: 'var(--foreground-secondary)' }}>
+                    온체인 승인자 지갑 주소 (선택)
+                  </label>
+                  <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
+                    지갑 주소를 입력하면 해당 주소만 온체인에서 승인 가능합니다. 비워두면 해시만 등록됩니다.
+                  </p>
+
+                  {/* Creator wallet - auto included */}
+                  <div
+                    className="flex items-center gap-2 p-2 rounded-lg text-xs"
+                    style={{ background: 'var(--background)', border: '1px solid var(--glass-border)' }}
+                  >
+                    <span className="font-mono" style={{ color: 'var(--foreground-secondary)' }}>
+                      {address?.slice(0, 10)}...{address?.slice(-8)}
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded text-xs" style={{ background: 'var(--accent-gradient-subtle)', color: 'var(--accent-primary)' }}>
+                      나
+                    </span>
+                  </div>
+
+                  {/* Additional approver wallets */}
+                  {approverWallets.map((wallet, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={wallet}
+                        onChange={(e) => {
+                          const updated = [...approverWallets]
+                          updated[index] = e.target.value
+                          setApproverWallets(updated)
+                        }}
+                        placeholder="0x..."
+                        className="input flex-1 text-xs font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setApproverWallets(approverWallets.filter((_, i) => i !== index))}
+                        className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
+                        style={{ color: 'var(--foreground-muted)' }}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+
+                  {approverWallets.length < 9 && (
+                    <button
+                      type="button"
+                      onClick={() => setApproverWallets([...approverWallets, ''])}
+                      className="text-xs px-3 py-1.5 rounded-lg"
+                      style={{ background: 'var(--glass-bg)', color: 'var(--accent-primary)', border: '1px solid var(--glass-border)' }}
+                    >
+                      + 지갑 주소 추가
+                    </button>
+                  )}
+
+                  {(approverWallets.filter(w => w.trim()).length > 0 || address) && (
+                    <div className="pt-2">
+                      <label className="block text-xs font-medium mb-1" style={{ color: 'var(--foreground-secondary)' }}>
+                        온체인 필요 승인 수
+                      </label>
+                      <select
+                        value={requiredApprovals}
+                        onChange={(e) => setRequiredApprovals(Number(e.target.value))}
+                        className="input w-full text-sm"
+                      >
+                        {Array.from({ length: approverWallets.filter(w => w.trim()).length + 1 }, (_, i) => i + 1).map((n) => (
+                          <option key={n} value={n}>
+                            {approverWallets.filter(w => w.trim()).length + 1}명 중 {n}명
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1297,6 +1446,273 @@ function CreateVaultModal({
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+// 온체인 서명 섹션 컴포넌트
+function OnChainSigningSection({
+  fileUrl,
+  onSignSuccess,
+}: {
+  fileUrl: string
+  onSignSuccess?: () => void
+}) {
+  const { showToast } = useToast()
+  const { address, isConnected } = useAccount()
+  const { openConnectModal } = useConnectModal()
+
+  const [fileHash, setFileHash] = useState<string | null>(null)
+  const [computingHash, setComputingHash] = useState(false)
+  const [hashError, setHashError] = useState(false)
+  const [loadingTimeout, setLoadingTimeout] = useState(false)
+
+  // 해시 계산
+  useEffect(() => {
+    const computeHash = async () => {
+      if (!fileUrl) return
+      setComputingHash(true)
+      setHashError(false)
+      try {
+        const urlObj = new URL(fileUrl)
+        const proxyUrl = `/api/image/${urlObj.pathname.substring(1)}`
+        const hash = await computeHashFromUrl(proxyUrl)
+        setFileHash(hash)
+      } catch (error) {
+        console.error('Failed to compute hash:', error)
+        setHashError(true)
+      } finally {
+        setComputingHash(false)
+      }
+    }
+    computeHash()
+  }, [fileUrl])
+
+  // 온체인 검증
+  const { exists, documentId, isLoading: verifyLoading } = useVerifyHash(fileHash || undefined)
+
+  // 로딩 타임아웃 (5초)
+  useEffect(() => {
+    if (computingHash || verifyLoading) {
+      const timer = setTimeout(() => setLoadingTimeout(true), 5000)
+      return () => clearTimeout(timer)
+    }
+    setLoadingTimeout(false)
+  }, [computingHash, verifyLoading])
+
+  // 온체인 문서 정보
+  const { document: chainDoc, isLoading: docLoading, refetch: refetchDoc } = useDocument(
+    exists && documentId && documentId > BigInt(0) ? documentId : undefined
+  )
+
+  // 현재 사용자가 이미 승인했는지 확인
+  const { hasApproved: alreadyApproved, isLoading: approvalCheckLoading, refetch: refetchApproval } = useHasApproved(
+    exists && documentId && documentId > BigInt(0) ? documentId : undefined,
+    address
+  )
+
+  // 서명 훅
+  const { sign, txHash, isPending, isConfirming, isSuccess, error: signError } = useSignDocument()
+
+  // 서명 성공 시 refetch
+  useEffect(() => {
+    if (isSuccess) {
+      showToast('온체인 서명 완료!', 'success')
+      refetchDoc()
+      refetchApproval()
+      onSignSuccess?.()
+    }
+  }, [isSuccess])
+
+  // 서명 실행
+  const handleSign = () => {
+    if (!isConnected) {
+      openConnectModal?.()
+      return
+    }
+    if (!documentId || documentId === BigInt(0)) {
+      showToast('문서가 블록체인에 등록되지 않았습니다.', 'error')
+      return
+    }
+    sign(documentId, '')
+  }
+
+  // 해시 계산 실패
+  if (hashError) {
+    return null
+  }
+
+  // 로딩 중 (타임아웃 시 스킵)
+  if ((computingHash || verifyLoading) && !loadingTimeout) {
+    return (
+      <p className="text-xs py-2" style={{ color: 'var(--foreground-muted)' }}>
+        블록체인 확인 중...
+      </p>
+    )
+  }
+
+  // 블록체인에 없거나 타임아웃
+  if (!exists || loadingTimeout) {
+    return null
+  }
+
+  // 블록체인 문서 정보 로딩 중
+  if (docLoading) {
+    return (
+      <p className="text-xs py-2" style={{ color: 'var(--foreground-muted)' }}>
+        온체인 정보 로딩...
+      </p>
+    )
+  }
+
+  // 문서 정보가 없음
+  if (!chainDoc) {
+    return null
+  }
+
+  const {
+    approvers,
+    approvalCount,
+    requiredApprovals,
+    isFinalized,
+  } = chainDoc
+
+  // 승인자 목록이 없으면 (해시만 등록된 경우) 표시 안 함
+  if (!approvers || approvers.length === 0) {
+    return null
+  }
+
+  // 현재 사용자가 승인자인지 확인
+  const isApprover = approvers.some(
+    (a: `0x${string}`) => a.toLowerCase() === address?.toLowerCase()
+  )
+
+  return (
+    <div
+      className="p-4 rounded-xl space-y-3"
+      style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}
+    >
+      <div className="flex items-center gap-2">
+        <svg className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+        <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+          온체인 다중서명
+        </span>
+        {isFinalized && (
+          <span className="ml-auto text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(34, 197, 94, 0.15)', color: 'var(--success)' }}>
+            완료됨
+          </span>
+        )}
+      </div>
+
+      {/* 온체인 승인 진행률 */}
+      <div>
+        <div className="flex justify-between text-xs mb-1">
+          <span style={{ color: 'var(--foreground-muted)' }}>온체인 승인</span>
+          <span style={{ color: 'var(--accent-primary)' }}>
+            {Number(approvalCount)} / {Number(requiredApprovals)}
+          </span>
+        </div>
+        <div className="progress-bar h-1.5">
+          <div
+            className="progress-bar-fill"
+            style={{ width: `${(Number(approvalCount) / Number(requiredApprovals)) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      {/* 승인자 목록 */}
+      <div className="space-y-1.5">
+        <span className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
+          온체인 승인자 ({approvers.length}명)
+        </span>
+        {approvers.map((approver: `0x${string}`, i: number) => {
+          const isMe = approver.toLowerCase() === address?.toLowerCase()
+          return (
+            <div
+              key={i}
+              className="flex items-center gap-2 p-2 rounded-lg text-xs"
+              style={{ background: 'var(--background)' }}
+            >
+              <span className="font-mono flex-1 truncate" style={{ color: 'var(--foreground-secondary)' }}>
+                {approver.slice(0, 8)}...{approver.slice(-6)}
+              </span>
+              {isMe && (
+                <span className="px-1.5 py-0.5 rounded text-xs" style={{ background: 'var(--accent-gradient-subtle)', color: 'var(--accent-primary)' }}>
+                  나
+                </span>
+              )}
+              {/* 승인 상태는 개별 확인이 필요하지만 일단 간단히 표시 */}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* 서명 버튼 */}
+      {isApprover && !isFinalized && (
+        <div className="pt-2">
+          {approvalCheckLoading ? (
+            <div className="text-xs text-center py-2" style={{ color: 'var(--foreground-muted)' }}>
+              승인 상태 확인 중...
+            </div>
+          ) : alreadyApproved ? (
+            <div
+              className="flex items-center justify-center gap-2 py-2 rounded-lg text-sm"
+              style={{ background: 'rgba(34, 197, 94, 0.1)', color: 'var(--success)' }}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              온체인 서명 완료
+            </div>
+          ) : (
+            <button
+              onClick={handleSign}
+              disabled={isPending || isConfirming || !isConnected}
+              className="w-full btn flex items-center justify-center gap-2"
+              style={{
+                background: 'var(--accent-gradient)',
+                color: 'white',
+                opacity: isPending || isConfirming ? 0.7 : 1,
+              }}
+            >
+              {isPending || isConfirming ? (
+                <>
+                  <div className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: 'white', borderTopColor: 'transparent' }} />
+                  {isPending ? '서명 요청 중...' : '확인 중...'}
+                </>
+              ) : !isConnected ? (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  지갑 연결 필요
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                  온체인 서명
+                </>
+              )}
+            </button>
+          )}
+
+          {signError && (
+            <p className="text-xs mt-2 text-center" style={{ color: 'var(--error)' }}>
+              {signError.message?.includes('User rejected') ? '서명이 취소되었습니다.' : '서명 실패'}
+            </p>
+          )}
+
+          {txHash && (
+            <p className="text-xs mt-2 text-center truncate" style={{ color: 'var(--foreground-muted)' }}>
+              TX: {txHash.slice(0, 10)}...{txHash.slice(-8)}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }

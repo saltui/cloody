@@ -60,12 +60,23 @@ export default function SettingsPage() {
   const [linkedWallet, setLinkedWallet] = useState<string | null>(null)
   const [isLinkingWallet, setIsLinkingWallet] = useState(false)
 
+  // Vault 재인증 간격 (분)
+  const [vaultAuthInterval, setVaultAuthInterval] = useState<number>(5)
+
   useEffect(() => {
     if (user) {
       setDisplayName(user.display_name || '')
       setAvatarPreview(user.avatar_url)
     }
   }, [user])
+
+  // Vault 재인증 간격 로드
+  useEffect(() => {
+    const savedInterval = localStorage.getItem('vault_auth_interval')
+    if (savedInterval) {
+      setVaultAuthInterval(parseInt(savedInterval, 10))
+    }
+  }, [])
 
   // 연결된 지갑 정보 가져오기
   useEffect(() => {
@@ -179,6 +190,15 @@ export default function SettingsPage() {
     const sizes = ['B', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  // Vault 재인증 간격 변경
+  const handleVaultAuthIntervalChange = (minutes: number) => {
+    setVaultAuthInterval(minutes)
+    localStorage.setItem('vault_auth_interval', minutes.toString())
+    // 간격 변경 시 마지막 인증 시간 초기화
+    localStorage.removeItem('vault_last_auth')
+    showToast('Vault 재인증 간격이 변경되었습니다.', 'success')
   }
 
   // 프로필 업데이트
@@ -730,6 +750,62 @@ export default function SettingsPage() {
                   {!('PublicKeyCredential' in window) && (
                     <p className="tds-text-caption tds-text-tertiary mt-2 text-center">
                       이 브라우저는 패스키를 지원하지 않습니다.
+                    </p>
+                  )}
+                </div>
+
+                {/* Vault 재인증 간격 */}
+                <div className="tds-card p-4 sm:p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(49, 130, 246, 0.1)' }}>
+                      <svg className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 className="tds-text-body font-semibold">Vault 재인증</h2>
+                      <p className="tds-text-caption tds-text-secondary">
+                        Vault 접근 시 패스키 인증 요구 간격
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {[
+                      { value: 0, label: '매번' },
+                      { value: 5, label: '5분' },
+                      { value: 15, label: '15분' },
+                      { value: 30, label: '30분' },
+                      { value: 60, label: '1시간' },
+                      { value: 240, label: '4시간' },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => handleVaultAuthIntervalChange(option.value)}
+                        className="w-full flex items-center justify-between p-3 rounded-xl transition-colors"
+                        style={{
+                          background: vaultAuthInterval === option.value ? 'var(--accent-gradient-subtle)' : 'var(--background-secondary)',
+                          border: vaultAuthInterval === option.value ? '1px solid var(--accent-primary)' : '1px solid transparent',
+                        }}
+                      >
+                        <span
+                          className="tds-text-body"
+                          style={{ color: vaultAuthInterval === option.value ? 'var(--accent-primary)' : 'var(--foreground)' }}
+                        >
+                          {option.label}
+                        </span>
+                        {vaultAuthInterval === option.value && (
+                          <svg className="w-5 h-5" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  {passkeys.length === 0 && (
+                    <p className="tds-text-caption tds-text-tertiary mt-3 text-center">
+                      패스키를 먼저 등록해야 Vault 재인증이 작동합니다.
                     </p>
                   )}
                 </div>

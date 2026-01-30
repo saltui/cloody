@@ -20,6 +20,8 @@ export type AuditAction =
   | 'TRASH_EMPTY'
   | 'PASSKEY_REGISTERED'
   | 'PASSKEY_DELETED'
+  | 'VAULT_AUTH_SUCCESS'
+  | 'VAULT_AUTH_FAILED'
 
 interface AuditLogEntry {
   action: AuditAction

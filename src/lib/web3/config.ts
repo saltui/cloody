@@ -57,7 +57,7 @@ export const ACTIVE_CHAIN = sepolia
 // 컨트랙트 주소 (배포 후 업데이트 필요)
 export const CONTRACT_ADDRESSES = {
   [sepolia.id]: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_SEPOLIA || '',
-  [baseSepolia.id]: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_SEPOLIA || '',
+  [baseSepolia.id]: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_BASE_SEPOLIA || '',
   [base.id]: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS_BASE || '',
 } as const
 

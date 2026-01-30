@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo, DragEvent, memo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useTheme } from '@/lib/theme'
 import { useUpload } from '@/lib/upload-context'
@@ -12,6 +13,7 @@ import { useToast } from '@/components/Toast'
 import Sidebar, { FileCategory } from '@/components/Sidebar'
 import { Home, Image as ImageIcon, CloudUpload, Menu } from 'lucide-react'
 import { FileThumbnail, isMediaFile, getFileTypeLabel } from '@/lib/file-icons'
+import heic2any from 'heic2any'
 
 // file_type을 DB 컬럼 크기(50자)에 맞게 제한
 function truncateFileType(fileType: string | undefined): string | undefined {
@@ -75,6 +77,162 @@ function uploadWithProgress(
     xhr.open('POST', url)
     xhr.send(formData)
   })
+}
+
+// 확장자 기반 MIME 타입 결정 (확장자 우선, 브라우저 타입은 폴백)
+// HEIC/HEIF는 일부 브라우저/R2에서 CORS preflight 문제가 있어 octet-stream 사용
+function getMimeTypeFromExtension(fileName: string, browserType: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  const mimeMap: Record<string, string> = {
+    // 이미지 (HEIC/HEIF는 CORS 호환성을 위해 octet-stream 사용)
+    heic: 'application/octet-stream',
+    heif: 'application/octet-stream',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    bmp: 'image/bmp',
+    svg: 'image/svg+xml',
+    // 비디오
+    mov: 'video/quicktime',
+    mp4: 'video/mp4',
+    avi: 'video/x-msvideo',
+    mkv: 'video/x-matroska',
+    webm: 'video/webm',
+    m4v: 'video/mp4',
+    '3gp': 'video/3gpp',
+    // 문서
+    pdf: 'application/pdf',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ppt: 'application/vnd.ms-powerpoint',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    txt: 'text/plain',
+    csv: 'text/csv',
+    zip: 'application/zip',
+    rar: 'application/x-rar-compressed',
+  }
+
+  // 확장자 기반 MIME 타입 우선 사용
+  if (ext && mimeMap[ext]) {
+    return mimeMap[ext]
+  }
+
+  // 확장자가 알 수 없는 경우 브라우저 타입 사용
+  if (browserType && browserType !== 'application/octet-stream') {
+    return browserType
+  }
+
+  return 'application/octet-stream'
+}
+
+// Presigned URL을 사용한 직접 R2 업로드 (Vercel body size 제한 우회)
+async function uploadWithPresignedUrl(
+  file: File,
+  fileName: string,
+  onProgress?: (percent: number, loaded: number, total: number) => void
+): Promise<{ url: string }> {
+  // 확장자 기반으로 MIME 타입 결정 (브라우저가 HEIC/MOV 등을 인식하지 못할 때)
+  const fileType = getMimeTypeFromExtension(file.name, file.type)
+
+  // 1. Presigned URL 요청
+  const presignRes = await fetch('/api/upload/presign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fileName,
+      fileType,
+      fileSize: file.size,
+    }),
+  })
+
+  if (!presignRes.ok) {
+    const error = await presignRes.json()
+    throw new Error(error.error || 'Presign failed')
+  }
+
+  // 서버에서 반환한 contentType 사용 (presign과 upload가 동일한 타입 사용 보장)
+  const { uploadUrl, publicUrl, contentType } = await presignRes.json()
+  const uploadContentType = contentType || fileType
+
+  // 2. R2에 직접 업로드 (진행률 추적)
+  console.log('[R2Upload] Starting upload:', { fileName, uploadContentType, fileSize: file.size })
+
+  // 진행률 추적이 필요하면 XHR 사용, 아니면 fetch 사용
+  if (onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+
+      // 5분 타임아웃 설정
+      xhr.timeout = 5 * 60 * 1000
+
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100)
+          onProgress(percent, event.loaded, event.total)
+          if (percent % 25 === 0) {
+            console.log('[R2Upload] Progress:', percent + '%', fileName)
+          }
+        }
+      })
+
+      xhr.addEventListener('load', () => {
+        console.log('[R2Upload] Load event:', xhr.status, xhr.statusText, fileName)
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve({ url: publicUrl })
+        } else {
+          console.error('[R2Upload] Failed:', xhr.status, xhr.responseText)
+          reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`))
+        }
+      })
+
+      xhr.addEventListener('error', (event) => {
+        console.error('[R2Upload] Network error:', event, fileName)
+        reject(new Error('Network error during upload'))
+      })
+
+      xhr.addEventListener('timeout', () => {
+        console.error('[R2Upload] Timeout:', fileName)
+        reject(new Error('Upload timeout (5 minutes)'))
+      })
+
+      xhr.addEventListener('abort', () => {
+        console.error('[R2Upload] Aborted:', fileName)
+        reject(new Error('Upload aborted'))
+      })
+
+      xhr.open('PUT', uploadUrl)
+      xhr.setRequestHeader('Content-Type', uploadContentType)
+      console.log('[R2Upload] Sending with Content-Type:', uploadContentType)
+      xhr.send(file)
+    })
+  }
+
+  // fetch API 사용 (진행률 추적 불필요시)
+  try {
+    const response = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': uploadContentType,
+      },
+      body: file,
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('[R2Upload] Fetch failed:', response.status, errorText)
+      throw new Error(`Upload failed: ${response.status}`)
+    }
+
+    console.log('[R2Upload] Fetch success:', fileName)
+    return { url: publicUrl }
+  } catch (error) {
+    console.error('[R2Upload] Fetch error:', error)
+    throw error
+  }
 }
 
 interface Photo {
@@ -215,45 +373,82 @@ const generateVideoThumbnail = (file: File, maxSize: number = 400): Promise<Blob
   })
 }
 
+// HEIC/HEIF 파일인지 확인
+const isHeicFile = (file: File): boolean => {
+  const type = file.type.toLowerCase()
+  const name = file.name.toLowerCase()
+  return type === 'image/heic' || type === 'image/heif' ||
+         name.endsWith('.heic') || name.endsWith('.heif')
+}
+
 // 이미지 썸네일 생성 함수 (400px 리사이즈)
-const generateImageThumbnail = (file: File, maxSize: number = 400): Promise<Blob | null> => {
-  return new Promise((resolve) => {
-    const img = new Image()
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
+const generateImageThumbnail = async (file: File, maxSize: number = 400): Promise<Blob | null> => {
+  try {
+    let imageFile: File | Blob = file
 
-    img.onload = () => {
-      let { width, height } = img
-
-      // 이미 작은 이미지는 썸네일 불필요
-      if (width <= maxSize && height <= maxSize) {
-        resolve(null)
-        return
+    // HEIC/HEIF 파일은 JPEG로 변환
+    if (isHeicFile(file)) {
+      console.log('[ImageThumb] HEIC detected, converting:', file.name)
+      try {
+        const convertedBlob = await heic2any({
+          blob: file,
+          toType: 'image/jpeg',
+          quality: 0.9
+        })
+        imageFile = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob
+        console.log('[ImageThumb] HEIC converted successfully')
+      } catch (heicError) {
+        console.log('[ImageThumb] HEIC conversion failed:', heicError)
+        return null
       }
-
-      // 비율 유지하며 리사이즈
-      if (width > height) {
-        height = (height / width) * maxSize
-        width = maxSize
-      } else {
-        width = (width / height) * maxSize
-        height = maxSize
-      }
-
-      canvas.width = width
-      canvas.height = height
-      ctx?.drawImage(img, 0, 0, width, height)
-
-      canvas.toBlob(
-        (blob) => resolve(blob),
-        'image/webp',
-        0.8
-      )
     }
 
-    img.onerror = () => resolve(null)
-    img.src = URL.createObjectURL(file)
-  })
+    return new Promise((resolve) => {
+      const img = new Image()
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      const objectUrl = URL.createObjectURL(imageFile)
+
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl)
+        let { width, height } = img
+
+        // 이미 작은 이미지는 썸네일 불필요
+        if (width <= maxSize && height <= maxSize) {
+          resolve(null)
+          return
+        }
+
+        // 비율 유지하며 리사이즈
+        if (width > height) {
+          height = (height / width) * maxSize
+          width = maxSize
+        } else {
+          width = (width / height) * maxSize
+          height = maxSize
+        }
+
+        canvas.width = width
+        canvas.height = height
+        ctx?.drawImage(img, 0, 0, width, height)
+
+        canvas.toBlob(
+          (blob) => resolve(blob),
+          'image/webp',
+          0.8
+        )
+      }
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl)
+        resolve(null)
+      }
+      img.src = objectUrl
+    })
+  } catch (error) {
+    console.log('[ImageThumb] Error:', error)
+    return null
+  }
 }
 
 // 통합 썸네일 생성 함수
@@ -311,6 +506,7 @@ export default function DrivePage() {
   const [lastSelectedIndex, setLastSelectedIndex] = useState<{ type: 'photo' | 'folder', index: number } | null>(null)
   const [showNewFolderInput, setShowNewFolderInput] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [showMoreScreen, setShowMoreScreen] = useState(false)
 
@@ -586,6 +782,19 @@ export default function DrivePage() {
     fetchData(folderId, category)
     fetchStorageUsage()
   }, [searchParams, fetchData, fetchStorageUsage])
+
+  // tab=more 쿼리 파라미터 처리 (Vault/휴지통에서 뒤로가기 시)
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab === 'more') {
+      setShowMoreScreen(true)
+      setShowUploadPanel(false)
+      // URL에서 tab 파라미터 제거 (히스토리 깔끔하게)
+      const url = new URL(window.location.href)
+      url.searchParams.delete('tab')
+      window.history.replaceState({}, '', url.pathname + url.search)
+    }
+  }, [searchParams])
 
   // 모바일 터치 이벤트 정리
   useEffect(() => {
@@ -953,12 +1162,8 @@ export default function DrivePage() {
           const uniqueFileName = `${timestamp}_${index}_${file.name}`
 
           try {
-            // 1. 원본 업로드 (진행률 추적)
-            const formData = new FormData()
-            formData.append('file', file)
-            formData.append('fileName', uniqueFileName)
-
-            const { url } = await uploadWithProgress('/api/upload', formData, (percent, loaded) => {
+            // 1. 원본 업로드 (Presigned URL로 R2 직접 업로드)
+            const { url } = await uploadWithPresignedUrl(file, uniqueFileName, (percent, loaded) => {
               // 원본 업로드는 90%까지, 썸네일은 10%
               updateQueueItem(itemId, { progress: Math.round(percent * 0.9), uploadedSize: loaded })
             })
@@ -1217,12 +1422,8 @@ export default function DrivePage() {
       const uniqueFileName = `${timestamp}_${index}_${file.name}`
 
       try {
-        // 1. 원본 업로드 (진행률 추적)
-        const formData = new FormData()
-        formData.append('file', file)
-        formData.append('fileName', uniqueFileName)
-
-        const { url } = await uploadWithProgress('/api/upload', formData, (percent, loaded) => {
+        // 1. 원본 업로드 (Presigned URL로 R2 직접 업로드)
+        const { url } = await uploadWithPresignedUrl(file, uniqueFileName, (percent, loaded) => {
           // 원본 업로드는 90%까지, 썸네일은 10%
           updateQueueItem(itemId, { progress: Math.round(percent * 0.9), uploadedSize: loaded })
         })
@@ -1536,17 +1737,22 @@ export default function DrivePage() {
   }
 
   const handleCreateFolder = async () => {
-    if (!newFolderName.trim() || !user?.id) return
+    if (!newFolderName.trim() || !user?.id || isCreatingFolder) return
 
-    await supabase.from('folders').insert({
-      name: newFolderName.trim(),
-      parent_id: currentFolderId,
-      user_id: user.id
-    })
-    setNewFolderName('')
-    setShowNewFolderInput(false)
-    dataCache.invalidateFolders()
-    await fetchData(currentFolderId, searchParams.get('category') || 'all')
+    setIsCreatingFolder(true)
+    try {
+      await supabase.from('folders').insert({
+        name: newFolderName.trim(),
+        parent_id: currentFolderId,
+        user_id: user.id
+      })
+      setNewFolderName('')
+      setShowNewFolderInput(false)
+      dataCache.invalidateFolders()
+      await fetchData(currentFolderId, searchParams.get('category') || 'all')
+    } finally {
+      setIsCreatingFolder(false)
+    }
   }
 
   const handleRenameFolder = async () => {
@@ -3658,7 +3864,7 @@ export default function DrivePage() {
                 className="tds-input"
                 style={{ fontSize: 16 }}
                 autoFocus
-                onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
+                onKeyDown={(e) => e.key === 'Enter' && !isCreatingFolder && handleCreateFolder()}
               />
             </div>
             <div className="tds-modal-footer">
@@ -3673,10 +3879,10 @@ export default function DrivePage() {
               </button>
               <button
                 onClick={handleCreateFolder}
-                disabled={!newFolderName.trim()}
+                disabled={!newFolderName.trim() || isCreatingFolder}
                 className="tds-btn tds-btn-primary"
               >
-                만들기
+                {isCreatingFolder ? '만드는 중...' : '만들기'}
               </button>
             </div>
           </div>
@@ -4243,25 +4449,6 @@ export default function DrivePage() {
 
         <button
           onClick={() => {
-            setShowUploadPanel(false)
-            setShowMoreScreen(false)
-            // 탭 전환 시 선택 해제
-            setSelectedIds(new Set())
-            setSelectedFolderIds(new Set())
-            router.push('/drive?category=photos')
-          }}
-          className={`tds-bottom-nav-item ${currentCategory === 'photos' && !showUploadPanel && !showMoreScreen ? 'active' : ''}`}
-        >
-          <ImageIcon
-            size={26}
-            strokeWidth={currentCategory === 'photos' && !showUploadPanel && !showMoreScreen ? 2.5 : 1.5}
-            fill={currentCategory === 'photos' && !showUploadPanel && !showMoreScreen ? 'currentColor' : 'none'}
-          />
-          <span>사진</span>
-        </button>
-
-        <button
-          onClick={() => {
             setShowMoreScreen(false)
             setShowUploadPanel(true)
             // 탭 전환 시 선택 해제
@@ -4487,17 +4674,57 @@ export default function DrivePage() {
               </div>
             </div>
 
+            {/* 기타 (Vault, 휴지통) */}
+            <div className="px-4 mb-6">
+              <p className="text-xs font-medium uppercase tracking-wider mb-2 px-1" style={{ color: 'var(--foreground-muted)' }}>
+                기타
+              </p>
+              <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                <Link
+                  href="/vault"
+                  prefetch={true}
+                  className="w-full flex items-center gap-4 px-4 py-4 transition-colors active:bg-black/5"
+                  style={{ color: 'var(--foreground)' }}
+                >
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  </div>
+                  <span className="text-[15px] font-medium">Vault</span>
+                  <svg className="w-5 h-5 ml-auto" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+
+                <Link
+                  href="/trash"
+                  prefetch={true}
+                  className="w-full flex items-center gap-4 px-4 py-4 transition-colors active:bg-black/5"
+                  style={{ color: 'var(--foreground)', borderTop: '1px solid var(--glass-border)' }}
+                >
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </div>
+                  <span className="text-[15px] font-medium">휴지통</span>
+                  <svg className="w-5 h-5 ml-auto" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+              </div>
+            </div>
+
             {/* 설정 */}
             <div className="px-4 mb-6">
               <p className="text-xs font-medium uppercase tracking-wider mb-2 px-1" style={{ color: 'var(--foreground-muted)' }}>
                 설정
               </p>
               <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-                <button
-                  onClick={() => {
-                    setShowMoreScreen(false)
-                    router.push('/settings')
-                  }}
+                <Link
+                  href="/settings"
+                  prefetch={true}
                   className="w-full flex items-center gap-4 px-4 py-4 transition-colors active:bg-black/5"
                   style={{ color: 'var(--foreground)' }}
                 >
@@ -4511,7 +4738,7 @@ export default function DrivePage() {
                   <svg className="w-5 h-5 ml-auto" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
-                </button>
+                </Link>
 
                 <button
                   onClick={() => setTheme(isDark ? 'light' : 'dark')}
@@ -4551,7 +4778,6 @@ export default function DrivePage() {
             <div className="px-4">
               <button
                 onClick={async () => {
-                  setShowMoreScreen(false)
                   await fetch('/api/auth/logout', { method: 'POST' })
                   router.push('/login')
                 }}

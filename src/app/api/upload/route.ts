@@ -45,8 +45,8 @@ const FILE_SIGNATURES: Record<string, { bytes: number[]; offset?: number }[]> = 
 }
 
 // ftyp 기반 파일 타입 감지 (HEIC vs MP4/MOV 구분)
-const HEIC_BRANDS = ['heic', 'heix', 'mif1', 'msf1', 'hevc', 'hevx']
-const VIDEO_BRANDS = ['isom', 'iso2', 'mp41', 'mp42', 'mp71', 'M4V ', 'M4A ', 'f4v ', 'qt  ', 'avc1', 'MSNV']
+const HEIC_BRANDS = ['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1', 'avif', 'avis']
+const VIDEO_BRANDS = ['isom', 'iso2', 'iso3', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42', 'mp71', 'M4V', 'M4A', 'f4v', 'qt', 'avc1', 'MSNV', 'NDAS', 'NDSC', 'NDSH', 'NDSM', 'NDSP', 'NDSS', 'NDXC', 'NDXH', 'NDXM', 'NDXP', 'NDXS']
 
 function detectFtypType(buffer: Buffer): string | null {
   // ftyp at offset 4
@@ -54,14 +54,18 @@ function detectFtypType(buffer: Buffer): string | null {
   const ftyp = buffer.slice(4, 8).toString('ascii')
   if (ftyp !== 'ftyp') return null
 
-  // brand at offset 8 (4 bytes)
-  const brand = buffer.slice(8, 12).toString('ascii')
-  console.log('ftyp brand detected:', brand)
+  // brand at offset 8 (4 bytes) - trim spaces for comparison
+  const brand = buffer.slice(8, 12).toString('ascii').trim()
+  console.log('ftyp brand detected:', brand, '(raw:', buffer.slice(8, 12).toString('hex'), ')')
 
-  if (HEIC_BRANDS.includes(brand)) return 'image/heic'
-  if (VIDEO_BRANDS.includes(brand)) return 'video/mp4'
+  // HEIC 체크 (trim된 브랜드로 비교)
+  if (HEIC_BRANDS.some(b => brand.startsWith(b) || b.startsWith(brand))) return 'image/heic'
+
+  // VIDEO 체크 (trim된 브랜드로 비교)
+  if (VIDEO_BRANDS.some(b => brand.startsWith(b) || b.startsWith(brand))) return 'video/mp4'
 
   // 알 수 없는 ftyp 브랜드는 video로 간주 (대부분 MP4 변형)
+  console.log('Unknown ftyp brand, defaulting to video/mp4:', brand)
   return 'video/mp4'
 }
 

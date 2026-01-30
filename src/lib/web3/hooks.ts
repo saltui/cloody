@@ -43,6 +43,7 @@ export function useRegisterDocument() {
         BigInt(requiredApprovals),
         BigInt(expiresInSeconds),
       ],
+      gas: BigInt(500_000), // MetaMask 가스 리밋 cap (16,777,216) 초과 방지
     })
 
     return txHash
@@ -80,6 +81,7 @@ export function useSignDocument() {
       abi: DocumentRegistryABI,
       functionName: 'signDocument',
       args: [documentId, comment],
+      gas: BigInt(200_000), // MetaMask 가스 리밋 cap 초과 방지
     })
   }
 
