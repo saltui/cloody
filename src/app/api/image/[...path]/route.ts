@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getObjectMetadata, getObjectWithRange } from '@/lib/r2'
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const heicConvert = require('heic-convert')
 
-// 이미지/비디오 프록시 - Range 요청 지원
+// HEIC 파일인지 확인
+function isHeicFile(fileName: string): boolean {
+  const ext = fileName.split('.').pop()?.toLowerCase()
+  return ext === 'heic' || ext === 'heif'
+}
+
+// 이미지/비디오 프록시 - Range 요청 지원 + HEIC 변환
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
@@ -71,6 +79,29 @@ export async function GET(
 
     if (!response.Body) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
+    }
+
+    // HEIC 파일인 경우 JPEG로 변환
+    if (isHeicFile(fileName)) {
+      try {
+        const arrayBuffer = await response.Body.transformToByteArray()
+        const jpegBuffer = await heicConvert({
+          buffer: Buffer.from(arrayBuffer),
+          format: 'JPEG',
+          quality: 0.9,
+        })
+
+        return new NextResponse(jpegBuffer, {
+          headers: {
+            'Content-Type': 'image/jpeg',
+            'Content-Length': jpegBuffer.length.toString(),
+            'Cache-Control': 'public, max-age=31536000, immutable',
+          },
+        })
+      } catch (heicError) {
+        console.error('HEIC conversion failed:', heicError)
+        // 변환 실패시 원본 반환 시도
+      }
     }
 
     const contentType = response.ContentType || 'application/octet-stream'
