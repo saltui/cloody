@@ -459,6 +459,36 @@ const generateThumbnail = (file: File, maxSize: number = 400): Promise<Blob | nu
   return generateImageThumbnail(file, maxSize)
 }
 
+// 서버 측 HEIC 썸네일 생성 (클라이언트 heic2any 실패 시 폴백)
+async function generateHeicThumbnailServerSide(
+  originalFileName: string,
+  thumbnailFileName: string
+): Promise<string | null> {
+  try {
+    console.log('[ServerThumb] Requesting server-side HEIC thumbnail:', originalFileName)
+    const res = await fetch('/api/thumbnail/heic', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName: originalFileName,
+        thumbnailName: thumbnailFileName,
+      }),
+    })
+
+    if (!res.ok) {
+      console.error('[ServerThumb] Server thumbnail generation failed:', res.status)
+      return null
+    }
+
+    const { thumbnailUrl } = await res.json()
+    console.log('[ServerThumb] Server thumbnail generated:', thumbnailUrl)
+    return thumbnailUrl
+  } catch (error) {
+    console.error('[ServerThumb] Error:', error)
+    return null
+  }
+}
+
 // 바이트 포맷팅 함수
 const formatBytes = (bytes: number) => {
   if (bytes === 0) return '0 B'
@@ -1187,6 +1217,10 @@ export default function DrivePage() {
                 const thumbData = await thumbRes.json()
                 thumbnailUrl = thumbData.url
               }
+            } else if (isHeicFile(file)) {
+              // 클라이언트 측 HEIC 변환 실패 시 서버 측 생성 시도
+              const thumbFileName = `thumb_${timestamp}_${index}_${file.name.replace(/\.[^.]+$/, '.jpg')}`
+              thumbnailUrl = await generateHeicThumbnailServerSide(uniqueFileName, thumbFileName)
             }
             updateQueueItem(itemId, { progress: 100 })
 
@@ -1447,6 +1481,10 @@ export default function DrivePage() {
             const thumbData = await thumbRes.json()
             thumbnailUrl = thumbData.url
           }
+        } else if (isHeicFile(file)) {
+          // 클라이언트 측 HEIC 변환 실패 시 서버 측 생성 시도
+          const thumbFileName = `thumb_${timestamp}_${index}_${file.name.replace(/\.[^.]+$/, '.jpg')}`
+          thumbnailUrl = await generateHeicThumbnailServerSide(uniqueFileName, thumbFileName)
         }
         updateQueueItem(itemId, { progress: 100 })
 
