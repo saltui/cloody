@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getObjectMetadata, getObjectWithRange } from '@/lib/r2'
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const heicConvert = require('heic-convert')
+import sharp from 'sharp'
 
 // HEIC 파일인지 확인
 function isHeicFile(fileName: string): boolean {
@@ -81,17 +80,15 @@ export async function GET(
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
 
-    // HEIC 파일인 경우 JPEG로 변환
+    // HEIC 파일인 경우 JPEG로 변환 (sharp 사용 - 빠름)
     if (isHeicFile(fileName)) {
       try {
         const arrayBuffer = await response.Body.transformToByteArray()
-        const jpegBuffer = await heicConvert({
-          buffer: Buffer.from(arrayBuffer),
-          format: 'JPEG',
-          quality: 0.9,
-        })
+        const jpegBuffer = await sharp(Buffer.from(arrayBuffer))
+          .jpeg({ quality: 90 })
+          .toBuffer()
 
-        return new NextResponse(jpegBuffer, {
+        return new NextResponse(new Uint8Array(jpegBuffer), {
           headers: {
             'Content-Type': 'image/jpeg',
             'Content-Length': jpegBuffer.length.toString(),

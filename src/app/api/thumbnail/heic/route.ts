@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getObjectWithRange } from '@/lib/r2'
 import { uploadToR2 } from '@/lib/r2'
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const heicConvert = require('heic-convert')
+import sharp from 'sharp'
 
-// HEIC 파일의 썸네일을 서버에서 생성
+// HEIC 파일의 썸네일을 서버에서 생성 (sharp 사용 - 빠름)
 export async function POST(request: NextRequest) {
   try {
     const { fileName, thumbnailName } = await request.json()
@@ -20,21 +19,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
 
-    // HEIC를 JPEG로 변환
+    // HEIC를 JPEG로 변환 + 썸네일 리사이즈 (sharp 사용)
     const arrayBuffer = await response.Body.transformToByteArray()
-    const jpegBuffer = await heicConvert({
-      buffer: Buffer.from(arrayBuffer),
-      format: 'JPEG',
-      quality: 0.8,
-    })
-
-    // 썸네일 크기로 리사이즈 (sharp 없이 간단히 JPEG 변환만)
-    // 실제 리사이즈는 추후 sharp 설치 후 가능
+    const jpegBuffer = await sharp(Buffer.from(arrayBuffer))
+      .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 80 })
+      .toBuffer()
 
     // R2에 썸네일 업로드
     const thumbnailUrl = await uploadToR2(
       thumbnailName,
-      Buffer.from(jpegBuffer),
+      jpegBuffer,
       'image/jpeg'
     )
 
