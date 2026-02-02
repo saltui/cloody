@@ -88,7 +88,13 @@ Cloody는 기업의 정보보호관리체계(ISMS) 요건을 충족하고 전자
    cp .env.local.example .env.local
    ```
 
-3. **개발 서버 실행**
+3. **인프라 실행 (Docker)**
+   로컬 데이터베이스와 스토리지 서비스를 실행합니다.
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **개발 서버 실행**
    ```bash
    npm run dev
    ```
