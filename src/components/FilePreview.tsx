@@ -135,9 +135,8 @@ interface PDFPreviewProps {
 export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
   const [error, setError] = useState(false)
 
-  // Google Docs Viewer로 PDF 표시 (외부 URL인 경우)
-  // 직접 iframe embed 시도 (R2 URL인 경우)
-  const isR2Url = url.includes('r2.dev') || url.includes('r2.cloudflarestorage.com')
+  // 로컬 또는 R2 URL인 경우 직접 표시, 그 외는 Google Docs Viewer 사용
+  const isDirectUrl = url.includes('r2.dev') || url.includes('r2.cloudflarestorage.com') || url.includes('localhost')
 
   if (error) {
     return (
@@ -158,10 +157,31 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
     )
   }
 
+  // 직접 URL인 경우 object 태그 사용 (브라우저 내장 PDF 뷰어)
+  if (isDirectUrl) {
+    return (
+      <div className="h-full w-full">
+        <object
+          data={url}
+          type="application/pdf"
+          className="w-full h-full"
+          title={filename}
+        >
+          <iframe
+            src={url}
+            className="w-full h-full border-0"
+            title={filename}
+            onError={() => setError(true)}
+          />
+        </object>
+      </div>
+    )
+  }
+
   return (
     <div className="h-full w-full">
       <iframe
-        src={isR2Url ? url : `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`}
+        src={`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`}
         className="w-full h-full border-0"
         title={filename}
         onError={() => setError(true)}

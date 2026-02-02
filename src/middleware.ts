@@ -44,6 +44,8 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
     "font-src 'self' data:",
     // Web3 RPC 엔드포인트 추가
     "connect-src 'self' http://localhost:* https://*.supabase.co https://*.r2.dev https://*.r2.cloudflarestorage.com https://rpc.sepolia.org https://*.infura.io https://*.alchemy.com wss://*.walletconnect.com wss://*.walletconnect.org https://*.walletconnect.com https://*.walletconnect.org https://sepolia.basescan.org https://basescan.org https://sepolia.etherscan.io",
+    "frame-src 'self' http://localhost:* blob:", // PDF 미리보기용
+    "object-src 'self' http://localhost:* blob:", // PDF object 태그용
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
