@@ -6,8 +6,8 @@ import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
-// PDF.js worker 설정
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
+// PDF.js worker 설정 (로컬 파일 사용)
+pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
 
 // 파일 타입 감지
 export function getFileCategory(filename: string): 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'code' | 'office' | 'unknown' {
