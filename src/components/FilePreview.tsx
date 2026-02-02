@@ -1,7 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { FileText, Download, Loader2 } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { FileText, Download, Loader2, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react'
+import { Document, Page, pdfjs } from 'react-pdf'
+import 'react-pdf/dist/Page/AnnotationLayer.css'
+import 'react-pdf/dist/Page/TextLayer.css'
+
+// PDF.js worker 설정
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
 
 // 파일 타입 감지
 export function getFileCategory(filename: string): 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'code' | 'office' | 'unknown' {
@@ -133,10 +139,40 @@ interface PDFPreviewProps {
 }
 
 export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
+  const [numPages, setNumPages] = useState<number>(0)
+  const [pageNumber, setPageNumber] = useState(1)
+  const [scale, setScale] = useState(1.0)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
 
-  // 로컬 또는 R2 URL인 경우 직접 표시, 그 외는 Google Docs Viewer 사용
-  const isDirectUrl = url.includes('r2.dev') || url.includes('r2.cloudflarestorage.com') || url.includes('localhost')
+  const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
+    setNumPages(numPages)
+    setLoading(false)
+  }, [])
+
+  const onDocumentLoadError = useCallback(() => {
+    setError(true)
+    setLoading(false)
+  }, [])
+
+  const goToPrevPage = () => setPageNumber(prev => Math.max(1, prev - 1))
+  const goToNextPage = () => setPageNumber(prev => Math.min(numPages, prev + 1))
+  const zoomIn = () => setScale(prev => Math.min(2.5, prev + 0.25))
+  const zoomOut = () => setScale(prev => Math.max(0.5, prev - 0.25))
+
+  // 키보드 네비게이션
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        goToPrevPage()
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+        e.preventDefault()
+        goToNextPage()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [numPages])
 
   if (error) {
     return (
@@ -157,35 +193,88 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
     )
   }
 
-  // 직접 URL인 경우 object 태그 사용 (브라우저 내장 PDF 뷰어)
-  if (isDirectUrl) {
-    return (
-      <div className="h-full w-full">
-        <object
-          data={url}
-          type="application/pdf"
-          className="w-full h-full"
-          title={filename}
-        >
-          <iframe
-            src={url}
-            className="w-full h-full border-0"
-            title={filename}
-            onError={() => setError(true)}
-          />
-        </object>
-      </div>
-    )
-  }
-
   return (
-    <div className="h-full w-full">
-      <iframe
-        src={`https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`}
-        className="w-full h-full border-0"
-        title={filename}
-        onError={() => setError(true)}
-      />
+    <div className="h-full w-full flex flex-col" style={{ background: 'var(--background-tertiary)' }}>
+      {/* 컨트롤 바 */}
+      <div
+        className="flex items-center justify-between px-4 py-2 border-b"
+        style={{ background: 'var(--background-secondary)', borderColor: 'var(--border-primary)' }}
+      >
+        <div className="flex items-center gap-2">
+          <button
+            onClick={goToPrevPage}
+            disabled={pageNumber <= 1}
+            className="p-2 rounded-lg disabled:opacity-30 hover:bg-black/10 dark:hover:bg-white/10"
+            title="이전 페이지 (←)"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <span className="text-sm min-w-[80px] text-center" style={{ color: 'var(--foreground-primary)' }}>
+            {pageNumber} / {numPages || '...'}
+          </span>
+          <button
+            onClick={goToNextPage}
+            disabled={pageNumber >= numPages}
+            className="p-2 rounded-lg disabled:opacity-30 hover:bg-black/10 dark:hover:bg-white/10"
+            title="다음 페이지 (→)"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={zoomOut}
+            disabled={scale <= 0.5}
+            className="p-2 rounded-lg disabled:opacity-30 hover:bg-black/10 dark:hover:bg-white/10"
+            title="축소"
+          >
+            <ZoomOut className="w-5 h-5" />
+          </button>
+          <span className="text-sm min-w-[50px] text-center" style={{ color: 'var(--foreground-primary)' }}>
+            {Math.round(scale * 100)}%
+          </span>
+          <button
+            onClick={zoomIn}
+            disabled={scale >= 2.5}
+            className="p-2 rounded-lg disabled:opacity-30 hover:bg-black/10 dark:hover:bg-white/10"
+            title="확대"
+          >
+            <ZoomIn className="w-5 h-5" />
+          </button>
+          {onDownload && (
+            <button
+              onClick={onDownload}
+              className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 ml-2"
+              title="다운로드"
+            >
+              <Download className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* PDF 뷰어 */}
+      <div className="flex-1 overflow-auto flex items-start justify-center p-4">
+        {loading && (
+          <div className="flex items-center justify-center h-full">
+            <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--accent-primary)' }} />
+          </div>
+        )}
+        <Document
+          file={url}
+          onLoadSuccess={onDocumentLoadSuccess}
+          onLoadError={onDocumentLoadError}
+          loading=""
+          className="shadow-xl"
+        >
+          <Page
+            pageNumber={pageNumber}
+            scale={scale}
+            renderTextLayer={true}
+            renderAnnotationLayer={true}
+          />
+        </Document>
+      </div>
     </div>
   )
 }
