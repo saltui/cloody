@@ -2301,8 +2301,8 @@ export default function DrivePage() {
   // 카테고리 필터링
   const currentCategory = (searchParams.get('category') as FileCategory) || 'all'
 
-  // 사진/동영상 카테고리는 무조건 그리드 뷰
-  const effectiveViewMode = (currentCategory === 'photos' || currentCategory === 'videos') ? 'grid' : viewMode
+  // 사진/동영상은 그리드, 문서는 목록뷰 강제
+  const effectiveViewMode = (currentCategory === 'photos' || currentCategory === 'videos') ? 'grid' : (currentCategory === 'documents') ? 'list' : viewMode
 
   // 한국어 정렬을 위한 Collator (재사용하여 성능 최적화)
   const koreanCollator = useMemo(() => new Intl.Collator('ko', { sensitivity: 'base' }), [])
