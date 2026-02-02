@@ -17,7 +17,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>('light')
-  const [viewMode, setViewModeState] = useState<ViewMode>('grid')
+  const [viewMode, setViewModeState] = useState<ViewMode>('list')
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
