@@ -238,7 +238,7 @@ function verifySignature(token: string): UserSessionToken | null {
 
 export function createUserSessionToken(user: User, ip: string, rememberMe = false): string {
   const now = Date.now()
-  const expiresIn = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000 // 30일 or 1일
+  const expiresIn = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000 // 30일 or 7일
 
   const payload: UserSessionToken = {
     userId: user.id,
