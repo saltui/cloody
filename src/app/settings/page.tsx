@@ -376,14 +376,16 @@ export default function SettingsPage() {
                   }}
                   onMouseEnter={(e) => {
                     if (activeTab !== tab.id) {
-                      e.currentTarget.style.background = 'var(--background-tertiary)'
-                      e.currentTarget.style.color = 'var(--foreground)'
+                      e.currentTarget.style.background = 'var(--accent-primary)'
+                      e.currentTarget.style.color = 'white'
+                      e.currentTarget.style.opacity = '0.8'
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (activeTab !== tab.id) {
                       e.currentTarget.style.background = 'transparent'
                       e.currentTarget.style.color = 'var(--foreground-secondary)'
+                      e.currentTarget.style.opacity = '1'
                     }
                   }}
                 >
