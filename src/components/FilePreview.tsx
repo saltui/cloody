@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { FileText, Download, Loader2, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react'
+import { FileText, Download, Loader2 } from 'lucide-react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
@@ -140,10 +140,18 @@ interface PDFPreviewProps {
 
 export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
   const [numPages, setNumPages] = useState<number>(0)
-  const [pageNumber, setPageNumber] = useState(1)
-  const [scale, setScale] = useState(1.0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
+  const [containerWidth, setContainerWidth] = useState<number>(0)
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      setContainerWidth(node.clientWidth - 32) // padding 제외
+      const observer = new ResizeObserver((entries) => {
+        setContainerWidth(entries[0].contentRect.width - 32)
+      })
+      observer.observe(node)
+    }
+  }, [])
 
   const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
     setNumPages(numPages)
@@ -154,25 +162,6 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
     setError(true)
     setLoading(false)
   }, [])
-
-  const goToPrevPage = () => setPageNumber(prev => Math.max(1, prev - 1))
-  const goToNextPage = () => setPageNumber(prev => Math.min(numPages, prev + 1))
-  const zoomIn = () => setScale(prev => Math.min(2.5, prev + 0.25))
-  const zoomOut = () => setScale(prev => Math.max(0.5, prev - 0.25))
-
-  // 키보드 네비게이션
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-        goToPrevPage()
-      } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
-        e.preventDefault()
-        goToNextPage()
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [numPages])
 
   if (error) {
     return (
@@ -200,51 +189,14 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
         className="flex items-center justify-between px-4 py-2 border-b"
         style={{ background: 'var(--background-secondary)', borderColor: 'var(--border-primary)' }}
       >
+        <span className="text-sm" style={{ color: 'var(--foreground-primary)' }}>
+          {numPages ? `${numPages}페이지` : '로딩중...'}
+        </span>
         <div className="flex items-center gap-2">
-          <button
-            onClick={goToPrevPage}
-            disabled={pageNumber <= 1}
-            className="p-2 rounded-lg disabled:opacity-30 hover:bg-black/10 dark:hover:bg-white/10"
-            title="이전 페이지 (←)"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <span className="text-sm min-w-[80px] text-center" style={{ color: 'var(--foreground-primary)' }}>
-            {pageNumber} / {numPages || '...'}
-          </span>
-          <button
-            onClick={goToNextPage}
-            disabled={pageNumber >= numPages}
-            className="p-2 rounded-lg disabled:opacity-30 hover:bg-black/10 dark:hover:bg-white/10"
-            title="다음 페이지 (→)"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={zoomOut}
-            disabled={scale <= 0.5}
-            className="p-2 rounded-lg disabled:opacity-30 hover:bg-black/10 dark:hover:bg-white/10"
-            title="축소"
-          >
-            <ZoomOut className="w-5 h-5" />
-          </button>
-          <span className="text-sm min-w-[50px] text-center" style={{ color: 'var(--foreground-primary)' }}>
-            {Math.round(scale * 100)}%
-          </span>
-          <button
-            onClick={zoomIn}
-            disabled={scale >= 2.5}
-            className="p-2 rounded-lg disabled:opacity-30 hover:bg-black/10 dark:hover:bg-white/10"
-            title="확대"
-          >
-            <ZoomIn className="w-5 h-5" />
-          </button>
           {onDownload && (
             <button
               onClick={onDownload}
-              className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 ml-2"
+              className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10"
               title="다운로드"
             >
               <Download className="w-5 h-5" />
@@ -253,10 +205,10 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
         </div>
       </div>
 
-      {/* PDF 뷰어 */}
-      <div className="flex-1 overflow-auto flex items-start justify-center p-4">
+      {/* PDF 뷰어 - 스크롤 방식 */}
+      <div ref={containerRef} className="flex-1 overflow-auto p-4">
         {loading && (
-          <div className="flex items-center justify-center h-full">
+          <div className="flex items-center justify-center h-32">
             <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--accent-primary)' }} />
           </div>
         )}
@@ -265,14 +217,18 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
           onLoadSuccess={onDocumentLoadSuccess}
           onLoadError={onDocumentLoadError}
           loading=""
-          className="shadow-xl"
+          className="flex flex-col items-center gap-4"
         >
-          <Page
-            pageNumber={pageNumber}
-            scale={scale}
-            renderTextLayer={true}
-            renderAnnotationLayer={true}
-          />
+          {Array.from(new Array(numPages), (_, index) => (
+            <Page
+              key={`page_${index + 1}`}
+              pageNumber={index + 1}
+              width={containerWidth || undefined}
+              renderTextLayer={true}
+              renderAnnotationLayer={true}
+              className="shadow-lg"
+            />
+          ))}
         </Document>
       </div>
     </div>
