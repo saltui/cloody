@@ -150,7 +150,7 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
     if (!node) return
 
     const updateWidth = () => {
-      const width = node.clientWidth - 32
+      const width = node.clientWidth
       if (width > 0) setContainerWidth(width)
     }
     updateWidth()
@@ -213,7 +213,7 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
       </div>
 
       {/* PDF 뷰어 - 스크롤 방식 */}
-      <div ref={containerRef} className="flex-1 overflow-auto p-4">
+      <div ref={containerRef} className="flex-1 overflow-auto">
         {loading && (
           <div className="flex items-center justify-center h-32">
             <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--accent-primary)' }} />
