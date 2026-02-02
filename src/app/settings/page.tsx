@@ -870,7 +870,10 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="tds-card p-4 sm:p-6">
+                <button
+                  onClick={() => showToast('준비중이에요', 'info')}
+                  className="w-full tds-card p-4 sm:p-6 text-left transition-all duration-200 hover:opacity-80"
+                >
                   <h2 className="tds-text-title mb-4">언어</h2>
                   <div className="tds-list-item !bg-transparent !p-0">
                     <span className="text-xl sm:text-2xl">🇰🇷</span>
@@ -879,7 +882,7 @@ export default function SettingsPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </div>
-                </div>
+                </button>
 
                 {/* 로그아웃 */}
                 <button
