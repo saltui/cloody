@@ -280,8 +280,10 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
 
             {/* User */}
             <div className="sidebar-user-card flex items-center gap-2.5 p-2 rounded-lg transition-all duration-200" style={{ background: 'var(--glass-bg)' }}>
-              <div className="avatar avatar-sm transition-transform duration-200">
-                {user?.display_name?.[0] || user?.email?.[0] || 'U'}
+              <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
+                <svg className="w-5 h-5" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-xs truncate" style={{ color: 'var(--foreground)' }}>

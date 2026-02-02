@@ -37,9 +37,6 @@ export default function SettingsPage() {
 
   // 프로필 상태
   const [displayName, setDisplayName] = useState('')
-  const [avatarFile, setAvatarFile] = useState<File | null>(null)
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 2FA 상태
   const [twoFASetup, setTwoFASetup] = useState<TwoFASetup | null>(null)
@@ -66,7 +63,6 @@ export default function SettingsPage() {
   useEffect(() => {
     if (user) {
       setDisplayName(user.display_name || '')
-      setAvatarPreview(user.avatar_url)
     }
   }, [user])
 
@@ -206,31 +202,11 @@ export default function SettingsPage() {
     setIsLoading(true)
 
     try {
-      // 아바타 파일이 있으면 먼저 업로드
-      let avatarUrl = user?.avatar_url
-      if (avatarFile) {
-        const formData = new FormData()
-        formData.append('avatar', avatarFile)
-
-        const uploadRes = await fetch('/api/user/profile/avatar', {
-          method: 'POST',
-          body: formData,
-        })
-
-        if (uploadRes.ok) {
-          const uploadData = await uploadRes.json()
-          avatarUrl = uploadData.avatar_url
-        } else {
-          throw new Error('아바타 업로드에 실패했습니다.')
-        }
-      }
-
       const res = await fetch('/api/user/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           display_name: displayName,
-          avatar_url: avatarUrl,
         }),
       })
 
@@ -239,22 +215,12 @@ export default function SettingsPage() {
         throw new Error(data.error || '업데이트에 실패했습니다.')
       }
 
-      updateUser({ display_name: displayName, avatar_url: avatarUrl })
-      setAvatarFile(null) // 업로드 완료 후 초기화
+      updateUser({ display_name: displayName })
       showToast('프로필이 업데이트되었습니다.', 'success')
     } catch (err) {
       showToast(err instanceof Error ? err.message : '오류가 발생했습니다.', 'error')
     } finally {
       setIsLoading(false)
-    }
-  }
-
-  // 아바타 변경
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setAvatarFile(file)
-      setAvatarPreview(URL.createObjectURL(file))
     }
   }
 
@@ -420,39 +386,6 @@ export default function SettingsPage() {
             {/* 프로필 탭 */}
             {activeTab === 'profile' && (
               <div className="space-y-4 sm:space-y-6 animate-fade-in">
-                {/* 아바타 섹션 */}
-                <div className="tds-card p-4 sm:p-6">
-                  <h2 className="tds-text-title mb-4">프로필 사진</h2>
-                  <div className="flex items-center gap-4 sm:gap-6">
-                    <div className="relative">
-                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full overflow-hidden" style={{ background: 'var(--background-tertiary)' }}>
-                        {avatarPreview ? (
-                          <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <svg className="w-8 h-8 sm:w-10 sm:h-10" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                            </svg>
-                          </div>
-                        )}
-                      </div>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleAvatarChange}
-                        className="hidden"
-                      />
-                    </div>
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="tds-btn tds-btn-secondary"
-                    >
-                      사진 변경
-                    </button>
-                  </div>
-                </div>
-
                 {/* 기본 정보 */}
                 <div className="tds-card p-4 sm:p-6">
                   <h2 className="tds-text-title mb-4">기본 정보</h2>
