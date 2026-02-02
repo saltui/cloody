@@ -359,23 +359,24 @@ export default function SettingsPage() {
           {/* 사이드바 탭 */}
           <nav className="md:w-48 flex-shrink-0">
             <div className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-2 md:pb-0 -mx-4 px-4 sm:mx-0 sm:px-0">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`settings-tab-item group flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl whitespace-nowrap transition-all duration-200 text-sm sm:text-base ${
-                    activeTab === tab.id
-                      ? 'active'
-                      : 'hover:bg-[rgba(0,0,0,0.05)]'
-                  }`}
-                  style={activeTab === tab.id ? {
-                    background: 'var(--accent-gradient)',
-                  } : undefined}
-                >
-                  <span className={activeTab === tab.id ? 'text-white' : ''}>{tab.icon}</span>
-                  <span className={`font-medium ${activeTab === tab.id ? 'text-white' : ''}`}>{tab.label}</span>
-                </button>
-              ))}
+              {tabs.map((tab) => {
+                const isActive = activeTab === tab.id
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl whitespace-nowrap text-sm sm:text-base ${
+                      isActive ? '' : 'hover:bg-black/5 dark:hover:bg-white/10'
+                    }`}
+                    style={{
+                      background: isActive ? 'var(--accent-gradient)' : undefined,
+                    }}
+                  >
+                    <span style={{ color: isActive ? 'white' : 'var(--foreground-secondary)' }}>{tab.icon}</span>
+                    <span className="font-medium" style={{ color: isActive ? 'white' : 'var(--foreground-secondary)' }}>{tab.label}</span>
+                  </button>
+                )
+              })}
             </div>
           </nav>
 
