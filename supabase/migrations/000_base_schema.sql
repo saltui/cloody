@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS photos (
     height INTEGER,
     hls_url VARCHAR(1000),
     hls_status VARCHAR(50),
+    "order" INTEGER DEFAULT 0,
     deleted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
