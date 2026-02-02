@@ -2853,7 +2853,7 @@ export default function DrivePage() {
 
   return (
     <main
-      className="min-h-screen select-none"
+      className="min-h-screen select-none flex flex-col"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -3338,7 +3338,7 @@ export default function DrivePage() {
       {/* 메인 콘텐츠 */}
       <div
         ref={gridContainerRef}
-        className="p-3 sm:p-4 md:p-6 pb-24 sm:pb-6 relative select-none"
+        className="p-3 sm:p-4 md:p-6 pb-24 sm:pb-6 relative select-none flex-1"
         onMouseDown={(e) => handleDragSelectStart(e, gridContainerRef)}
       >
         {/* 드래그 선택 박스 */}
