@@ -1480,3 +1480,9 @@ body {
 .settings-tab-item:not(.active):hover span {
   color: #1a1a1a !important;
 }
+html.dark .settings-tab-item:not(.active):hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+html.dark .settings-tab-item:not(.active):hover span {
+  color: #f0f0f0 !important;
+}
