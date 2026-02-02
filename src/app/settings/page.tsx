@@ -377,25 +377,31 @@ export default function SettingsPage() {
               })}
 
               {/* EDMS 관리 메뉴 */}
-              <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--border-default)' }}>
-                <p className="text-xs font-medium mb-2 px-3" style={{ color: 'var(--foreground-muted)' }}>관리</p>
-                <a href="/settings/roles" className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm settings-hover-btn" style={{ color: 'var(--foreground-secondary)' }}>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                  <span>역할 관리</span>
+              <div className="hidden md:block mt-6 pt-4 border-t" style={{ borderColor: 'var(--border-default)' }}>
+                <p className="text-xs font-medium mb-2 px-3 sm:px-4" style={{ color: 'var(--foreground-muted)' }}>관리</p>
+                <a href="/settings/roles" className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl whitespace-nowrap text-sm sm:text-base settings-hover-btn">
+                  <span style={{ color: 'var(--foreground-secondary)' }}>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                  </span>
+                  <span className="font-medium" style={{ color: 'var(--foreground-secondary)' }}>역할 관리</span>
                 </a>
-                <a href="/settings/retention" className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm settings-hover-btn" style={{ color: 'var(--foreground-secondary)' }}>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>보존 정책</span>
+                <a href="/settings/retention" className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl whitespace-nowrap text-sm sm:text-base settings-hover-btn">
+                  <span style={{ color: 'var(--foreground-secondary)' }}>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </span>
+                  <span className="font-medium" style={{ color: 'var(--foreground-secondary)' }}>보존 정책</span>
                 </a>
-                <a href="/settings/audit" className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm settings-hover-btn" style={{ color: 'var(--foreground-secondary)' }}>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <span>감사 로그</span>
+                <a href="/settings/audit" className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl whitespace-nowrap text-sm sm:text-base settings-hover-btn">
+                  <span style={{ color: 'var(--foreground-secondary)' }}>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </span>
+                  <span className="font-medium" style={{ color: 'var(--foreground-secondary)' }}>감사 로그</span>
                 </a>
               </div>
             </div>
