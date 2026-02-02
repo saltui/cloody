@@ -2971,7 +2971,7 @@ export default function DrivePage() {
       {/* 메인 컨텐츠 (사이드바 여백 + 모바일 하단 탭 여백 + safe area) */}
       {/* 모바일에서 업로드/더보기 탭 활성화시 숨김 */}
       <div
-        className={`xl:pl-64 xl:pb-0 ${(showUploadPanel || showMoreScreen) ? 'hidden xl:block' : ''}`}
+        className={`xl:pl-64 xl:pb-0 flex-1 flex flex-col overflow-hidden ${(showUploadPanel || showMoreScreen) ? 'hidden xl:block' : ''}`}
         style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom, 0px))' }}
       >
         {/* 헤더 */}
