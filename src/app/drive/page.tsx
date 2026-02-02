@@ -4830,7 +4830,7 @@ export default function DrivePage() {
                           router.push(`/drive?category=${category.id}`)
                         }
                       }}
-                      className="w-full flex items-center gap-4 px-4 py-4 transition-colors hover:bg-black/5 dark:hover:bg-black/30 active:bg-black/10"
+                      className="w-full flex items-center gap-4 px-4 py-4 transition-colors hover:bg-black/5 dark:hover:bg-black/50 active:bg-black/10"
                       style={{
                         borderTop: index > 0 ? '1px solid var(--glass-border)' : 'none',
                         color: isActive ? 'var(--accent-primary)' : 'var(--foreground)'
