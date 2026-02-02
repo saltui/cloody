@@ -4743,6 +4743,7 @@ export default function DrivePage() {
                 기타
               </p>
               <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
+                {/* Vault 기능 숨김 - 코드 유지
                 <Link
                   href="/vault"
                   prefetch={true}
@@ -4759,12 +4760,13 @@ export default function DrivePage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </Link>
+                */}
 
                 <Link
                   href="/trash"
                   prefetch={true}
                   className="w-full flex items-center gap-4 px-4 py-4 transition-colors active:bg-black/5"
-                  style={{ color: 'var(--foreground)', borderTop: '1px solid var(--glass-border)' }}
+                  style={{ color: 'var(--foreground)' }}
                 >
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

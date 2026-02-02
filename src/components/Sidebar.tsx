@@ -187,6 +187,7 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
               기타
             </p>
             <div className="space-y-0.5 mt-1">
+              {/* Vault 기능 숨김 - 코드 유지
               <button
                 onClick={(e) => {
                   if (e.metaKey || e.ctrlKey) {
@@ -209,6 +210,7 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
                 <span className="transition-transform duration-200" style={{ opacity: pathname === '/vault' ? 1 : 0.7 }}>{getIcon('vault')}</span>
                 <span className="text-sm font-medium">Vault</span>
               </button>
+              */}
               <button
                 onClick={(e) => {
                   if (e.metaKey || e.ctrlKey) {
