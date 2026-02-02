@@ -416,11 +416,11 @@ const globalStyles = css`
   }
 
   .tds-bottom-nav-item.active {
-    color: var(--foreground, #191f28);
+    color: var(--accent-primary, #3182f6);
   }
 
   html.dark .tds-bottom-nav-item.active {
-    color: #ffffff;
+    color: var(--accent-primary, #4a9eff);
   }
 
   .tds-bottom-nav-item:active {
