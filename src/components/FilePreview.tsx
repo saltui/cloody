@@ -10,7 +10,7 @@ export function getFileCategory(filename: string): 'image' | 'video' | 'audio' |
   const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif', 'tiff', 'ico']
   const videoExts = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'wmv', 'flv', 'm4v', '3gp']
   const audioExts = ['mp3', 'wav', 'flac', 'aac', 'ogg', 'wma', 'm4a', 'aiff']
-  const textExts = ['txt', 'md', 'markdown', 'log', 'csv', 'json', 'xml', 'yaml', 'yml', 'ini', 'conf', 'cfg', 'env']
+  const textExts = ['txt', 'md', 'markdown', 'log', 'csv', 'json', 'xml', 'yaml', 'yml', 'ini', 'conf', 'cfg', 'env', 'gitignore', 'editorconfig']
   const codeExts = ['js', 'jsx', 'ts', 'tsx', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'rs', 'rb', 'php', 'swift', 'kt', 'scala', 'html', 'css', 'scss', 'less', 'sass', 'sql', 'sh', 'bash', 'zsh', 'ps1', 'bat', 'cmd', 'vue', 'svelte']
   const officeExts = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'hwp']
 

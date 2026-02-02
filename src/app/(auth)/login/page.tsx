@@ -368,7 +368,7 @@ export default function LoginPage() {
                   width: '56px',
                   height: '56px',
                   borderRadius: '50%',
-                  background: 'rgba(0, 196, 113, 0.1)',
+                  background: 'rgba(99, 102, 241, 0.1)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -380,7 +380,7 @@ export default function LoginPage() {
                   height="28"
                   viewBox="0 0 24 24"
                   fill="none"
-                  stroke="var(--tds-color-success)"
+                  stroke="#6366F1"
                   strokeWidth="2"
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />

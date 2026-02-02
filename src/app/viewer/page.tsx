@@ -170,7 +170,18 @@ export default function ViewerPage() {
   // 현재 이미지 로딩 상태 관리
   useEffect(() => {
     if (photos.length === 0) return
-    const currentUrl = photos[currentIndex]?.url
+    const currentPhoto = photos[currentIndex]
+    if (!currentPhoto) return
+
+    const currentUrl = currentPhoto.url
+    const fileCategory = getFileCategory(currentPhoto.name)
+
+    // 이미지/비디오가 아닌 파일은 로딩 상태 즉시 해제
+    if (!['image', 'video'].includes(fileCategory)) {
+      setImageLoading(false)
+      return
+    }
+
     if (currentUrl && loadedImages.has(currentUrl)) {
       setImageLoading(false)
     } else {
