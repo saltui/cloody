@@ -1,7 +1,6 @@
 // 허용된 이메일 목록 (이 이메일만 가입/로그인 가능)
-export const ALLOWED_EMAILS = new Set([
-  'jdnfree@icloud.com',
-  'jongin715@naver.com',
+export const ALLOWED_EMAILS = new Set<string>([
+  // @baerae.com 도메인만 허용
 ])
 
 // 허용된 도메인 (이 도메인의 모든 이메일 가입 가능)
