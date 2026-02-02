@@ -19,6 +19,8 @@ Cloody는 기업의 정보보호관리체계(ISMS) 요건을 충족하고 전자
 
 ## ✨ 핵심 기능 (Security & Compliance)
 
+> **Note**: 현재 버전에서는 스토리지(MinIO) 및 기본 기능을 제외한 **Blockchain 및 Vault 기능은 숨김 처리(Hidden)** 되어 있습니다. 기능 구현은 완료되었으나, UI상에서 비활성화된 상태입니다.
+
 ### 1. 강력한 접근 통제 (ISMS)
 - **Multi-Factor Authentication (MFA)**:
     - **Passkeys (WebAuthn)**: 생체 인증(FaceID, TouchID)을 통한 암호 없는 로그인
@@ -26,18 +28,18 @@ Cloody는 기업의 정보보호관리체계(ISMS) 요건을 충족하고 전자
     - **Magic Link**: 이메일 기반의 안전한 일회용 로그인 링크
 - **세션 보안**: IP 바인딩 및 강제 만료 정책으로 세션 탈취 방지
 
-### 2. 데이터 무결성 및 EDMS (Blockchain)
+### 2. 데이터 무결성 및 EDMS (Blockchain - *Currently Hidden*)
 - **Document Anchoring**: 업로드된 파일의 SHA-256 해시를 계산하여 스마트 컨트랙트에 영구 기록
 - **Verification Badge**: 파일 열람 시 블록체인 기록과 대조하여 `Verified`(원본), `Tampered`(변조됨), `Not Registered`(미등록) 상태 표시
 - **Audit Logs**: 파일 접근, 다운로드, 삭제 등 모든 중요 행위를 기록하여 감사 추적 가능
 
-### 3. Vault (보안 금고 & 결재)
+### 3. Vault (보안 금고 & 결재 - *Currently Hidden*)
 - **M-of-N Multi-Sig**: 중요 문서는 지정된 승인자 N명 중 M명 이상의 서명이 있어야 최종 승인/열람 가능
 - **On-Chain Signatures**: 승인/거절 이력이 블록체인에 기록되어 부인 방지(Non-repudiation) 보장
 - **Time-Locked**: 유효 기간 설정으로 권한의 한시적 부여
 
 ### 4. 고가용성 스토리지 및 미디어 처리
-- **Resiliency**: Cloudflare R2를 이용한 99.999999999% 내구성
+- **Resiliency**: 로컬 개발 환경에서는 **Docker (MinIO)**를 사용하여 S3 호환 스토리지를 에뮬레이션합니다. (프로덕션은 Cloudflare R2 권장)
 - **Soft Delete**: 휴지통 기능을 통해 실수로 삭제된 데이터의 복원 가능 (30일 보관)
 - **Video Transcoding**: 업로드된 영상을 HLS로 자동 변환하여 다양한 네트워크 환경에서 스트리밍 최적화
 
@@ -49,16 +51,16 @@ Cloody는 기업의 정보보호관리체계(ISMS) 요건을 충족하고 전자
 - **Framework**: Next.js 16 (App Router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS 4, Lucide React
-- **Web3**: Wagmi, Viem, RainbowKit
+- **Web3**: Wagmi, Viem, RainbowKit (Hidden)
 - **Auth**: SimpleWebAuthn (Passkeys)
 
 ### Backend & Infrastructure
 - **Database**: Supabase (PostgreSQL)
-- **Storage**: Cloudflare R2 (S3 Compatible)
+- **Storage**: Docker MinIO (Local) / Cloudflare R2 (Production)
 - **API**: Next.js API Routes (Serverless)
 - **Media**: FFmpeg (HLS Transcoding)
 
-### Blockchain
+### Blockchain (*Hidden Feature*)
 - **Network**: Base Sepolia (Testnet)
 - **Smart Contract**: Solidity 0.8.20
 - **Dev Tools**: Hardhat, Alchemy
