@@ -1020,9 +1020,10 @@ export default function DrivePage() {
   const handleDragLeave = (e: DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    dragCounter.current--
-    if (dragCounter.current === 0) {
+    // relatedTarget이 null이면 창 밖으로 나간 것 - 이때만 드래그 해제
+    if (!e.relatedTarget) {
       setIsDragging(false)
+      dragCounter.current = 0
     }
   }
 
@@ -1865,7 +1866,7 @@ export default function DrivePage() {
     }
   }
 
-  const handleDragSelectMove = (e: React.MouseEvent) => {
+  const handleDragSelectMove = useCallback((e: React.MouseEvent | MouseEvent) => {
     if (!isDragSelecting || !dragSelectStart) return
 
     const container = activeDragContainerRef.current
@@ -1919,14 +1920,28 @@ export default function DrivePage() {
 
     setSelectedIds(newSelectedIds)
     setSelectedFolderIds(newSelectedFolderIds)
-  }
+  }, [isDragSelecting, dragSelectStart])
 
-  const handleDragSelectEnd = () => {
+  const handleDragSelectEnd = useCallback(() => {
     setIsDragSelecting(false)
     setDragSelectStart(null)
     setDragSelectCurrent(null)
     activeDragContainerRef.current = null
-  }
+  }, [])
+
+  // Document 레벨에서 mousemove/mouseup 감지 - 드래그 선택이 목록 밖에서도 유지되도록
+  useEffect(() => {
+    if (!isDragSelecting) return
+
+    const handleMouseMove = (e: MouseEvent) => handleDragSelectMove(e)
+    const handleMouseUp = () => handleDragSelectEnd()
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isDragSelecting, handleDragSelectMove, handleDragSelectEnd])
 
   // 모바일: 길게 누르기로 선택 모드 진입
   const handleLongPress = useCallback((itemId: string, isFolder: boolean) => {
@@ -3325,9 +3340,6 @@ export default function DrivePage() {
         ref={gridContainerRef}
         className="p-3 sm:p-4 md:p-6 pb-24 sm:pb-6 relative select-none"
         onMouseDown={(e) => handleDragSelectStart(e, gridContainerRef)}
-        onMouseMove={handleDragSelectMove}
-        onMouseUp={handleDragSelectEnd}
-        onMouseLeave={handleDragSelectEnd}
       >
         {/* 드래그 선택 박스 */}
         {isDragSelecting && dragSelectStart && dragSelectCurrent && (
