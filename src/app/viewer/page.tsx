@@ -639,6 +639,7 @@ export default function ViewerPage() {
             const fileCategory = getFileCategory(currentPhoto.name)
             const isVideo = currentPhoto.is_video || fileCategory === 'video'
             const maxHeightStyle = { maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))' }
+            const fullHeightStyle = { height: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 80px)' }
 
             if (isVideo) {
               return (
@@ -674,7 +675,7 @@ export default function ViewerPage() {
 
             if (fileCategory === 'text' || fileCategory === 'code') {
               return (
-                <div className="w-full h-full max-w-4xl mx-auto" style={maxHeightStyle}>
+                <div className="w-full max-w-4xl mx-auto overflow-hidden" style={fullHeightStyle}>
                   <TextPreview
                     url={currentSignedUrl}
                     filename={currentPhoto.name}
@@ -686,7 +687,7 @@ export default function ViewerPage() {
 
             if (fileCategory === 'pdf') {
               return (
-                <div className="w-full h-full max-w-5xl mx-auto" style={maxHeightStyle}>
+                <div className="w-full max-w-5xl mx-auto overflow-hidden" style={fullHeightStyle}>
                   <PDFPreview
                     url={currentSignedUrl}
                     filename={currentPhoto.name}
@@ -698,7 +699,7 @@ export default function ViewerPage() {
 
             if (fileCategory === 'office') {
               return (
-                <div className="w-full h-full max-w-5xl mx-auto" style={maxHeightStyle}>
+                <div className="w-full max-w-5xl mx-auto overflow-hidden" style={fullHeightStyle}>
                   <OfficePreview
                     url={currentSignedUrl}
                     filename={currentPhoto.name}
