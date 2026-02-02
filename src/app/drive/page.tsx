@@ -114,6 +114,26 @@ function getMimeTypeFromExtension(fileName: string, browserType: string): string
     csv: 'text/csv',
     zip: 'application/zip',
     rar: 'application/x-rar-compressed',
+    // 개발 파일
+    json: 'application/json',
+    js: 'text/javascript',
+    ts: 'text/javascript',
+    jsx: 'text/javascript',
+    tsx: 'text/javascript',
+    html: 'text/html',
+    css: 'text/css',
+    md: 'text/markdown',
+    yaml: 'text/yaml',
+    yml: 'text/yaml',
+    sh: 'text/x-sh',
+    bash: 'text/x-sh',
+    py: 'text/x-python',
+    java: 'text/x-java-source',
+    go: 'text/x-go',
+    rs: 'text/x-rust',
+    sql: 'text/x-sql',
+    toml: 'application/toml',
+    xml: 'application/xml',
   }
 
   // 확장자 기반 MIME 타입 우선 사용

@@ -54,6 +54,8 @@ const extensionMap: Record<string, FileTypeCategory> = {
   js: 'code', ts: 'code', jsx: 'code', tsx: 'code', html: 'code', css: 'code',
   json: 'code', py: 'code', java: 'code', cpp: 'code', c: 'code', go: 'code',
   rs: 'code', swift: 'code', kt: 'code', rb: 'code', php: 'code', sql: 'code',
+  yaml: 'code', yml: 'code', sh: 'code', bash: 'code', zsh: 'code',
+  toml: 'code', ini: 'code', env: 'code', dockerfile: 'code',
 
   // 텍스트
   txt: 'text', md: 'text', log: 'text',
