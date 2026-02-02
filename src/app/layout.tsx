@@ -15,7 +15,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Cloody",
-  description: "Jaden's Private Cloud",
+  description: "BaeRae Cloud",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
