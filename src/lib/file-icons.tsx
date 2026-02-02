@@ -199,11 +199,11 @@ export function FileThumbnail({ filename, className = '' }: FileThumbnailProps) 
       className={`w-full h-full flex items-center justify-center relative ${className}`}
       style={{ background: 'var(--background-tertiary)' }}
     >
-      <DocumentFilledIcon size={24} color={color} opacity={0.6} />
+      <DocumentFilledIcon size={48} color={color} opacity={0.7} />
       {label && (
         <span
           className="absolute font-bold text-white"
-          style={{ fontSize: 7, bottom: '50%', transform: 'translateY(8px)' }}
+          style={{ fontSize: 11, bottom: '50%', transform: 'translateY(12px)' }}
         >
           {label}
         </span>

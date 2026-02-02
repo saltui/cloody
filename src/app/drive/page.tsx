@@ -4581,8 +4581,7 @@ export default function DrivePage() {
         >
           <Home
             size={26}
-            strokeWidth={currentCategory === 'all' && !showUploadPanel && !showMoreScreen ? 2.5 : 1.5}
-            fill={currentCategory === 'all' && !showUploadPanel && !showMoreScreen ? 'currentColor' : 'none'}
+            strokeWidth={currentCategory === 'all' && !showUploadPanel && !showMoreScreen ? 2 : 1.5}
           />
           <span>홈</span>
         </button>
@@ -4600,8 +4599,7 @@ export default function DrivePage() {
           <div className="relative">
             <CloudUpload
               size={26}
-              strokeWidth={showUploadPanel && !showMoreScreen ? 2.5 : 1.5}
-              fill={showUploadPanel && !showMoreScreen ? 'currentColor' : 'none'}
+              strokeWidth={showUploadPanel && !showMoreScreen ? 2 : 1.5}
             />
             {uploading && (
               <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)' }} />
@@ -4621,7 +4619,7 @@ export default function DrivePage() {
           }}
           className={`tds-bottom-nav-item ${showMoreScreen ? 'active' : ''}`}
         >
-          <Menu size={26} strokeWidth={showMoreScreen ? 2.5 : 1.5} />
+          <Menu size={26} strokeWidth={showMoreScreen ? 2 : 1.5} />
           <span>더보기</span>
         </button>
       </nav>

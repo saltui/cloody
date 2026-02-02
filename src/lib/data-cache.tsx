@@ -296,8 +296,12 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
     } else if (category === 'videos') {
       query = query.eq('is_video', true)
     } else if (category === 'documents') {
-      // 문서: 비디오가 아니고 file_type이 image/로 시작하지 않는 것
-      query = query.eq('is_video', false).not('file_type', 'like', 'image/%')
+      // 문서: 사진/동영상이 아닌 모든 파일
+      // is_video가 false이거나 null이고, file_type이 image/나 video/로 시작하지 않는 것
+      query = query
+        .or('is_video.eq.false,is_video.is.null')
+        .not('file_type', 'like', 'image/%')
+        .not('file_type', 'like', 'video/%')
     }
 
     const { data, error } = await query
