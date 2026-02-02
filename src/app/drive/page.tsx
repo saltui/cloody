@@ -3562,6 +3562,7 @@ export default function DrivePage() {
                         <div className="w-full h-full flex flex-col items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
                           <FileThumbnail
                             filename={photo.name}
+                            size={currentCategory === 'documents' ? 'lg' : 'sm'}
                             className={`transition-transform duration-300 !bg-transparent ${selectedIds.has(photo.id) ? 'scale-90' : ''}`}
                           />
                           {/* 문서 카테고리거나 전체 보기일 때 파일명/용량 표시 (사진/동영상 탭 제외) */}

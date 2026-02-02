@@ -187,23 +187,28 @@ export function FileIcon({ filename, size = 'md', className = '' }: FileIconProp
 interface FileThumbnailProps {
   filename: string
   className?: string
+  size?: 'sm' | 'md' | 'lg'
 }
 
-export function FileThumbnail({ filename, className = '' }: FileThumbnailProps) {
+export function FileThumbnail({ filename, className = '', size = 'md' }: FileThumbnailProps) {
   const category = getFileTypeCategory(filename)
   const color = typeColors[category]
   const label = typeLabels[category]
+
+  const iconSizes = { sm: 28, md: 40, lg: 56 }
+  const labelSizes = { sm: 7, md: 9, lg: 12 }
+  const labelOffset = { sm: 6, md: 10, lg: 14 }
 
   return (
     <div
       className={`w-full h-full flex items-center justify-center relative ${className}`}
       style={{ background: 'var(--background-tertiary)' }}
     >
-      <DocumentFilledIcon size={48} color={color} opacity={0.7} />
+      <DocumentFilledIcon size={iconSizes[size]} color={color} opacity={0.7} />
       {label && (
         <span
           className="absolute font-bold text-white"
-          style={{ fontSize: 11, bottom: '50%', transform: 'translateY(12px)' }}
+          style={{ fontSize: labelSizes[size], bottom: '50%', transform: `translateY(${labelOffset[size]}px)` }}
         >
           {label}
         </span>
