@@ -1474,21 +1474,22 @@ body {
 }
 
 /* ===== Settings Tab Hover ===== */
-.settings-tab-item:not(.active) span {
+button.settings-tab-item:not(.active) > span {
   color: #6b7280 !important;
+  transition: color 0.2s ease;
 }
-.settings-tab-item:not(.active):hover {
+button.settings-tab-item:not(.active):hover {
   background: rgba(0, 0, 0, 0.05) !important;
 }
-.settings-tab-item:not(.active):hover span {
-  color: #1a1a1a !important;
+button.settings-tab-item:not(.active):hover > span {
+  color: #111827 !important;
 }
-html.dark .settings-tab-item:not(.active) span {
+html.dark button.settings-tab-item:not(.active) > span {
   color: #9ca3af !important;
 }
-html.dark .settings-tab-item:not(.active):hover {
+html.dark button.settings-tab-item:not(.active):hover {
   background: rgba(255, 255, 255, 0.08) !important;
 }
-html.dark .settings-tab-item:not(.active):hover span {
-  color: #f0f0f0 !important;
+html.dark button.settings-tab-item:not(.active):hover > span {
+  color: #f3f4f6 !important;
 }
