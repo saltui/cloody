@@ -111,4 +111,4 @@ Vercel 배포에 최적화되어 있습니다. 다음 환경 변수를 Vercel �
 ## 📄 라이선스
 
 This project is proprietary software.
-Copyright © 2026 Cloody Team. All rights reserved.
+Copyright © 2026 BaeRae Team. All rights reserved.
