@@ -229,9 +229,9 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
             <Page
               key={`page_${index + 1}`}
               pageNumber={index + 1}
-              width={containerWidth > 0 ? containerWidth : undefined}
               renderTextLayer={true}
               renderAnnotationLayer={true}
+              className="!w-full [&>canvas]:!w-full [&>canvas]:!h-auto"
             />
           ))}
         </Document>
