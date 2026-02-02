@@ -372,8 +372,8 @@ export default function SettingsPage() {
                     background: 'var(--accent-gradient)',
                   } : undefined}
                 >
-                  <span className={activeTab === tab.id ? 'text-white' : 'text-[var(--foreground-secondary)] group-hover:text-[var(--foreground)]'}>{tab.icon}</span>
-                  <span className={`font-medium ${activeTab === tab.id ? 'text-white' : 'text-[var(--foreground-secondary)] group-hover:text-[var(--foreground)]'}`}>{tab.label}</span>
+                  <span className={activeTab === tab.id ? 'text-white' : 'text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-gray-100'}>{tab.icon}</span>
+                  <span className={`font-medium ${activeTab === tab.id ? 'text-white' : 'text-gray-500 group-hover:text-gray-900 dark:text-gray-400 dark:group-hover:text-gray-100'}`}>{tab.label}</span>
                 </button>
               ))}
             </div>
