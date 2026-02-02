@@ -16,6 +16,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Cloody",
   description: "BaeRae Cloud",
+  icons: {
+    icon: "/logo.svg",
+    shortcut: "/logo.svg",
+    apple: "/logo.svg",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

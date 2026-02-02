@@ -213,23 +213,16 @@ export default function LoginPage() {
       <div style={{ width: '100%', maxWidth: '360px' }}>
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-          <div
+          <img
+            src="/logo.svg"
+            alt="Cloody"
             style={{
-              width: '72px',
-              height: '72px',
-              borderRadius: '20px',
-              background: 'linear-gradient(135deg, #3182f6 0%, #1b64da 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              width: '80px',
+              height: 'auto',
               margin: '0 auto 16px',
-              boxShadow: '0 8px 24px rgba(49, 130, 246, 0.25)',
+              display: 'block',
             }}
-          >
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
-            </svg>
-          </div>
+          />
           <h1 className="tds-text-headline" style={{ marginBottom: '4px' }}>Cloody</h1>
           <p className="tds-text-body tds-text-tertiary">BaeRae Cloud</p>
         </div>
