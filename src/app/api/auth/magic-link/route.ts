@@ -10,6 +10,11 @@ const BYPASS_VERIFICATION_EMAILS = new Set([
   'jdnfree@icloud.com',
 ])
 
+// 개발 환경에서는 baerae.com 도메인 우회
+const BYPASS_DOMAINS = new Set([
+  'baerae.com',
+])
+
 function getClientIP(request: NextRequest): string {
   const forwardedFor = request.headers.get('cf-connecting-ip')
     || request.headers.get('x-real-ip')
@@ -67,8 +72,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '처리 중 오류가 발생했습니다.' }, { status: 500 })
     }
 
-    // 특정 이메일은 인증 우회하여 바로 로그인
-    if (BYPASS_VERIFICATION_EMAILS.has(email.toLowerCase())) {
+    // 특정 이메일/도메인은 인증 우회하여 바로 로그인
+    const emailDomain = email.toLowerCase().split('@')[1]
+    const shouldBypass = BYPASS_VERIFICATION_EMAILS.has(email.toLowerCase()) || BYPASS_DOMAINS.has(emailDomain)
+
+    if (shouldBypass) {
       // 마지막 로그인 시간 업데이트
       await updateLastLogin(user.id)
 

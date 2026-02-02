@@ -14,6 +14,10 @@ CREATE TABLE IF NOT EXISTS users (
     wallet_address VARCHAR(255),
     is_admin BOOLEAN DEFAULT false,
     last_login_at TIMESTAMPTZ,
+    magic_link_token VARCHAR(255),
+    magic_link_expires_at TIMESTAMPTZ,
+    email_verification_token VARCHAR(255),
+    email_verification_expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

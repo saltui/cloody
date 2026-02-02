@@ -1,17 +1,26 @@
 {
   "agents": [
     {
-      "agent_id": "ae6e3d8",
-      "agent_type": "Explore",
-      "started_at": "2026-02-02T07:22:40.560Z",
+      "agent_id": "a8abd9a",
+      "agent_type": "oh-my-claudecode:build-fixer",
+      "started_at": "2026-02-02T15:45:33.620Z",
       "parent_mode": "none",
       "status": "failed",
-      "completed_at": "2026-02-02T07:23:23.510Z",
-      "duration_ms": 42950
+      "completed_at": "2026-02-02T15:46:54.123Z",
+      "duration_ms": 80503
+    },
+    {
+      "agent_id": "a4c2a01",
+      "agent_type": "oh-my-claudecode:executor",
+      "started_at": "2026-02-02T15:52:53.544Z",
+      "parent_mode": "none",
+      "status": "failed",
+      "completed_at": "2026-02-02T15:53:31.042Z",
+      "duration_ms": 37498
     }
   ],
-  "total_spawned": 1,
+  "total_spawned": 2,
   "total_completed": 0,
-  "total_failed": 1,
-  "last_updated": "2026-02-02T08:08:57.490Z"
+  "total_failed": 2,
+  "last_updated": "2026-02-02T16:21:40.267Z"
 }
