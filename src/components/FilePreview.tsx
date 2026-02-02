@@ -223,7 +223,7 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
           onLoadSuccess={onDocumentLoadSuccess}
           onLoadError={onDocumentLoadError}
           loading=""
-          className="w-full"
+          className="w-full flex flex-col gap-4"
         >
           {Array.from(new Array(numPages), (_, index) => (
             <Page
