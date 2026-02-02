@@ -363,17 +363,17 @@ export default function SettingsPage() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`settings-tab-item flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl whitespace-nowrap transition-all duration-200 text-sm sm:text-base ${
+                  className={`settings-tab-item group flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl whitespace-nowrap transition-all duration-200 text-sm sm:text-base ${
                     activeTab === tab.id
-                      ? 'active text-white'
-                      : 'text-[var(--foreground-secondary)] hover:text-[#1a1a1a] hover:bg-[rgba(0,0,0,0.05)]'
+                      ? 'active'
+                      : 'hover:bg-[rgba(0,0,0,0.05)]'
                   }`}
                   style={activeTab === tab.id ? {
                     background: 'var(--accent-gradient)',
                   } : undefined}
                 >
-                  <span>{tab.icon}</span>
-                  <span className="font-medium">{tab.label}</span>
+                  <span className={activeTab === tab.id ? 'text-white' : 'text-[#4e5968] group-hover:text-[#1a1a1a]'}>{tab.icon}</span>
+                  <span className={`font-medium ${activeTab === tab.id ? 'text-white' : 'text-[#4e5968] group-hover:text-[#1a1a1a]'}`}>{tab.label}</span>
                 </button>
               ))}
             </div>
