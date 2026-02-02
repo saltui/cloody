@@ -6,6 +6,7 @@ import { useDownload } from '@/lib/download-context'
 import { useUser } from '@/lib/user-context'
 import { useDataCache } from '@/lib/data-cache'
 import { useToast } from '@/components/Toast'
+import { getFileCategory, TextPreview, PDFPreview, OfficePreview, AudioPreview, UnknownFilePreview } from '@/components/FilePreview'
 
 // R2 URL을 프록시 URL로 즉시 변환
 function toProxyUrl(url: string): string {
@@ -623,31 +624,96 @@ export default function ViewerPage() {
             willChange: 'transform',
           }}
         >
-          {currentPhoto.is_video || currentPhoto.name.match(/\.(mp4|webm|mov|avi|mkv)$/i) ? (
-            <video
-              key={currentPhoto.url}
-              src={currentSignedUrl}
-              controls
-              autoPlay
-              playsInline
-              className="max-w-full object-contain"
-              style={{ maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))' }}
-              onLoadedData={() => setImageLoading(false)}
-              onCanPlay={() => setImageLoading(false)}
-            />
-          ) : (
-            <img
-              key={currentPhoto.url}
-              src={currentSignedUrl}
-              alt=""
-              className={`max-w-full object-contain select-none transition-opacity duration-300 ${
-                imageLoading ? 'opacity-0' : 'opacity-100'
-              }`}
-              style={{ maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))' }}
-              draggable={false}
-              onLoad={handleImageLoad}
-            />
-          )}
+          {(() => {
+            const fileCategory = getFileCategory(currentPhoto.name)
+            const isVideo = currentPhoto.is_video || fileCategory === 'video'
+            const maxHeightStyle = { maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))' }
+
+            if (isVideo) {
+              return (
+                <video
+                  key={currentPhoto.url}
+                  src={currentSignedUrl}
+                  controls
+                  autoPlay
+                  playsInline
+                  className="max-w-full object-contain"
+                  style={maxHeightStyle}
+                  onLoadedData={() => setImageLoading(false)}
+                  onCanPlay={() => setImageLoading(false)}
+                />
+              )
+            }
+
+            if (fileCategory === 'image') {
+              return (
+                <img
+                  key={currentPhoto.url}
+                  src={currentSignedUrl}
+                  alt=""
+                  className={`max-w-full object-contain select-none transition-opacity duration-300 ${
+                    imageLoading ? 'opacity-0' : 'opacity-100'
+                  }`}
+                  style={maxHeightStyle}
+                  draggable={false}
+                  onLoad={handleImageLoad}
+                />
+              )
+            }
+
+            if (fileCategory === 'text' || fileCategory === 'code') {
+              return (
+                <div className="w-full h-full max-w-4xl mx-auto" style={maxHeightStyle}>
+                  <TextPreview
+                    url={currentSignedUrl}
+                    filename={currentPhoto.name}
+                    onDownload={() => startDownload([{ id: currentPhoto.id, url: currentPhoto.url, name: currentPhoto.name }])}
+                  />
+                </div>
+              )
+            }
+
+            if (fileCategory === 'pdf') {
+              return (
+                <div className="w-full h-full max-w-5xl mx-auto" style={maxHeightStyle}>
+                  <PDFPreview
+                    url={currentSignedUrl}
+                    filename={currentPhoto.name}
+                    onDownload={() => startDownload([{ id: currentPhoto.id, url: currentPhoto.url, name: currentPhoto.name }])}
+                  />
+                </div>
+              )
+            }
+
+            if (fileCategory === 'office') {
+              return (
+                <div className="w-full h-full max-w-5xl mx-auto" style={maxHeightStyle}>
+                  <OfficePreview
+                    url={currentSignedUrl}
+                    filename={currentPhoto.name}
+                    onDownload={() => startDownload([{ id: currentPhoto.id, url: currentPhoto.url, name: currentPhoto.name }])}
+                  />
+                </div>
+              )
+            }
+
+            if (fileCategory === 'audio') {
+              return (
+                <div className="w-full max-w-2xl mx-auto">
+                  <AudioPreview url={currentSignedUrl} filename={currentPhoto.name} />
+                </div>
+              )
+            }
+
+            // Unknown file type
+            return (
+              <UnknownFilePreview
+                filename={currentPhoto.name}
+                fileSize={currentPhoto.file_size}
+                onDownload={() => startDownload([{ id: currentPhoto.id, url: currentPhoto.url, name: currentPhoto.name }])}
+              />
+            )
+          })()}
         </div>
 
         {/* 다음 버튼 - 데스크탑 */}
