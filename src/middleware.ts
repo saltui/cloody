@@ -39,11 +39,11 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:", // Next.js 필요 + heic2any worker
     "worker-src 'self' blob:", // heic2any Web Worker 허용
     "style-src 'self' 'unsafe-inline'", // Tailwind 필요
-    "img-src 'self' data: blob: https://*.r2.dev https://*.supabase.co",
-    "media-src 'self' blob: https://*.r2.dev", // 비디오 썸네일 + R2 미디어
+    "img-src 'self' data: blob: http://localhost:* https://*.r2.dev https://*.supabase.co",
+    "media-src 'self' blob: http://localhost:* https://*.r2.dev", // 비디오 썸네일 + R2/MinIO 미디어
     "font-src 'self' data:",
     // Web3 RPC 엔드포인트 추가
-    "connect-src 'self' https://*.supabase.co https://*.r2.dev https://*.r2.cloudflarestorage.com https://rpc.sepolia.org https://*.infura.io https://*.alchemy.com wss://*.walletconnect.com wss://*.walletconnect.org https://*.walletconnect.com https://*.walletconnect.org https://sepolia.basescan.org https://basescan.org https://sepolia.etherscan.io",
+    "connect-src 'self' http://localhost:* https://*.supabase.co https://*.r2.dev https://*.r2.cloudflarestorage.com https://rpc.sepolia.org https://*.infura.io https://*.alchemy.com wss://*.walletconnect.com wss://*.walletconnect.org https://*.walletconnect.com https://*.walletconnect.org https://sepolia.basescan.org https://basescan.org https://sepolia.etherscan.io",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
