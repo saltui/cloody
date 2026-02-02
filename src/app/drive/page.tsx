@@ -621,6 +621,8 @@ export default function DrivePage() {
   const [touchDragStartItem, setTouchDragStartItem] = useState<{ id: string; isFolder: boolean; combinedIndex: number } | null>(null)
   const autoScrollRef = useRef<NodeJS.Timeout | null>(null)
   const lastTouchPosRef = useRef<{ x: number; y: number } | null>(null)
+  // Shift 키 상태 추적 (드래그 선택 중 추가 선택용)
+  const shiftKeyRef = useRef(false)
   // 범위 선택을 위한 정렬된 배열 refs
   const sortedFoldersRef = useRef<Folder[]>([])
   const sortedPhotosRef = useRef<Photo[]>([])
@@ -1123,8 +1125,37 @@ export default function DrivePage() {
 
     // 폴더가 드롭된 경우: 폴더 구조 생성 후 파일 자동 업로드
     if (hasDroppedFolders && folderPaths.length > 0) {
+      // 개발 관련 폴더 필터링 (node_modules, .git 등)
+      const BLOCKED_FOLDER_PATTERNS = [
+        /^\./, // .으로 시작하는 폴더
+        /^node_modules$/i,
+        /^__pycache__$/i,
+        /^__tests__$/i,
+        /^\.next$/i,
+        /^\.git$/i,
+        /^\.vscode$/i,
+        /^dist$/i,
+        /^build$/i,
+        /^coverage$/i,
+        /^vendor$/i,
+      ]
+
+      const isBlockedFolder = (name: string) =>
+        BLOCKED_FOLDER_PATTERNS.some(pattern => pattern.test(name))
+
+      // 차단된 폴더 경로 필터링
+      const filteredPaths = folderPaths.filter(path => {
+        const parts = path.split('/')
+        return !parts.some(part => isBlockedFolder(part))
+      })
+
+      if (filteredPaths.length < folderPaths.length) {
+        const blocked = folderPaths.length - filteredPaths.length
+        showToast(`개발 관련 폴더 ${blocked}개가 제외되었습니다.`, 'info')
+      }
+
       // 폴더 경로를 정렬 (상위 폴더가 먼저 생성되도록)
-      const sortedPaths = [...new Set(folderPaths)].sort((a, b) => a.split('/').length - b.split('/').length)
+      const sortedPaths = [...new Set(filteredPaths)].sort((a, b) => a.split('/').length - b.split('/').length)
 
       // 폴더 경로 -> ID 매핑
       const folderIdMap: Record<string, string> = {}
@@ -1884,9 +1915,9 @@ export default function DrivePage() {
     const top = Math.min(dragSelectStart.y, y)
     const bottom = Math.max(dragSelectStart.y, y)
 
-    // 아이템들과 겹치는지 확인
-    const newSelectedIds = new Set<string>()
-    const newSelectedFolderIds = new Set<string>()
+    // 아이템들과 겹치는지 확인 (Shift 누르면 기존 선택 유지)
+    const newSelectedIds = new Set<string>(shiftKeyRef.current ? selectedIds : [])
+    const newSelectedFolderIds = new Set<string>(shiftKeyRef.current ? selectedFolderIds : [])
 
     // 폴더 체크 (그리드 & 리스트)
     container.querySelectorAll('[data-folder-id]').forEach((el) => {
@@ -1942,6 +1973,22 @@ export default function DrivePage() {
       document.removeEventListener('mouseup', handleMouseUp)
     }
   }, [isDragSelecting, handleDragSelectMove, handleDragSelectEnd])
+
+  // Shift 키 상태 추적
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') shiftKeyRef.current = true
+    }
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') shiftKeyRef.current = false
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('keyup', handleKeyUp)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('keyup', handleKeyUp)
+    }
+  }, [])
 
   // 모바일: 길게 누르기로 선택 모드 진입
   const handleLongPress = useCallback((itemId: string, isFolder: boolean) => {
@@ -2141,7 +2188,12 @@ export default function DrivePage() {
 
   const toggleSelect = (id: string, e: React.MouseEvent, index: number) => {
     e.stopPropagation()
-    const newSet = new Set(selectedIds)
+
+    // Cmd/Ctrl 없이 클릭하면 기존 선택 해제 후 새로 선택 (단, 이미 선택 모드면 추가 선택)
+    const isMultiSelectKey = e.shiftKey || e.metaKey || e.ctrlKey
+    const shouldPreserve = isMultiSelectKey || isSelecting
+
+    const newSet = shouldPreserve ? new Set(selectedIds) : new Set<string>()
 
     // Shift+클릭: 범위 선택
     if (e.shiftKey && lastSelectedIndex?.type === 'photo') {
@@ -2152,12 +2204,11 @@ export default function DrivePage() {
           newSet.add(sortedPhotos[i].id)
         }
       }
+    } else if (newSet.has(id) && shouldPreserve) {
+      // 이미 선택된 항목 클릭 시 선택 해제
+      newSet.delete(id)
     } else {
-      if (newSet.has(id)) {
-        newSet.delete(id)
-      } else {
-        newSet.add(id)
-      }
+      newSet.add(id)
     }
 
     setSelectedIds(newSet)
@@ -2166,8 +2217,13 @@ export default function DrivePage() {
 
   const toggleFolderSelect = (id: string, e: React.MouseEvent, index?: number) => {
     e.stopPropagation()
-    const newSet = new Set(selectedFolderIds)
     const currentIndex = index ?? sortedFolders.findIndex(f => f.id === id)
+
+    // Cmd/Ctrl 없이 클릭하면 기존 선택 해제 후 새로 선택 (단, 이미 선택 모드면 추가 선택)
+    const isMultiSelectKey = e.shiftKey || e.metaKey || e.ctrlKey
+    const shouldPreserve = isMultiSelectKey || isSelecting
+
+    const newSet = shouldPreserve ? new Set(selectedFolderIds) : new Set<string>()
 
     // Shift+클릭: 범위 선택
     if (e.shiftKey && lastSelectedIndex?.type === 'folder') {
@@ -2178,12 +2234,11 @@ export default function DrivePage() {
           newSet.add(sortedFolders[i].id)
         }
       }
+    } else if (newSet.has(id) && shouldPreserve) {
+      // 이미 선택된 항목 클릭 시 선택 해제
+      newSet.delete(id)
     } else {
-      if (newSet.has(id)) {
-        newSet.delete(id)
-      } else {
-        newSet.add(id)
-      }
+      newSet.add(id)
     }
 
     setSelectedFolderIds(newSet)
@@ -2972,19 +3027,25 @@ export default function DrivePage() {
       {/* 모바일에서 업로드/더보기 탭 활성화시 숨김 */}
       <div
         className={`xl:pl-64 xl:pb-0 flex-1 flex flex-col overflow-hidden ${(showUploadPanel || showMoreScreen) ? 'hidden xl:block' : ''}`}
-        style={{ paddingBottom: 'calc(80px + env(safe-area-inset-bottom, 0px))' }}
+        style={{ paddingBottom: currentCategory !== 'all' ? 'env(safe-area-inset-bottom, 0px)' : 'calc(80px + env(safe-area-inset-bottom, 0px))' }}
       >
         {/* 헤더 */}
         <header className="header safe-area-top">
           <div className="header-content">
             {/* 왼쪽: 뒤로가기/메뉴 버튼 + 타이틀 */}
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-              {/* 모바일 뒤로가기 버튼 (폴더 안에 있을 때) */}
-              {breadcrumbs.length > 0 && (
+              {/* 모바일 뒤로가기 버튼 (폴더 안에 있을 때 또는 카테고리 필터링 시) */}
+              {(breadcrumbs.length > 0 || currentCategory !== 'all') && (
                 <button
                   onClick={() => {
-                    const parentId = breadcrumbs.length > 1 ? breadcrumbs[breadcrumbs.length - 2].id : null
-                    router.push(parentId ? `/drive?folder=${parentId}` : '/drive')
+                    if (currentCategory !== 'all') {
+                      // 카테고리에서 홈으로
+                      router.push('/drive')
+                    } else {
+                      // 폴더에서 상위로
+                      const parentId = breadcrumbs.length > 1 ? breadcrumbs[breadcrumbs.length - 2].id : null
+                      router.push(parentId ? `/drive?folder=${parentId}` : '/drive')
+                    }
                   }}
                   className="sm:hidden p-2 -ml-2 rounded-xl transition-colors active:bg-black/5 dark:active:bg-white/5"
                   style={{ color: 'var(--foreground)' }}
@@ -4490,7 +4551,8 @@ export default function DrivePage() {
       </div>{/* lg:pl-64 끝 */}
 
       {/* 모바일 하단 탭 네비게이션 - Toss Style */}
-      <nav className="tds-bottom-nav xl:hidden" style={{ zIndex: 70 }}>
+      {/* 카테고리 필터(사진/동영상/문서) 시 숨김 */}
+      <nav className={`tds-bottom-nav xl:hidden ${currentCategory !== 'all' ? 'hidden' : ''}`} style={{ zIndex: 70 }}>
         <button
           onClick={() => {
             setShowUploadPanel(false)
@@ -4669,9 +4731,9 @@ export default function DrivePage() {
             <div className="px-4 mb-6">
               <div className="p-4 rounded-2xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
                 <div className="flex justify-between items-center mb-3">
-                  <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>저장공간</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>사용중인 용량</span>
                   <span className="text-sm" style={{ color: 'var(--foreground-secondary)' }}>
-                    {formatBytes(storageUsed)} / 10 GB
+                    {formatBytes(storageUsed)}
                   </span>
                 </div>
                 <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--background-tertiary)' }}>
@@ -4696,6 +4758,7 @@ export default function DrivePage() {
                   { id: 'all', label: '모든 파일', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
                   { id: 'photos', label: '사진', icon: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z' },
                   { id: 'videos', label: '동영상', icon: 'M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z' },
+                  { id: 'documents', label: '문서', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
                 ].map((category, index) => {
                   const isActive = currentCategory === category.id
                   return (
@@ -4737,10 +4800,10 @@ export default function DrivePage() {
               </div>
             </div>
 
-            {/* 기타 (Vault, 휴지통) */}
+            {/* 관리 메뉴 */}
             <div className="px-4 mb-6">
               <p className="text-xs font-medium uppercase tracking-wider mb-2 px-1" style={{ color: 'var(--foreground-muted)' }}>
-                기타
+                관리
               </p>
               <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
                 {/* Vault 기능 숨김 - 코드 유지

@@ -206,10 +206,32 @@ export default function SettingsPage() {
     setIsLoading(true)
 
     try {
+      // 아바타 파일이 있으면 먼저 업로드
+      let avatarUrl = user?.avatar_url
+      if (avatarFile) {
+        const formData = new FormData()
+        formData.append('avatar', avatarFile)
+
+        const uploadRes = await fetch('/api/user/profile/avatar', {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (uploadRes.ok) {
+          const uploadData = await uploadRes.json()
+          avatarUrl = uploadData.avatar_url
+        } else {
+          throw new Error('아바타 업로드에 실패했습니다.')
+        }
+      }
+
       const res = await fetch('/api/user/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ display_name: displayName }),
+        body: JSON.stringify({
+          display_name: displayName,
+          avatar_url: avatarUrl,
+        }),
       })
 
       if (!res.ok) {
@@ -217,7 +239,8 @@ export default function SettingsPage() {
         throw new Error(data.error || '업데이트에 실패했습니다.')
       }
 
-      updateUser({ display_name: displayName })
+      updateUser({ display_name: displayName, avatar_url: avatarUrl })
+      setAvatarFile(null) // 업로드 완료 후 초기화
       showToast('프로필이 업데이트되었습니다.', 'success')
     } catch (err) {
       showToast(err instanceof Error ? err.message : '오류가 발생했습니다.', 'error')
@@ -376,8 +399,8 @@ export default function SettingsPage() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`settings-tab-item flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl whitespace-nowrap transition-all duration-200 text-sm sm:text-base ${
                     activeTab === tab.id
-                      ? 'text-white settings-tab-active'
-                      : ''
+                      ? 'text-white'
+                      : 'hover:bg-black/5 dark:hover:bg-white/10'
                   }`}
                   style={activeTab === tab.id ? {
                     background: 'var(--accent-gradient)',
@@ -479,23 +502,7 @@ export default function SettingsPage() {
             {/* 계정 탭 */}
             {activeTab === 'account' && (
               <div className="space-y-4 sm:space-y-6 animate-fade-in">
-                {/* 로그인 방식 안내 */}
-                <div className="tds-card p-4 sm:p-6">
-                  <h2 className="tds-text-title mb-4">로그인 방식</h2>
-                  <div className="tds-list-item !bg-transparent !p-0">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center" style={{ background: 'rgba(49, 130, 246, 0.1)' }}>
-                      <svg className="w-5 h-5 sm:w-6 sm:h-6" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="tds-text-body font-medium">Magic Link</p>
-                      <p className="tds-text-caption tds-text-secondary">
-                        이메일로 로그인 링크를 받아 안전하게 로그인합니다
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                {/* 로그인 방식 안내 - 숨김 처리 */}
 
                 {/* 스토리지 */}
                 <div className="tds-card p-4 sm:p-6">
@@ -515,12 +522,12 @@ export default function SettingsPage() {
 
                 {/* 계정 삭제 */}
                 <div className="tds-card p-4 sm:p-6" style={{ background: 'rgba(244, 67, 54, 0.05)', borderColor: 'rgba(244, 67, 54, 0.15)' }}>
-                  <h2 className="tds-text-title mb-2" style={{ color: 'var(--error)' }}>위험 구역</h2>
+                  <h2 className="tds-text-title mb-2" style={{ color: 'var(--error)' }}>더 이상 사용하지 않나요?</h2>
                   <p className="tds-text-body tds-text-secondary mb-4">
-                    계정을 삭제하면 모든 데이터가 영구적으로 삭제됩니다.
+                    계정을 삭제하면 저장된 파일과 설정이 모두 사라져요. 이 작업은 되돌릴 수 없어요.
                   </p>
                   <button className="tds-btn tds-badge-error" style={{ background: 'var(--error)', color: 'white' }}>
-                    계정 삭제
+                    계정 삭제하기
                   </button>
                 </div>
               </div>
@@ -529,8 +536,8 @@ export default function SettingsPage() {
             {/* 보안 탭 */}
             {activeTab === 'security' && (
               <div className="space-y-4 sm:space-y-6 animate-fade-in">
-                {/* Web3 지갑 */}
-                <div className="tds-card p-4 sm:p-6">
+                {/* Web3 지갑 - 숨김 처리 */}
+                {false && <div className="tds-card p-4 sm:p-6">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(139, 92, 246, 0.1)' }}>
                       <svg className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: '#8b5cf6' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -555,12 +562,12 @@ export default function SettingsPage() {
                         <div
                           className="w-10 h-10 rounded-full"
                           style={{
-                            background: `linear-gradient(135deg, #${linkedWallet.slice(2, 8)}, #${linkedWallet.slice(-6)})`,
+                            background: `linear-gradient(135deg, #${linkedWallet?.slice(2, 8) || '000'}, #${linkedWallet?.slice(-6) || '000'})`,
                           }}
                         />
                         <div className="flex-1 min-w-0">
                           <p className="tds-text-body font-medium font-mono">
-                            {truncateHash(linkedWallet, 8, 6)}
+                            {truncateHash(linkedWallet || '', 8, 6)}
                           </p>
                           <p className="tds-text-caption tds-text-tertiary">연결됨</p>
                         </div>
@@ -627,7 +634,7 @@ export default function SettingsPage() {
                             />
                             <div className="flex-1 min-w-0">
                               <p className="tds-text-body font-medium font-mono">
-                                {connectedAddress ? truncateHash(connectedAddress, 8, 6) : ''}
+                                {connectedAddress ? truncateHash(connectedAddress as string, 8, 6) : ''}
                               </p>
                               <p className="tds-text-caption tds-text-tertiary">연결된 지갑</p>
                             </div>
@@ -669,7 +676,8 @@ export default function SettingsPage() {
                       )}
                     </div>
                   )}
-                </div>
+                </div>}
+                {/* Web3 지갑 숨김 끝 */}
 
                 {/* 패스키 */}
                 <div className="tds-card p-4 sm:p-6">
@@ -754,8 +762,8 @@ export default function SettingsPage() {
                   )}
                 </div>
 
-                {/* Vault 재인증 간격 */}
-                <div className="tds-card p-4 sm:p-6">
+                {/* Vault 재인증 간격 - 숨김 처리 */}
+                {false && <div className="tds-card p-4 sm:p-6">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(49, 130, 246, 0.1)' }}>
                       <svg className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: 'var(--accent-primary)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -808,7 +816,8 @@ export default function SettingsPage() {
                       패스키를 먼저 등록해야 Vault 재인증이 작동합니다.
                     </p>
                   )}
-                </div>
+                </div>}
+                {/* Vault 재인증 숨김 끝 */}
 
                 {/* 2FA */}
                 <div className="tds-card p-4 sm:p-6">

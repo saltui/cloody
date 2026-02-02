@@ -267,7 +267,7 @@ export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarPro
             {/* Storage */}
             <div className="sidebar-storage-card mb-3 p-2.5 rounded-lg transition-all duration-200" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
               <div className="flex justify-between text-xs mb-1.5">
-                <span style={{ color: 'var(--foreground-muted)' }}>저장공간</span>
+                <span style={{ color: 'var(--foreground-muted)' }}>사용중인 용량</span>
                 <span className="transition-colors duration-200" style={{ color: 'var(--foreground-secondary)' }}>{formatBytes(storageUsed)}</span>
               </div>
               <div className="progress-bar">

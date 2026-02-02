@@ -64,6 +64,7 @@ export default function TrashPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [showEmptyConfirm, setShowEmptyConfirm] = useState(false)
   const [selectionMode, setSelectionMode] = useState(false)
+  const [storageUsed, setStorageUsed] = useState<number>(0)
 
   // 휴지통 데이터 로드
   const loadTrash = useCallback(async () => {
@@ -85,6 +86,20 @@ export default function TrashPage() {
     }
   }, [user?.id])
 
+  // 스토리지 사용량 로드
+  const fetchStorageUsage = useCallback(async () => {
+    try {
+      const res = await fetch('/api/storage', {
+        credentials: 'include',
+      })
+      if (!res.ok) return
+      const { usage } = await res.json()
+      setStorageUsed(usage)
+    } catch (err) {
+      console.error('Failed to fetch storage usage:', err)
+    }
+  }, [])
+
   useEffect(() => {
     if (!userLoading && !user) {
       router.push('/login')
@@ -92,8 +107,9 @@ export default function TrashPage() {
     }
     if (user) {
       loadTrash()
+      fetchStorageUsage()
     }
-  }, [user, userLoading, router, loadTrash])
+  }, [user, userLoading, router, loadTrash, fetchStorageUsage])
 
   // 선택 모드 해제 시 선택 초기화
   useEffect(() => {
@@ -256,7 +272,7 @@ export default function TrashPage() {
 
   return (
     <div className="min-h-screen pb-safe" style={{ background: 'var(--background)' }}>
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} storageUsed={storageUsed} />
 
       {/* Main Content */}
       <div className="xl:ml-64">

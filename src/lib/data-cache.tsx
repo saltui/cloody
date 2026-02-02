@@ -156,6 +156,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
         .eq('user_id', userId)
         .is('deleted_at', null) // 휴지통 제외
         .order('order', { ascending: true })
+        .order('id', { ascending: true }) // 보조 정렬: 일관된 순서 보장
 
       if (folderId) {
         query = query.eq('folder_id', folderId)
@@ -199,6 +200,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
           .eq('user_id', userId)
           .is('deleted_at', null) // 휴지통 제외
           .order('order', { ascending: false }) // 최신순 (getPhotosPaginated와 동일)
+          .order('id', { ascending: false }) // 보조 정렬: 일관된 순서 보장
           .range(from, from + pageSize - 1)
 
         if (!pageData || pageData.length === 0) break
@@ -272,6 +274,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
       .eq('user_id', userId)
       .is('deleted_at', null) // 휴지통 제외
       .order('order', { ascending: false })
+      .order('id', { ascending: false }) // 보조 정렬: 일관된 순서 보장
       .range(cursor, cursor + limit)
 
     // 폴더 필터
