@@ -3682,7 +3682,31 @@ export default function DrivePage() {
           <div className="sm:card">
             {/* 테이블 헤더 - 데스크톱만 */}
             <div className="hidden sm:grid grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] gap-4 px-4 py-2.5 text-xs font-medium uppercase tracking-wide" style={{ background: 'var(--background-secondary)', color: 'var(--foreground-muted)', borderBottom: '1px solid var(--border-default)' }}>
-              <div className="w-5" />
+              <button
+                onClick={() => {
+                  const allPhotoIds = sortedPhotos.map(p => p.id)
+                  const allFolderIds = sortedFolders.map(f => f.id)
+                  const allSelected = allPhotoIds.every(id => selectedIds.has(id)) && allFolderIds.every(id => selectedFolderIds.has(id))
+                  if (allSelected) {
+                    setSelectedIds(new Set())
+                    setSelectedFolderIds(new Set())
+                  } else {
+                    setSelectedIds(new Set(allPhotoIds))
+                    setSelectedFolderIds(new Set(allFolderIds))
+                  }
+                }}
+                className="w-5 h-5 rounded border-2 flex items-center justify-center transition-all hover:border-[var(--accent-primary)]"
+                style={{
+                  borderColor: (sortedPhotos.length > 0 || sortedFolders.length > 0) && sortedPhotos.every(p => selectedIds.has(p.id)) && sortedFolders.every(f => selectedFolderIds.has(f.id)) ? 'var(--accent-primary)' : 'var(--border-default)',
+                  background: (sortedPhotos.length > 0 || sortedFolders.length > 0) && sortedPhotos.every(p => selectedIds.has(p.id)) && sortedFolders.every(f => selectedFolderIds.has(f.id)) ? 'var(--accent-primary)' : 'transparent',
+                }}
+              >
+                {(sortedPhotos.length > 0 || sortedFolders.length > 0) && sortedPhotos.every(p => selectedIds.has(p.id)) && sortedFolders.every(f => selectedFolderIds.has(f.id)) && (
+                  <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
               <button
                 onClick={() => {
                   if (sortBy === 'name') {

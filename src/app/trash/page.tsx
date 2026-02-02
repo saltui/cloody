@@ -362,17 +362,17 @@ export default function TrashPage() {
         {/* Content */}
         <main className="p-3 sm:p-4">
           {isEmpty ? (
-            <div className="flex flex-col items-center justify-center py-16 sm:py-20">
-              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center mb-4" style={{ background: 'var(--glass-bg)' }}>
+            <div className="flex flex-col items-center justify-center h-[60vh]">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl flex items-center justify-center mb-4 sm:mb-6" style={{ background: 'var(--background-secondary)' }}>
                 <svg className="w-10 h-10 sm:w-12 sm:h-12" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
               </div>
-              <p className="text-base sm:text-lg font-medium" style={{ color: 'var(--foreground)' }}>
-                휴지통이 비어 있습니다
+              <p className="text-base sm:text-lg font-medium mb-1" style={{ color: 'var(--foreground)' }}>
+                휴지통이 비어있어요
               </p>
-              <p className="text-xs sm:text-sm mt-1 text-center px-4" style={{ color: 'var(--foreground-muted)' }}>
-                삭제된 파일은 30일 후 자동으로 영구 삭제됩니다
+              <p className="text-xs sm:text-sm text-center px-4" style={{ color: 'var(--foreground-muted)' }}>
+                삭제된 파일은 30일 후 자동으로 영구 삭제돼요
               </p>
             </div>
           ) : (
