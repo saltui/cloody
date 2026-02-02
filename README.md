@@ -70,10 +70,8 @@ Cloody는 기업의 정보보호관리체계(ISMS) 요건을 충족하고 전자
 ## 🏁 시작하기 (Getting Started)
 
 ### 사전 준비사항
+- Docker (Desktop 또는 Engine)
 - Node.js 18+
-- Supabase 프로젝트
-- Cloudflare R2 버킷
-- WalletConnect Project ID
 
 ### 설치 및 실행
 
