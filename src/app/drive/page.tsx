@@ -3523,7 +3523,7 @@ export default function DrivePage() {
                 {currentCategory === 'all' && sortedFolders.length > 0 && !isSearchMode && (
                   <h2 className="text-xs sm:text-sm font-medium mb-3 sm:mb-4 uppercase tracking-wide" style={{ color: 'var(--foreground-muted)' }}>파일</h2>
                 )}
-                <div className="image-grid view-grid">
+                <div className={`image-grid ${currentCategory === 'documents' ? 'view-large' : 'view-grid'}`}>
                   {sortedPhotos.map((photo, index) => (
                     <div
                       key={photo.id}
@@ -3559,10 +3559,25 @@ export default function DrivePage() {
                           decoding="async"
                         />
                       ) : (
-                        <FileThumbnail
-                          filename={photo.name}
-                          className={`transition-transform duration-300 ${selectedIds.has(photo.id) ? 'scale-90' : ''}`}
-                        />
+                        <div className="w-full h-full flex flex-col items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
+                          <FileThumbnail
+                            filename={photo.name}
+                            className={`transition-transform duration-300 !bg-transparent ${selectedIds.has(photo.id) ? 'scale-90' : ''}`}
+                          />
+                          {/* 문서 카테고리거나 전체 보기일 때 파일명/용량 표시 (사진/동영상 탭 제외) */}
+                          {currentCategory !== 'photos' && currentCategory !== 'videos' && (
+                            <div className="absolute bottom-0 left-0 right-0 p-2 text-center" style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.6))' }}>
+                              <p className="text-xs text-white truncate font-medium">{photo.name}</p>
+                              {photo.file_size && (
+                                <p className="text-[10px] text-white/70">
+                                  {photo.file_size < 1024 ? `${photo.file_size} B` :
+                                   photo.file_size < 1024 * 1024 ? `${(photo.file_size / 1024).toFixed(1)} KB` :
+                                   `${(photo.file_size / (1024 * 1024)).toFixed(1)} MB`}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       )}
 
                       {/* 선택 체크박스 */}

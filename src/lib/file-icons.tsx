@@ -117,7 +117,7 @@ const typeLabels: Record<FileTypeCategory, string | null> = {
   excel: 'XLS',
   powerpoint: 'PPT',
   archive: 'ZIP',
-  code: null,
+  code: '</>',
   text: 'TXT',
   figma: 'FIG',
   sketch: null,
