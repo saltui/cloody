@@ -76,10 +76,10 @@ function validateToken(token: string | undefined, currentIp: string): TokenValid
     if (typeof payload.expiresAt !== 'number') return { valid: false, reason: 'invalid' }
     if (Date.now() > payload.expiresAt) return { valid: false, reason: 'expired' }
 
-    // IP 바인딩 확인
-    if (payload.ip && payload.ip !== currentIp) {
-      return { valid: false, reason: 'ip_mismatch' }
-    }
+    // IP 바인딩 확인 - 비활성화 (모바일 네트워크에서 IP 변경이 잦음)
+    // if (payload.ip && payload.ip !== currentIp) {
+    //   return { valid: false, reason: 'ip_mismatch' }
+    // }
 
     // 세션 타임아웃 확인
     if (payload.lastActivity) {
