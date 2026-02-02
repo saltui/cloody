@@ -377,7 +377,7 @@ export default function SettingsPage() {
                   onMouseEnter={(e) => {
                     if (activeTab !== tab.id) {
                       e.currentTarget.style.background = 'rgba(0, 0, 0, 0.05)'
-                      e.currentTarget.style.color = 'var(--foreground)'
+                      e.currentTarget.style.color = '#1a1a1a'
                     }
                   }}
                   onMouseLeave={(e) => {
