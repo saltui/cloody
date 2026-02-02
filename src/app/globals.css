@@ -1473,23 +1473,3 @@ body {
   animation: fadeInImage 0.2s ease-out forwards;
 }
 
-/* ===== Settings Tab Hover ===== */
-button.settings-tab-item:not(.active) > span {
-  color: #6b7280 !important;
-  transition: color 0.2s ease;
-}
-button.settings-tab-item:not(.active):hover {
-  background: rgba(0, 0, 0, 0.05) !important;
-}
-button.settings-tab-item:not(.active):hover > span {
-  color: #111827 !important;
-}
-html.dark button.settings-tab-item:not(.active) > span {
-  color: #9ca3af !important;
-}
-html.dark button.settings-tab-item:not(.active):hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-}
-html.dark button.settings-tab-item:not(.active):hover > span {
-  color: #f3f4f6 !important;
-}
