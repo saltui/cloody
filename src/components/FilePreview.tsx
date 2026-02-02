@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { FileText, Download, Loader2 } from 'lucide-react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -142,15 +142,22 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
   const [numPages, setNumPages] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
-  const [containerWidth, setContainerWidth] = useState<number>(0)
-  const containerRef = useCallback((node: HTMLDivElement | null) => {
-    if (node) {
-      setContainerWidth(node.clientWidth - 32) // padding 제외
-      const observer = new ResizeObserver((entries) => {
-        setContainerWidth(entries[0].contentRect.width - 32)
-      })
-      observer.observe(node)
+  const [containerWidth, setContainerWidth] = useState<number>(800)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const node = containerRef.current
+    if (!node) return
+
+    const updateWidth = () => {
+      const width = node.clientWidth - 32
+      if (width > 0) setContainerWidth(width)
     }
+    updateWidth()
+
+    const observer = new ResizeObserver(updateWidth)
+    observer.observe(node)
+    return () => observer.disconnect()
   }, [])
 
   const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
