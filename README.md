@@ -39,7 +39,7 @@ Cloody는 기업의 정보보호관리체계(ISMS) 요건을 충족하고 전자
 - **Time-Locked**: 유효 기간 설정으로 권한의 한시적 부여
 
 ### 4. 고가용성 스토리지 및 미디어 처리
-- **Resiliency**: 로컬 개발 환경에서는 **Docker (MinIO)**를 사용하여 S3 호환 스토리지를 에뮬레이션합니다. (프로덕션은 Cloudflare R2 권장)
+- **Resiliency**: 로컬 개발 환경에서는 **Docker**를 사용하여 S3 호환 스토리지를 제공합니다. (프로덕션은 Cloudflare R2 권장)
 - **Soft Delete**: 휴지통 기능을 통해 실수로 삭제된 데이터의 복원 가능 (30일 보관)
 - **Video Transcoding**: 업로드된 영상을 HLS로 자동 변환하여 다양한 네트워크 환경에서 스트리밍 최적화
 
@@ -55,8 +55,9 @@ Cloody는 기업의 정보보호관리체계(ISMS) 요건을 충족하고 전자
 - **Auth**: SimpleWebAuthn (Passkeys)
 
 ### Backend & Infrastructure
-- **Database**: Supabase (PostgreSQL)
-- **Storage**: Docker MinIO (Local) / Cloudflare R2 (Production)
+### Backend & Infrastructure
+- **Database**: PostgreSQL (via Local Docker)
+- **Storage**: Local Storage (S3-compatible via Docker) / Cloudflare R2 (Production)
 - **API**: Next.js API Routes (Serverless)
 - **Media**: FFmpeg (HLS Transcoding)
 
