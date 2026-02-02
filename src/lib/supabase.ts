@@ -19,10 +19,5 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       'Content-Type': 'application/json',
     },
   },
-  // 로컬 환경에서 REST 경로 오버라이드
-  ...(isLocal && {
-    realtime: {
-      enabled: false,
-    },
-  }),
+
 })
