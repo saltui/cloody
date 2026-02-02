@@ -366,7 +366,7 @@ export default function SettingsPage() {
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
                     className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl whitespace-nowrap text-sm sm:text-base ${
-                      isActive ? '' : 'hover:bg-black/5 dark:hover:bg-neutral-800'
+                      isActive ? '' : 'hover:bg-black/5 dark:hover:bg-[#111111]'
                     }`}
                     style={{
                       background: isActive ? 'var(--accent-gradient)' : undefined,
