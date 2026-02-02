@@ -143,7 +143,9 @@ export function UploadProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const clearCompleted = useCallback(() => {
-    setUploadQueue(prev => prev.filter(item => item.status !== 'done'))
+    setUploadQueue(prev => prev.filter(item =>
+      item.status !== 'done' && item.status !== 'error' && item.status !== 'cancelled'
+    ))
   }, [])
 
   const clearAll = useCallback(() => {
