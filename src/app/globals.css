@@ -1473,3 +1473,11 @@ body {
   animation: fadeInImage 0.2s ease-out forwards;
 }
 
+
+/* ===== Settings/Drive Hover Button ===== */
+.settings-hover-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+html.dark .settings-hover-btn:hover {
+  background: #111111;
+}
