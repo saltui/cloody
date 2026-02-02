@@ -1472,3 +1472,11 @@ body {
 .animate-slide-in-right {
   animation: fadeInImage 0.2s ease-out forwards;
 }
+
+/* ===== Settings Tab Hover ===== */
+.settings-tab-item:not(.active):hover {
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+.settings-tab-item:not(.active):hover span {
+  color: #1a1a1a !important;
+}

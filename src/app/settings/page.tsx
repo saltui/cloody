@@ -365,32 +365,17 @@ export default function SettingsPage() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`settings-tab-item flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl whitespace-nowrap transition-all duration-200 text-sm sm:text-base ${
                     activeTab === tab.id
-                      ? 'text-white hover:brightness-90'
+                      ? 'active text-white'
                       : ''
                   }`}
                   style={activeTab === tab.id ? {
                     background: 'var(--accent-gradient)',
                   } : {
                     color: 'var(--foreground-secondary)',
-                    ['--hover-bg' as string]: 'var(--background-tertiary)',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (activeTab !== tab.id) {
-                      e.currentTarget.style.background = 'rgba(0, 0, 0, 0.05)'
-                      const spans = e.currentTarget.querySelectorAll('span')
-                      spans.forEach(span => (span as HTMLElement).style.color = '#1a1a1a')
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (activeTab !== tab.id) {
-                      e.currentTarget.style.background = 'transparent'
-                      const spans = e.currentTarget.querySelectorAll('span')
-                      spans.forEach(span => (span as HTMLElement).style.color = '')
-                    }
                   }}
                 >
-                  <span className="transition-transform duration-200" style={{ color: 'inherit' }}>{tab.icon}</span>
-                  <span className="font-medium" style={{ color: 'inherit' }}>{tab.label}</span>
+                  <span>{tab.icon}</span>
+                  <span className="font-medium">{tab.label}</span>
                 </button>
               ))}
             </div>
