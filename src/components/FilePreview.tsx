@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
 import { FileText, Download, Loader2 } from 'lucide-react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import 'react-pdf/dist/Page/AnnotationLayer.css'
@@ -142,16 +142,15 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
   const [numPages, setNumPages] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
-  const [containerWidth, setContainerWidth] = useState<number>(800)
+  const [containerWidth, setContainerWidth] = useState<number>(0)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const node = containerRef.current
     if (!node) return
 
     const updateWidth = () => {
-      const width = node.clientWidth
-      if (width > 0) setContainerWidth(width)
+      setContainerWidth(node.clientWidth)
     }
     updateWidth()
 
@@ -224,16 +223,15 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
           onLoadSuccess={onDocumentLoadSuccess}
           onLoadError={onDocumentLoadError}
           loading=""
-          className="flex flex-col items-center gap-4"
+          className="w-full"
         >
           {Array.from(new Array(numPages), (_, index) => (
             <Page
               key={`page_${index + 1}`}
               pageNumber={index + 1}
-              width={containerWidth || undefined}
+              width={containerWidth > 0 ? containerWidth : undefined}
               renderTextLayer={true}
               renderAnnotationLayer={true}
-              className="shadow-lg"
             />
           ))}
         </Document>
