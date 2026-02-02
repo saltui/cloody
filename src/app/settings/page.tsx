@@ -377,18 +377,20 @@ export default function SettingsPage() {
                   onMouseEnter={(e) => {
                     if (activeTab !== tab.id) {
                       e.currentTarget.style.background = 'rgba(0, 0, 0, 0.05)'
-                      e.currentTarget.style.color = '#1a1a1a'
+                      const spans = e.currentTarget.querySelectorAll('span')
+                      spans.forEach(span => (span as HTMLElement).style.color = '#1a1a1a')
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (activeTab !== tab.id) {
                       e.currentTarget.style.background = 'transparent'
-                      e.currentTarget.style.color = 'var(--foreground-secondary)'
+                      const spans = e.currentTarget.querySelectorAll('span')
+                      spans.forEach(span => (span as HTMLElement).style.color = '')
                     }
                   }}
                 >
-                  <span className="transition-transform duration-200">{tab.icon}</span>
-                  <span className="font-medium">{tab.label}</span>
+                  <span className="transition-transform duration-200" style={{ color: 'inherit' }}>{tab.icon}</span>
+                  <span className="font-medium" style={{ color: 'inherit' }}>{tab.label}</span>
                 </button>
               ))}
             </div>
