@@ -1,18 +1,23 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command, GetObjectCommand, HeadObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
-const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID!
+const R2_ENDPOINT = process.env.R2_ENDPOINT // MinIO or custom S3 endpoint
+const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID
 const R2_ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID!
 const R2_SECRET_ACCESS_KEY = process.env.R2_SECRET_ACCESS_KEY!
 const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME!
 
+// Support both Cloudflare R2 and MinIO/S3-compatible storage
+const endpoint = R2_ENDPOINT || `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`
+
 export const r2Client = new S3Client({
   region: 'auto',
-  endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  endpoint,
   credentials: {
     accessKeyId: R2_ACCESS_KEY_ID,
     secretAccessKey: R2_SECRET_ACCESS_KEY,
   },
+  forcePathStyle: !!R2_ENDPOINT, // Required for MinIO
 })
 
 export const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL!
