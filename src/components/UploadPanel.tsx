@@ -80,6 +80,12 @@ export default function UploadPanel() {
     return totalSize > 0 ? (uploadedSize / totalSize) * 100 : 0
   }, [uploadQueue])
 
+  const footerProgressPercent = useMemo(() => {
+    if (uploadProgress.total <= 0) return 0
+    const value = (uploadProgress.current / uploadProgress.total) * 100
+    return Math.max(0, Math.min(100, value))
+  }, [uploadProgress.current, uploadProgress.total])
+
   // 업로드 중이거나 큐에 항목이 있을 때만 표시
   if (!uploading && uploadQueue.length === 0) return null
 
@@ -298,40 +304,45 @@ export default function UploadPanel() {
       )}
 
       {/* 하단 상태 바 */}
-      <div className={`flex items-center gap-4 px-5 py-4 ${uploading ? 'bg-blue-500' : 'bg-emerald-500'} text-white`}>
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${uploading ? 'bg-blue-600' : 'bg-emerald-600'}`}>
-          {uploading ? (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
-          ) : (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
+      <div className={`relative overflow-hidden text-white ${uploading ? 'bg-blue-700' : 'bg-emerald-500'}`}>
+        {uploading && (
+          <div
+            className="absolute left-0 top-0 bottom-0 bg-blue-500 transition-all duration-300 ease-out"
+            style={{ width: `${footerProgressPercent}%` }}
+          />
+        )}
+        <div className="relative z-10 flex items-center gap-4 px-5 py-4">
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${uploading ? 'bg-blue-600/90' : 'bg-emerald-600'}`}>
+            {uploading ? (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium">
+              {uploading
+                ? `항목 ${uploadProgress.total}개 중 ${uploadProgress.current}개 업로드 중`
+                : '업로드 완료'
+              }
+            </p>
+            <p className="text-xs opacity-80">
+              {`업로드 ${uploadProgress.current}/${uploadProgress.total}개 완료`}
+            </p>
+          </div>
+          {!uploading && counts.done > 0 && (
+            <button
+              onClick={clearCompleted}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white/20 hover:bg-white/30 transition-colors"
+            >
+              지우기
+            </button>
           )}
         </div>
-        <div className="flex-1">
-          <p className="text-sm font-medium">
-            {uploading
-              ? `항목 ${uploadProgress.total}개 중 ${uploadProgress.current}개 업로드 중`
-              : '업로드 완료'
-            }
-          </p>
-          <p className="text-xs opacity-80">
-            {uploading
-              ? `업로드 ${uploadProgress.current}/${uploadProgress.total}개 완료`
-              : `업로드 ${uploadProgress.current}/${uploadProgress.total}개 완료`
-            }
-          </p>
-        </div>
-        {!uploading && counts.done > 0 && (
-          <button
-            onClick={clearCompleted}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white/20 hover:bg-white/30 transition-colors"
-          >
-            지우기
-          </button>
-        )}
       </div>
     </div>
   )
