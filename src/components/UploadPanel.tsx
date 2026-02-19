@@ -166,7 +166,7 @@ export default function UploadPanel() {
   }
 
   return (
-    <div className={`upload-panel fixed bottom-6 right-6 z-[9999] w-96 rounded-2xl shadow-2xl overflow-hidden hidden xl:block transition-all duration-300 ${isDark ? 'bg-zinc-900 border border-zinc-800' : 'bg-white border border-gray-200'}`}>
+    <div className={`upload-panel fixed bottom-6 right-6 z-[9999] w-[460px] max-w-[calc(100vw-2rem)] rounded-2xl shadow-2xl overflow-hidden hidden xl:block transition-all duration-300 ${isDark ? 'bg-zinc-900 border border-zinc-800' : 'bg-white border border-gray-200'}`}>
       {/* 헤더 */}
       <div className={`flex items-center justify-between px-5 py-4 ${isDark ? 'border-b border-zinc-800' : 'border-b border-gray-100'}`}>
         <h3 className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>업로드</h3>
@@ -201,7 +201,7 @@ export default function UploadPanel() {
       {showUploadPanel && (
         <>
           {/* 필터 탭 */}
-          <div className={`flex gap-2 px-5 py-3 ${isDark ? 'border-b border-zinc-800' : 'border-b border-gray-100'}`}>
+          <div className={`flex gap-2 px-5 py-3 overflow-x-auto no-scrollbar ${isDark ? 'border-b border-zinc-800' : 'border-b border-gray-100'}`}>
             {[
               { id: 'all' as FilterType, label: '모든 업로드' },
               { id: 'done' as FilterType, label: '완료됨' },
@@ -215,7 +215,7 @@ export default function UploadPanel() {
                   filter === tab.id
                     ? (isDark ? 'bg-zinc-700 text-white' : 'bg-gray-900 text-white')
                     : (isDark ? 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
-                }`}
+                } whitespace-nowrap shrink-0`}
               >
                 {tab.label}
                 {counts[tab.id] > 0 && ` (${counts[tab.id]})`}
