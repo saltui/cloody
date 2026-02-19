@@ -14,8 +14,9 @@ const UNLIMITED_STORAGE_EMAILS = new Set([
 // 일반 사용자 스토리지 제한 (1GB)
 const STORAGE_LIMIT = 1 * 1024 * 1024 * 1024
 
-// 최대 파일 크기 (500MB)
-const MAX_FILE_SIZE = 500 * 1024 * 1024
+// 최대 파일 크기 (4.5GB)
+// Cloudflare R2 단일 PUT 한계를 고려해 5GB보다 약간 낮게 제한
+const MAX_FILE_SIZE = Math.floor(4.5 * 1024 * 1024 * 1024)
 
 // 허용된 MIME 타입
 const ALLOWED_TYPES = new Set([
@@ -33,6 +34,10 @@ const ALLOWED_TYPES = new Set([
   'video/webm',
   'video/x-msvideo',
   'video/x-matroska',
+  'video/x-m4v',
+  'video/3gpp',
+  'video/3gpp2',
+  'video/mp2t',
   // 문서
   'application/pdf',
   'application/msword',
@@ -114,7 +119,7 @@ export async function POST(request: NextRequest) {
     // 파일 크기 검증
     if (fileSize > MAX_FILE_SIZE) {
       console.log('Presign rejected: file too large', { fileSize, max: MAX_FILE_SIZE })
-      return NextResponse.json({ error: '파일 크기는 500MB를 초과할 수 없습니다.' }, { status: 400 })
+      return NextResponse.json({ error: '파일 크기는 4.5GB를 초과할 수 없습니다.' }, { status: 400 })
     }
 
     // MIME 타입 검증

@@ -24,6 +24,9 @@ function truncateFileType(fileType: string | undefined): string | undefined {
 const MIN_UPLOAD_CONCURRENCY = 4
 const MAX_UPLOAD_CONCURRENCY = 16
 const DEBUG_UPLOAD_LOGS = process.env.NEXT_PUBLIC_DEBUG_UPLOAD_LOGS === '1'
+const MAX_SERVER_FALLBACK_SIZE = 4 * 1024 * 1024 // 4MB (Vercel 본문 제한 안전 구간)
+const ENABLE_SERVER_UPLOAD_FALLBACK = process.env.NODE_ENV !== 'production'
+  || process.env.NEXT_PUBLIC_ENABLE_SERVER_UPLOAD_FALLBACK === '1'
 
 function uploadDebugInfo(...args: unknown[]) {
   if (DEBUG_UPLOAD_LOGS) {
@@ -255,6 +258,8 @@ async function uploadViaServerApi(
           } catch {
             reject(new Error('Upload succeeded but response parsing failed'))
           }
+        } else if (xhr.status === 413) {
+          reject(new Error('요청 파일이 서버 업로드 제한을 초과했습니다. 직접 업로드를 다시 시도해주세요.'))
         } else {
           reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`))
         }
@@ -281,6 +286,9 @@ async function uploadViaServerApi(
   })
 
   if (!response.ok) {
+    if (response.status === 413) {
+      throw new Error('요청 파일이 서버 업로드 제한을 초과했습니다. 직접 업로드를 다시 시도해주세요.')
+    }
     const errorText = await response.text()
     throw new Error(`Server upload failed: ${response.status} ${errorText}`)
   }
@@ -299,6 +307,7 @@ async function uploadWithPresignedUrl(
   fileName: string,
   onProgress?: (percent: number, loaded: number, total: number) => void
 ): Promise<{ url: string }> {
+  let canFallbackToServer = ENABLE_SERVER_UPLOAD_FALLBACK && file.size <= MAX_SERVER_FALLBACK_SIZE
   try {
     // 확장자 기반으로 MIME 타입 결정 (브라우저가 HEIC/MOV 등을 인식하지 못할 때)
     const fileType = getMimeTypeFromExtension(file.name, file.type)
@@ -315,8 +324,18 @@ async function uploadWithPresignedUrl(
     })
 
     if (!presignRes.ok) {
-      const error = await presignRes.json()
-      throw new Error(error.error || 'Presign failed')
+      let message = 'Presign failed'
+      try {
+        const error = await presignRes.json() as { error?: string }
+        message = error.error || message
+      } catch {
+        // ignore json parsing error
+      }
+      // Presign이 비즈니스 규칙으로 거절된 경우(4xx)는 서버 업로드 폴백 대상이 아님
+      if (presignRes.status >= 400 && presignRes.status < 500) {
+        canFallbackToServer = false
+      }
+      throw new Error(message)
     }
 
     // 서버에서 반환한 contentType 사용 (presign과 upload가 동일한 타입 사용 보장)
@@ -384,8 +403,11 @@ async function uploadWithPresignedUrl(
 
     return { url: publicUrl }
   } catch (error) {
-    uploadDebugInfo('[R2Upload] Falling back to /api/upload:', error)
-    return uploadViaServerApi(file, fileName, onProgress)
+    if (canFallbackToServer) {
+      uploadDebugInfo('[R2Upload] Falling back to /api/upload:', error)
+      return uploadViaServerApi(file, fileName, onProgress)
+    }
+    throw error
   }
 }
 
