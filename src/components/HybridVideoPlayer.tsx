@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback, memo } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react'
 import type Hls from 'hls.js'
 
 interface HybridVideoPlayerProps {
@@ -9,19 +9,41 @@ interface HybridVideoPlayerProps {
   hlsStatus?: 'not_applicable' | 'pending' | 'processing' | 'ready' | 'failed'
   poster?: string
   className?: string
+  style?: React.CSSProperties
   autoPlay?: boolean
   controls?: boolean
   muted?: boolean
   loop?: boolean
   onEnded?: () => void
   onError?: () => void
+  onVideoReady?: (video: HTMLVideoElement | null) => void
+  onCanPlay?: () => void
 }
 
 type QualityLevel = {
+  index: number
   height: number
   width: number
   bitrate: number
   name: string
+}
+
+type QualityPreset = 'original' | 'high' | 'medium'
+
+function sortLevelIndices(levels: QualityLevel[]): number[] {
+  return [...levels]
+    .sort((a, b) => {
+      if (b.height !== a.height) return b.height - a.height
+      return b.bitrate - a.bitrate
+    })
+    .map(level => level.index)
+}
+
+function pickHlsLevel(levels: QualityLevel[], preset: Exclude<QualityPreset, 'original'>): number {
+  const sorted = sortLevelIndices(levels)
+  if (sorted.length === 0) return -1
+  if (preset === 'high') return sorted[0]
+  return sorted[Math.min(1, sorted.length - 1)]
 }
 
 export default memo(function HybridVideoPlayer({
@@ -30,38 +52,67 @@ export default memo(function HybridVideoPlayer({
   hlsStatus,
   poster,
   className = '',
+  style,
   autoPlay = false,
   controls = true,
   muted = false,
   loop = false,
   onEnded,
   onError,
+  onVideoReady,
+  onCanPlay,
 }: HybridVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<Hls | null>(null)
   const HlsClass = useRef<typeof Hls | null>(null)
   const [currentSource, setCurrentSource] = useState<'original' | 'hls'>('original')
   const [qualityLevels, setQualityLevels] = useState<QualityLevel[]>([])
-  const [currentQuality, setCurrentQuality] = useState<number>(-1) // -1 = auto
+  const [currentQuality, setCurrentQuality] = useState<number>(-1)
+  const [selectedQualityPreset, setSelectedQualityPreset] = useState<QualityPreset>(hlsSrc ? 'high' : 'original')
+  const [preferredSource, setPreferredSource] = useState<'original' | 'hls'>(hlsSrc ? 'hls' : 'original')
   const [showQualityMenu, setShowQualityMenu] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isMobileViewport, setIsMobileViewport] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const savedTimeRef = useRef<number>(0)
 
+  const sortedLevelIndices = useMemo(() => sortLevelIndices(qualityLevels), [qualityLevels])
+  const highLevelIndex = useMemo(() => sortedLevelIndices[0] ?? -1, [sortedLevelIndices])
+  const mediumLevelIndex = useMemo(() => sortedLevelIndices[Math.min(1, sortedLevelIndices.length - 1)] ?? -1, [sortedLevelIndices])
+
+  const resolveLevelIndex = useCallback((preset: Exclude<QualityPreset, 'original'>) => {
+    return preset === 'high' ? highLevelIndex : mediumLevelIndex
+  }, [highLevelIndex, mediumLevelIndex])
+
+  const applyHlsPreset = useCallback((preset: Exclude<QualityPreset, 'original'>) => {
+    if (!hlsRef.current) return
+    const levelIndex = resolveLevelIndex(preset)
+    if (levelIndex >= 0) {
+      hlsRef.current.currentLevel = levelIndex
+      setCurrentQuality(levelIndex)
+    }
+  }, [resolveLevelIndex])
+
   // HLS 초기화 (동적 import로 번들 사이즈 최적화)
-  const initHls = useCallback(async () => {
-    if (!videoRef.current || !hlsSrc) return
+  const initHls = useCallback(async (preset: Exclude<QualityPreset, 'original'> = 'high') => {
+    const video = videoRef.current
+    if (!video || !hlsSrc) return
 
-    // 이미 HLS 사용 중이면 무시
-    if (currentSource === 'hls') return
+    if (currentSource === 'hls' && hlsRef.current) {
+      applyHlsPreset(preset)
+      return
+    }
 
-    // 기존 HLS 인스턴스 정리
+    const resumeAt = video.currentTime || savedTimeRef.current
+    const wasPaused = video.paused
+    savedTimeRef.current = resumeAt
+
     if (hlsRef.current) {
       hlsRef.current.destroy()
       hlsRef.current = null
     }
 
-    // HLS.js 동적 로드
     if (!HlsClass.current) {
       try {
         const HlsModule = await import('hls.js')
@@ -84,10 +135,11 @@ export default memo(function HybridVideoPlayer({
       })
 
       hls.loadSource(hlsSrc)
-      hls.attachMedia(videoRef.current)
+      hls.attachMedia(video)
 
       hls.on(HlsLib.Events.MANIFEST_PARSED, (_event, data) => {
-        const levels = data.levels.map((level) => ({
+        const levels = data.levels.map((level, index) => ({
+          index,
           height: level.height,
           width: level.width,
           bitrate: level.bitrate,
@@ -95,17 +147,23 @@ export default memo(function HybridVideoPlayer({
         }))
         setQualityLevels(levels)
 
-        // 현재 재생 위치 저장하고 HLS로 전환
-        if (videoRef.current) {
-          savedTimeRef.current = videoRef.current.currentTime
-          setCurrentSource('hls')
-
-          // 재생 위치 복원
-          videoRef.current.currentTime = savedTimeRef.current
-          if (!videoRef.current.paused) {
-            videoRef.current.play()
-          }
+        const targetLevel = pickHlsLevel(levels, preset)
+        if (targetLevel >= 0) {
+          hls.currentLevel = targetLevel
+          setCurrentQuality(targetLevel)
+        } else {
+          setCurrentQuality(-1)
         }
+
+        setCurrentSource('hls')
+        setError(null)
+        requestAnimationFrame(() => {
+          if (!videoRef.current) return
+          videoRef.current.currentTime = resumeAt
+          if (!wasPaused) {
+            videoRef.current.play().catch(() => {})
+          }
+        })
       })
 
       hls.on(HlsLib.Events.LEVEL_SWITCHED, (_event, data) => {
@@ -114,48 +172,141 @@ export default memo(function HybridVideoPlayer({
 
       hls.on(HlsLib.Events.ERROR, (_event, data) => {
         console.error('HLS Error:', data)
-        if (data.fatal) {
-          // HLS 오류 시 원본으로 폴백
-          switch (data.type) {
-            case HlsLib.ErrorTypes.NETWORK_ERROR:
-              console.log('HLS network error, trying to recover...')
-              hls.startLoad()
-              break
-            case HlsLib.ErrorTypes.MEDIA_ERROR:
-              console.log('HLS media error, trying to recover...')
-              hls.recoverMediaError()
-              break
-            default:
-              console.log('HLS fatal error, falling back to original')
-              hls.destroy()
-              hlsRef.current = null
-              setCurrentSource('original')
-              if (videoRef.current) {
-                videoRef.current.src = src
-                videoRef.current.currentTime = savedTimeRef.current
-                videoRef.current.play()
-              }
-              break
-          }
+        if (!data.fatal) return
+
+        switch (data.type) {
+          case HlsLib.ErrorTypes.NETWORK_ERROR:
+            hls.startLoad()
+            return
+          case HlsLib.ErrorTypes.MEDIA_ERROR:
+            hls.recoverMediaError()
+            return
+          default:
+            hls.destroy()
+            hlsRef.current = null
+            setPreferredSource('original')
+            setSelectedQualityPreset('original')
+            setCurrentSource('original')
+            if (videoRef.current) {
+              videoRef.current.src = src
+              videoRef.current.currentTime = savedTimeRef.current
+              videoRef.current.play().catch(() => {})
+            }
+            return
         }
       })
 
       hlsRef.current = hls
-    } else if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari는 네이티브 HLS 지원
-      videoRef.current.src = hlsSrc
+      return
+    }
+
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = hlsSrc
       setCurrentSource('hls')
+      requestAnimationFrame(() => {
+        if (!videoRef.current) return
+        videoRef.current.currentTime = resumeAt
+        if (!wasPaused) {
+          videoRef.current.play().catch(() => {})
+        }
+      })
     }
-  }, [hlsSrc, src, currentSource])
+  }, [hlsSrc, src, currentSource, applyHlsPreset])
 
-  // HLS가 준비되면 전환
+  const switchToOriginal = useCallback(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    const resumeAt = video.currentTime || savedTimeRef.current
+    const wasPaused = video.paused
+    savedTimeRef.current = resumeAt
+
+    if (hlsRef.current) {
+      hlsRef.current.destroy()
+      hlsRef.current = null
+    }
+
+    setCurrentSource('original')
+    setCurrentQuality(-1)
+    requestAnimationFrame(() => {
+      if (!videoRef.current) return
+      videoRef.current.src = src
+      videoRef.current.currentTime = resumeAt
+      if (!wasPaused) {
+        videoRef.current.play().catch(() => {})
+      }
+    })
+  }, [src])
+
+  const handlePresetChange = useCallback(async (preset: QualityPreset) => {
+    setShowQualityMenu(false)
+
+    if (preset === 'original') {
+      setSelectedQualityPreset('original')
+      setPreferredSource('original')
+      switchToOriginal()
+      return
+    }
+
+    setSelectedQualityPreset(preset)
+    setPreferredSource('hls')
+
+    if (!hlsSrc || hlsStatus !== 'ready') return
+
+    if (currentSource === 'hls' && hlsRef.current) {
+      applyHlsPreset(preset)
+      return
+    }
+
+    await initHls(preset)
+  }, [hlsSrc, hlsStatus, currentSource, applyHlsPreset, initHls, switchToOriginal])
+
   useEffect(() => {
-    if (hlsStatus === 'ready' && hlsSrc) {
-      initHls()
+    if (hlsStatus === 'ready' && hlsSrc && preferredSource === 'hls') {
+      void initHls(selectedQualityPreset === 'medium' ? 'medium' : 'high')
     }
-  }, [hlsStatus, hlsSrc, initHls])
+  }, [hlsStatus, hlsSrc, preferredSource, selectedQualityPreset, initHls])
 
-  // 컴포넌트 정리
+  useEffect(() => {
+    if (!hlsSrc) {
+      setPreferredSource('original')
+      setSelectedQualityPreset('original')
+      setCurrentSource('original')
+    }
+  }, [hlsSrc])
+
+  useEffect(() => {
+    if (!onVideoReady) return
+    onVideoReady(videoRef.current)
+    return () => onVideoReady(null)
+  }, [onVideoReady])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const media = window.matchMedia('(max-width: 768px)')
+    const handleMediaChange = () => setIsMobileViewport(media.matches)
+    handleMediaChange()
+    media.addEventListener('change', handleMediaChange)
+    return () => media.removeEventListener('change', handleMediaChange)
+  }, [])
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement))
+      const orientation = (screen as Screen & { orientation?: { unlock?: () => void } }).orientation
+      if (!document.fullscreenElement && orientation?.unlock) {
+        try {
+          orientation.unlock()
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
+  }, [])
+
   useEffect(() => {
     return () => {
       if (hlsRef.current) {
@@ -165,24 +316,6 @@ export default memo(function HybridVideoPlayer({
     }
   }, [])
 
-  // 화질 변경
-  const handleQualityChange = (level: number) => {
-    if (hlsRef.current) {
-      hlsRef.current.currentLevel = level
-      setCurrentQuality(level)
-    }
-    setShowQualityMenu(false)
-  }
-
-  // 자동 화질
-  const handleAutoQuality = () => {
-    if (hlsRef.current) {
-      hlsRef.current.currentLevel = -1
-      setCurrentQuality(-1)
-    }
-    setShowQualityMenu(false)
-  }
-
   const handleLoadStart = () => {
     setIsLoading(true)
     setError(null) // 새 로드 시작시 에러 초기화
@@ -191,11 +324,13 @@ export default memo(function HybridVideoPlayer({
   const handleCanPlay = () => {
     setIsLoading(false)
     setError(null)
+    onCanPlay?.()
   }
 
   const handlePlaying = () => {
     setIsLoading(false)
     setError(null)
+    onCanPlay?.()
   }
 
   const handleError = (e: React.SyntheticEvent<HTMLVideoElement>) => {
@@ -211,10 +346,37 @@ export default memo(function HybridVideoPlayer({
   }
 
   const getQualityLabel = () => {
-    if (currentSource === 'original') return '원본'
-    if (currentQuality === -1) return '자동'
-    return qualityLevels[currentQuality]?.name || '자동'
+    if (selectedQualityPreset === 'original' || currentSource === 'original') return '원본'
+    if (selectedQualityPreset === 'high') return '고화질'
+    return '중간화질'
   }
+
+  const hasHlsReady = Boolean(hlsSrc && hlsStatus === 'ready')
+
+  const handleToggleMobileFullscreen = useCallback(async () => {
+    const video = videoRef.current
+    if (!video) return
+
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => {})
+      return
+    }
+
+    const webkitVideo = video as HTMLVideoElement & { webkitEnterFullscreen?: () => void }
+
+    if (video.requestFullscreen) {
+      await video.requestFullscreen().catch(() => {})
+      const orientation = (screen as Screen & { orientation?: { lock?: (orientation: string) => Promise<void> } }).orientation
+      if (orientation?.lock) {
+        await orientation.lock('landscape').catch(() => {})
+      }
+      return
+    }
+
+    if (webkitVideo.webkitEnterFullscreen) {
+      webkitVideo.webkitEnterFullscreen()
+    }
+  }, [])
 
   return (
     <div className="relative inline-block">
@@ -228,7 +390,7 @@ export default memo(function HybridVideoPlayer({
         loop={loop}
         playsInline
         className={`${className}`}
-        style={{ objectFit: 'contain' }}
+        style={{ objectFit: 'contain', ...style }}
         onLoadStart={handleLoadStart}
         onCanPlay={handleCanPlay}
         onPlaying={handlePlaying}
@@ -255,9 +417,9 @@ export default memo(function HybridVideoPlayer({
         </div>
       )}
 
-      {/* 화질 선택 버튼 (HLS 사용 중일 때만) */}
-      {currentSource === 'hls' && qualityLevels.length > 0 && !controls && (
-        <div className="absolute bottom-4 right-4">
+      {/* 화질 선택 버튼 */}
+      {hlsSrc && (
+        <div className="absolute top-4 right-4 z-20" data-quality-menu-root onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setShowQualityMenu(!showQualityMenu)}
             className="px-3 py-1.5 bg-black/70 text-white text-sm rounded-lg hover:bg-black/80 transition-colors"
@@ -266,25 +428,53 @@ export default memo(function HybridVideoPlayer({
           </button>
 
           {showQualityMenu && (
-            <div className="absolute bottom-full right-0 mb-2 bg-black/90 rounded-lg overflow-hidden">
+            <div className="absolute top-full right-0 mt-2 bg-black/90 rounded-lg overflow-hidden min-w-[110px]">
               <button
-                onClick={handleAutoQuality}
-                className={`block w-full px-4 py-2 text-sm text-left hover:bg-white/10 ${currentQuality === -1 ? 'text-blue-400' : 'text-white'}`}
+                onClick={() => handlePresetChange('original')}
+                className={`block w-full px-4 py-2 text-sm text-left hover:bg-white/10 ${selectedQualityPreset === 'original' ? 'text-blue-400' : 'text-white'}`}
               >
-                자동
+                원본
               </button>
-              {qualityLevels.map((level, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleQualityChange(index)}
-                  className={`block w-full px-4 py-2 text-sm text-left hover:bg-white/10 ${currentQuality === index ? 'text-blue-400' : 'text-white'}`}
-                >
-                  {level.name}
-                </button>
-              ))}
+              <button
+                onClick={() => handlePresetChange('high')}
+                disabled={!hasHlsReady || highLevelIndex < 0}
+                className={`block w-full px-4 py-2 text-sm text-left hover:bg-white/10 disabled:text-white/40 disabled:cursor-not-allowed ${selectedQualityPreset === 'high' ? 'text-blue-400' : 'text-white'}`}
+              >
+                고화질
+              </button>
+              <button
+                onClick={() => handlePresetChange('medium')}
+                disabled={!hasHlsReady || mediumLevelIndex < 0}
+                className={`block w-full px-4 py-2 text-sm text-left hover:bg-white/10 disabled:text-white/40 disabled:cursor-not-allowed ${selectedQualityPreset === 'medium' ? 'text-blue-400' : 'text-white'}`}
+              >
+                중간화질
+              </button>
             </div>
           )}
         </div>
+      )}
+
+      {/* 모바일 전체화면/가로 전환 버튼 */}
+      {isMobileViewport && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            void handleToggleMobileFullscreen()
+          }}
+          className="absolute top-4 left-4 z-20 w-9 h-9 rounded-lg bg-black/70 text-white flex items-center justify-center hover:bg-black/80 transition-colors"
+          title={isFullscreen ? '전체화면 종료' : '가로 전체화면'}
+        >
+          {isFullscreen ? (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9H5V5m10 0h4v4m0 10v-4h-4M5 15v4h4" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4h4M20 8V4h-4M4 16v4h4m12-4v4h-4" />
+            </svg>
+          )}
+        </button>
       )}
 
       {/* HLS 상태 배지 */}
@@ -304,8 +494,8 @@ export default memo(function HybridVideoPlayer({
 
       {/* 소스 표시 (디버그용, 필요시 제거) */}
       {process.env.NODE_ENV === 'development' && (
-        <div className="absolute top-2 right-2 px-2 py-1 bg-black/70 text-white text-xs rounded">
-          {currentSource === 'hls' ? 'HLS' : '원본'}
+        <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/70 text-white text-xs rounded">
+          {currentSource === 'hls' ? `HLS ${currentQuality >= 0 ? currentQuality : ''}`.trim() : '원본'}
         </div>
       )}
     </div>

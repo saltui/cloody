@@ -7,6 +7,7 @@ import { useUser } from '@/lib/user-context'
 import { useDataCache } from '@/lib/data-cache'
 import { useToast } from '@/components/Toast'
 import { getFileCategory, TextPreview, PDFPreview, OfficePreview, AudioPreview, UnknownFilePreview } from '@/components/FilePreview'
+import HybridVideoPlayer from '@/components/HybridVideoPlayer'
 
 // R2 URL을 프록시 URL로 즉시 변환
 function toProxyUrl(url: string): string {
@@ -63,6 +64,7 @@ export default function ViewerPage() {
   const { user } = useUser()
   const { showToast } = useToast()
   const dataCache = useDataCache()
+  const activeVideoRef = useRef<HTMLVideoElement | null>(null)
 
   useEffect(() => {
     const fetchPhotos = async () => {
@@ -205,12 +207,55 @@ export default function ViewerPage() {
     router.back()
   }, [router])
 
+  const currentMedia = photos[currentIndex]
+  const currentMediaCategory = currentMedia ? getFileCategory(currentMedia.name) : 'unknown'
+  const isCurrentVideo = Boolean(currentMedia && (currentMedia.is_video || currentMediaCategory === 'video'))
+
+  useEffect(() => {
+    if (!isCurrentVideo) {
+      activeVideoRef.current = null
+    }
+  }, [isCurrentVideo, currentIndex])
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === ' ') {
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) {
+        return
+      }
+
+      if (isCurrentVideo && activeVideoRef.current) {
+        const video = activeVideoRef.current
+
+        if (e.code === 'Space') {
+          e.preventDefault()
+          if (video.paused) {
+            video.play().catch(() => {})
+          } else {
+            video.pause()
+          }
+          return
+        }
+
+        if (e.key === 'ArrowRight') {
+          e.preventDefault()
+          const duration = Number.isFinite(video.duration) ? video.duration : Number.POSITIVE_INFINITY
+          video.currentTime = Math.min(duration, video.currentTime + 5)
+          return
+        }
+
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault()
+          video.currentTime = Math.max(0, video.currentTime - 5)
+          return
+        }
+      }
+
+      if (e.key === 'ArrowRight' || e.code === 'Space') {
         e.preventDefault()
         goNext()
       } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
         goPrev()
       } else if (e.key === 'Escape') {
         goBack()
@@ -219,7 +264,7 @@ export default function ViewerPage() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [goNext, goPrev, goBack])
+  }, [goNext, goPrev, goBack, isCurrentVideo])
 
   // 터치/스와이프/줌 상태
   const [isAnimating, setIsAnimating] = useState(false)
@@ -643,16 +688,20 @@ export default function ViewerPage() {
 
             if (isVideo) {
               return (
-                <video
+                <HybridVideoPlayer
                   key={currentPhoto.url}
                   src={currentSignedUrl}
+                  hlsSrc={currentPhoto.hls_url ? toProxyUrl(currentPhoto.hls_url) : null}
+                  hlsStatus={currentPhoto.hls_status || 'not_applicable'}
                   controls
                   autoPlay
-                  playsInline
                   className="max-w-full object-contain"
                   style={maxHeightStyle}
-                  onLoadedData={() => setImageLoading(false)}
                   onCanPlay={() => setImageLoading(false)}
+                  onVideoReady={(video) => {
+                    activeVideoRef.current = video
+                  }}
+                  onError={() => setImageLoading(false)}
                 />
               )
             }

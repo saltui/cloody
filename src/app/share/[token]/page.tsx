@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { FileThumbnail, isMediaFile, getFileTypeLabel } from '@/lib/file-icons'
 import { useToast } from '@/components/Toast'
+import HybridVideoPlayer from '@/components/HybridVideoPlayer'
 
 interface SharedPhoto {
   id: string
@@ -188,10 +189,11 @@ export default function SharePage() {
           <div className="tds-card overflow-hidden">
             {isMedia ? (
               isVideo ? (
-                <video
+                <HybridVideoPlayer
                   src={imageUrl}
+                  hlsSrc={photo.hls_url ? toProxyUrl(photo.hls_url) : null}
+                  hlsStatus={photo.hls_status || 'not_applicable'}
                   controls
-                  playsInline
                   className="w-full max-h-[70vh] sm:max-h-[75vh] object-contain"
                 />
               ) : (
