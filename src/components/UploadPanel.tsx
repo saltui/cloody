@@ -239,10 +239,18 @@ export default function UploadPanel() {
   }, [uploadQueue])
 
   const footerProgressPercent = useMemo(() => {
-    if (uploadProgress.total <= 0) return 0
-    const value = (uploadProgress.current / uploadProgress.total) * 100
+    const activeItems = uploadQueue.filter(item => item.status !== 'cancelled')
+    if (activeItems.length === 0) return 0
+
+    const totalProgress = activeItems.reduce((sum, item) => {
+      if (item.status === 'done' || item.status === 'error') return sum + 100
+      if (item.status === 'uploading') return sum + Math.max(0, Math.min(100, item.progress || 0))
+      return sum
+    }, 0)
+
+    const value = totalProgress / activeItems.length
     return Math.max(0, Math.min(100, value))
-  }, [uploadProgress.current, uploadProgress.total])
+  }, [uploadQueue])
 
   // 링크 복사
   const copyLink = useCallback(async (url?: string) => {
