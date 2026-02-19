@@ -54,12 +54,16 @@ export default function SettingsPage() {
 
   useEffect(() => {
     // 스토리지 사용량 가져오기
-    fetch('/api/storage?refresh=1', {
+    fetch(`/api/storage?refresh=1&ts=${Date.now()}`, {
       cache: 'no-store',
+      credentials: 'include',
       headers: user?.id ? { 'x-user-id': user.id } : undefined,
     })
       .then(res => res.json())
-      .then(data => setStorageUsed(data.usage || 0))
+      .then(data => {
+        const parsedUsage = Number(data?.usage ?? 0)
+        setStorageUsed(Number.isFinite(parsedUsage) ? parsedUsage : 0)
+      })
       .catch(() => {})
 
     // 2FA 상태 가져오기

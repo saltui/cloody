@@ -67,7 +67,10 @@ export async function GET(request: NextRequest) {
     }
     if (error) throw error
 
-    const totalUsage = (data || []).reduce((sum, photo) => sum + (photo.file_size || 0), 0)
+    const totalUsage = (data || []).reduce((sum, photo) => {
+      const fileSize = Number((photo as { file_size?: number | string | null }).file_size ?? 0)
+      return sum + (Number.isFinite(fileSize) ? fileSize : 0)
+    }, 0)
 
     // 캐시 저장
     cache.set(userId, { usage: totalUsage, timestamp: Date.now() })

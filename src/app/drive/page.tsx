@@ -1115,7 +1115,8 @@ export default function DrivePage() {
         return
       }
       const { usage } = await res.json()
-      setStorageUsed(usage)
+      const parsedUsage = Number(usage ?? 0)
+      setStorageUsed(Number.isFinite(parsedUsage) ? parsedUsage : 0)
     } catch (err) {
       console.error('Failed to fetch storage usage:', err)
     }

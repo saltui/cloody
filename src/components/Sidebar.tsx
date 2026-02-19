@@ -20,11 +20,12 @@ const categories = [
 ]
 
 const formatBytes = (bytes: number) => {
-  if (bytes === 0) return '0 B'
+  const value = Number(bytes)
+  if (!Number.isFinite(value) || value <= 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  const i = Math.floor(Math.log(value) / Math.log(k))
+  return parseFloat((value / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 export default function Sidebar({ isOpen, onClose, storageUsed = 0 }: SidebarProps) {

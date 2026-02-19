@@ -96,7 +96,9 @@ export default function TrashPage() {
         setStorageUsed(0)
         return
       }
-      const endpoint = forceRefresh ? '/api/storage?refresh=1' : '/api/storage'
+      const endpoint = forceRefresh
+        ? `/api/storage?refresh=1&ts=${Date.now()}`
+        : '/api/storage'
       const res = await fetch(endpoint, {
         credentials: 'include',
         cache: forceRefresh ? 'no-store' : 'default',
@@ -104,11 +106,12 @@ export default function TrashPage() {
       })
       if (!res.ok) return
       const { usage } = await res.json()
-      setStorageUsed(usage)
+      const parsedUsage = Number(usage ?? 0)
+      setStorageUsed(Number.isFinite(parsedUsage) ? parsedUsage : 0)
     } catch (err) {
       console.error('Failed to fetch storage usage:', err)
     }
-  }, [])
+  }, [user?.id])
 
   useEffect(() => {
     if (!userLoading && !user) {
