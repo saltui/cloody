@@ -23,6 +23,19 @@ function truncateFileType(fileType: string | undefined): string | undefined {
 
 const MIN_UPLOAD_CONCURRENCY = 4
 const MAX_UPLOAD_CONCURRENCY = 16
+const DEBUG_UPLOAD_LOGS = process.env.NEXT_PUBLIC_DEBUG_UPLOAD_LOGS === '1'
+
+function uploadDebugInfo(...args: unknown[]) {
+  if (DEBUG_UPLOAD_LOGS) {
+    console.info(...args)
+  }
+}
+
+function uploadDebugLog(...args: unknown[]) {
+  if (DEBUG_UPLOAD_LOGS) {
+    console.log(...args)
+  }
+}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -329,23 +342,23 @@ async function uploadWithPresignedUrl(
           if (xhr.status >= 200 && xhr.status < 300) {
             resolve({ url: publicUrl })
           } else {
-            console.warn('[R2Upload] Direct upload failed:', xhr.status, xhr.responseText)
+            uploadDebugInfo('[R2Upload] Direct upload failed:', xhr.status, xhr.responseText)
             reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`))
           }
         })
 
-        xhr.addEventListener('error', (event) => {
-          console.info('[R2Upload] Direct upload network error, fallback 예정:', event, fileName)
+        xhr.addEventListener('error', () => {
+          uploadDebugInfo('[R2Upload] Direct upload network error, fallback 예정:', fileName)
           reject(new Error('Network error during upload'))
         })
 
         xhr.addEventListener('timeout', () => {
-          console.info('[R2Upload] Direct upload timeout, fallback 예정:', fileName)
+          uploadDebugInfo('[R2Upload] Direct upload timeout, fallback 예정:', fileName)
           reject(new Error('Upload timeout (5 minutes)'))
         })
 
         xhr.addEventListener('abort', () => {
-          console.info('[R2Upload] Direct upload aborted, fallback 예정:', fileName)
+          uploadDebugInfo('[R2Upload] Direct upload aborted, fallback 예정:', fileName)
           reject(new Error('Upload aborted'))
         })
 
@@ -365,13 +378,13 @@ async function uploadWithPresignedUrl(
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.warn('[R2Upload] Direct fetch upload failed:', response.status, errorText)
+      uploadDebugInfo('[R2Upload] Direct fetch upload failed:', response.status, errorText)
       throw new Error(`Upload failed: ${response.status}`)
     }
 
     return { url: publicUrl }
   } catch (error) {
-    console.info('[R2Upload] Falling back to /api/upload:', error)
+    uploadDebugInfo('[R2Upload] Falling back to /api/upload:', error)
     return uploadViaServerApi(file, fileName, onProgress)
   }
 }
@@ -398,8 +411,6 @@ interface Photo {
 // 비디오 썸네일 생성 함수
 const generateVideoThumbnail = (file: File, maxSize: number = 400): Promise<Blob | null> => {
   return new Promise((resolve) => {
-    console.log('[VideoThumb] Starting:', file.name, file.type, file.size)
-
     const video = document.createElement('video')
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')
@@ -407,10 +418,8 @@ const generateVideoThumbnail = (file: File, maxSize: number = 400): Promise<Blob
     video.preload = 'auto'
     video.muted = true
     video.playsInline = true
-    // blob URL에는 crossOrigin 불필요 (CORS 에러 유발)
 
     const objectUrl = URL.createObjectURL(file)
-    console.log('[VideoThumb] Blob URL created')
     let resolved = false
 
     // 타임아웃 설정 (15초)
@@ -418,7 +427,6 @@ const generateVideoThumbnail = (file: File, maxSize: number = 400): Promise<Blob
       if (!resolved) {
         resolved = true
         cleanup()
-        console.log('[VideoThumb] TIMEOUT')
         resolve(null)
       }
     }, 15000)
@@ -434,13 +442,11 @@ const generateVideoThumbnail = (file: File, maxSize: number = 400): Promise<Blob
 
     const captureFrame = () => {
       if (resolved) return
-      console.log('[VideoThumb] Capturing frame, dimensions:', video.videoWidth, 'x', video.videoHeight)
 
       try {
         let { videoWidth: width, videoHeight: height } = video
 
         if (width === 0 || height === 0) {
-          console.log('[VideoThumb] ERROR: dimensions 0')
           resolved = true
           cleanup()
           resolve(null)
@@ -462,7 +468,6 @@ const generateVideoThumbnail = (file: File, maxSize: number = 400): Promise<Blob
 
         canvas.toBlob(
           (blob) => {
-            console.log('[VideoThumb] Blob result:', blob ? blob.size + ' bytes' : 'null')
             if (!resolved) {
               resolved = true
               cleanup()
@@ -472,8 +477,7 @@ const generateVideoThumbnail = (file: File, maxSize: number = 400): Promise<Blob
           'image/webp',
           0.8
         )
-      } catch (e) {
-        console.log('[VideoThumb] Capture error:', e)
+      } catch {
         if (!resolved) {
           resolved = true
           cleanup()
@@ -482,25 +486,18 @@ const generateVideoThumbnail = (file: File, maxSize: number = 400): Promise<Blob
       }
     }
 
-    video.onloadedmetadata = () => {
-      console.log('[VideoThumb] Metadata loaded, duration:', video.duration, 'size:', video.videoWidth, 'x', video.videoHeight)
-    }
-
     video.onloadeddata = () => {
       if (resolved) return
-      console.log('[VideoThumb] Data loaded, seeking to 1s or 10%')
       const seekTime = Math.min(1, (video.duration || 1) * 0.1)
       video.currentTime = seekTime
     }
 
     video.onseeked = () => {
       if (resolved) return
-      console.log('[VideoThumb] Seek complete')
       setTimeout(captureFrame, 100)
     }
 
     video.onerror = () => {
-      console.log('[VideoThumb] ERROR:', video.error?.code, video.error?.message)
       if (!resolved) {
         resolved = true
         cleanup()
@@ -510,7 +507,6 @@ const generateVideoThumbnail = (file: File, maxSize: number = 400): Promise<Blob
 
     video.src = objectUrl
     video.load()
-    console.log('[VideoThumb] Load started')
   })
 }
 
@@ -529,7 +525,7 @@ const generateImageThumbnail = async (file: File, maxSize: number = 400): Promis
 
     // HEIC/HEIF 파일은 JPEG로 변환
     if (isHeicFile(file)) {
-      console.log('[ImageThumb] HEIC detected, converting:', file.name)
+      uploadDebugLog('[ImageThumb] HEIC detected, converting:', file.name)
       try {
         const convertedBlob = await heic2any({
           blob: file,
@@ -537,9 +533,9 @@ const generateImageThumbnail = async (file: File, maxSize: number = 400): Promis
           quality: 0.9
         })
         imageFile = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob
-        console.log('[ImageThumb] HEIC converted successfully')
+        uploadDebugLog('[ImageThumb] HEIC converted successfully')
       } catch (heicError) {
-        console.log('[ImageThumb] HEIC conversion failed:', heicError)
+        uploadDebugInfo('[ImageThumb] HEIC conversion failed:', heicError)
         return null
       }
     }
@@ -587,7 +583,7 @@ const generateImageThumbnail = async (file: File, maxSize: number = 400): Promis
       img.src = objectUrl
     })
   } catch (error) {
-    console.log('[ImageThumb] Error:', error)
+    uploadDebugInfo('[ImageThumb] Error:', error)
     return null
   }
 }
@@ -597,7 +593,10 @@ const generateThumbnail = (file: File, maxSize: number = 400): Promise<Blob | nu
   if (file.type.startsWith('video/')) {
     return generateVideoThumbnail(file, maxSize)
   }
-  return generateImageThumbnail(file, maxSize)
+  if (file.type.startsWith('image/') || isHeicFile(file)) {
+    return generateImageThumbnail(file, maxSize)
+  }
+  return Promise.resolve(null)
 }
 
 // 서버 측 HEIC 썸네일 생성 (클라이언트 heic2any 실패 시 폴백)
@@ -606,7 +605,7 @@ async function generateHeicThumbnailServerSide(
   thumbnailFileName: string
 ): Promise<string | null> {
   try {
-    console.log('[ServerThumb] Requesting server-side HEIC thumbnail:', originalFileName)
+    uploadDebugLog('[ServerThumb] Requesting server-side HEIC thumbnail:', originalFileName)
     const res = await fetch('/api/thumbnail/heic', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -617,15 +616,15 @@ async function generateHeicThumbnailServerSide(
     })
 
     if (!res.ok) {
-      console.error('[ServerThumb] Server thumbnail generation failed:', res.status)
+      uploadDebugInfo('[ServerThumb] Server thumbnail generation failed:', res.status)
       return null
     }
 
     const { thumbnailUrl } = await res.json()
-    console.log('[ServerThumb] Server thumbnail generated:', thumbnailUrl)
+    uploadDebugLog('[ServerThumb] Server thumbnail generated:', thumbnailUrl)
     return thumbnailUrl
   } catch (error) {
-    console.error('[ServerThumb] Error:', error)
+    uploadDebugInfo('[ServerThumb] Error:', error)
     return null
   }
 }
@@ -646,9 +645,16 @@ interface Folder {
   created_at: string
 }
 
+interface ExistingDuplicatePhoto {
+  id: string
+  name: string
+  url: string
+  thumbnail_url: string | null
+}
+
 interface DuplicateFile {
   file: File
-  existingPhoto: Photo
+  existingPhoto: ExistingDuplicatePhoto
 }
 
 interface FileWithFolderPath {
@@ -875,10 +881,12 @@ export default function DrivePage() {
   const fetchCounterRef = useRef(0)
   const folderParentColumnRef = useRef<FolderParentColumn>('parent_id')
   const uploadProgressSnapshotRef = useRef<Map<string, { percent: number; loaded: number; ts: number }>>(new Map())
+  const uploadQueueSizeRef = useRef(0)
   const optimisticPhotoBufferRef = useRef<Photo[]>([])
   const optimisticPhotoFlushTimerRef = useRef<NodeJS.Timeout | null>(null)
   const pendingStorageDeltaRef = useRef(0)
   const pendingStorageFlushTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const storageUsageRequestIdRef = useRef(0)
   const getFolderParentColumns = useCallback((): FolderParentColumn[] => {
     return folderParentColumnRef.current === 'parent_folder_id'
       ? ['parent_folder_id', 'parent_id']
@@ -956,11 +964,15 @@ export default function DrivePage() {
     }
   }, [flushOptimisticPhotos])
 
+  useEffect(() => {
+    uploadQueueSizeRef.current = uploadQueue.length
+  }, [uploadQueue.length])
+
   const updateQueueProgressThrottled = useCallback((itemId: string, percent: number, loaded: number) => {
     const roundedPercent = Math.max(0, Math.min(99, Math.round(percent)))
     const now = Date.now()
     const previous = uploadProgressSnapshotRef.current.get(itemId)
-    const queueSize = uploadQueue.length
+    const queueSize = uploadQueueSizeRef.current
     const minPercentDelta = queueSize >= 1200 ? 6 : queueSize >= 600 ? 4 : queueSize >= 250 ? 3 : 2
     const minLoadedDelta = queueSize >= 1200 ? 1024 * 1024 : queueSize >= 600 ? 768 * 1024 : 256 * 1024
     const minElapsedMs = queueSize >= 1200 ? 600 : queueSize >= 600 ? 450 : 250
@@ -980,7 +992,7 @@ export default function DrivePage() {
       ts: now,
     })
     updateQueueItem(itemId, { progress: roundedPercent, uploadedSize: loaded })
-  }, [updateQueueItem, uploadQueue.length])
+  }, [updateQueueItem])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(min-width: 1280px)')
@@ -1040,7 +1052,7 @@ export default function DrivePage() {
     }
 
     // 카테고리가 'all'이면 현재 폴더의 파일만 가져옴
-    // 카테고리가 photos/videos면 페이지네이션으로 가져옴
+    // 카테고리가 photos/videos/documents면 페이지네이션으로 가져옴
     if (category === 'all') {
       // 캐시에서 현재 폴더의 사진 가져오기
       const photosData = await dataCache.getPhotos(user.id, folderId)
@@ -1052,7 +1064,7 @@ export default function DrivePage() {
 
       setPhotos(photosData as Photo[])
       setHasMore(false) // 폴더 뷰는 전체 로드
-    } else if (category === 'photos' || category === 'videos') {
+    } else if (category === 'photos' || category === 'videos' || category === 'documents') {
       // 페이지네이션으로 첫 페이지 가져오기
       const result = await dataCache.getPhotosPaginated(user.id, {
         category: category as CategoryFilter,
@@ -1069,7 +1081,7 @@ export default function DrivePage() {
       setHasMore(result.hasMore)
       setCursor(result.nextCursor)
     } else {
-      // documents 등 기타 카테고리는 전체 로드 (클라이언트 필터링)
+      // 기타 카테고리는 전체 로드 (fallback)
       const allPhotos = await dataCache.getAllPhotos(user.id)
 
       // 이미 다른 요청이 시작되었으면 이 결과 무시
@@ -1089,7 +1101,7 @@ export default function DrivePage() {
   const loadMore = useCallback(async () => {
     const category = searchParams.get('category') || 'all'
     if (!user?.id || loadingMore || !hasMore) return
-    if (category !== 'photos' && category !== 'videos') return
+    if (category !== 'photos' && category !== 'videos' && category !== 'documents') return
 
     setLoadingMore(true)
 
@@ -1116,9 +1128,12 @@ export default function DrivePage() {
   }, [user?.id, loadingMore, hasMore, cursor, searchParams, dataCache])
 
   const fetchStorageUsage = useCallback(async (forceRefresh = false) => {
+    const requestId = ++storageUsageRequestIdRef.current
     try {
       if (!user?.id) {
-        setStorageUsed(0)
+        if (requestId === storageUsageRequestIdRef.current) {
+          setStorageUsed(0)
+        }
         return
       }
       const endpoint = forceRefresh
@@ -1135,8 +1150,13 @@ export default function DrivePage() {
         console.error('Storage usage error:', res.status)
         return
       }
-      const { usage } = await res.json()
-      const parsedUsage = Number(usage ?? 0)
+      const payload = await res.json() as { usage?: number | string; logicalUsage?: number | string }
+      if (requestId !== storageUsageRequestIdRef.current) {
+        return
+      }
+      // 즉시 반영은 DB 논리 사용량(logicalUsage)을 우선 사용
+      const usageCandidate = payload.logicalUsage ?? payload.usage ?? 0
+      const parsedUsage = Number(usageCandidate)
       setStorageUsed(Number.isFinite(parsedUsage) ? parsedUsage : 0)
     } catch (err) {
       console.error('Failed to fetch storage usage:', err)
@@ -1202,8 +1222,8 @@ export default function DrivePage() {
   // 무한 스크롤: Intersection Observer
   useEffect(() => {
     const category = searchParams.get('category') || 'all'
-    // photos/videos 탭에서만 무한 스크롤 활성화
-    if (category !== 'photos' && category !== 'videos') return
+    // photos/videos/documents 탭에서만 무한 스크롤 활성화
+    if (category !== 'photos' && category !== 'videos' && category !== 'documents') return
     if (!loadMoreRef.current) return
 
     const observer = new IntersectionObserver(
@@ -1316,6 +1336,10 @@ export default function DrivePage() {
   const [iCloudProgress, setICloudProgress] = useState({ current: 0, total: 0, fileName: '' })
 
   const prepareFileForUpload = async (file: File, onProgress?: (fileName: string) => void): Promise<File | null> => {
+    if (file.size > 0) {
+      return file
+    }
+
     // 파일 크기가 0이면 iCloud에서 아직 다운로드 안 됨
     // 파일을 읽으려고 시도하면 macOS가 자동으로 다운로드 시작
     try {
@@ -1648,12 +1672,9 @@ export default function DrivePage() {
           hls_status: item.isVideo ? 'pending' : 'not_applicable',
         }))
 
-        console.log('[Upload Folder] Inserting to DB:', insertData)
         const { error: insertError } = await supabase.from('photos').insert(insertData)
         if (insertError) {
           console.error('[Upload Folder] DB insert error:', insertError)
-        } else {
-          console.log('[Upload Folder] DB insert success')
         }
       }
     }
@@ -1681,7 +1702,9 @@ export default function DrivePage() {
 
     for (let i = 0; i < fileArray.length; i++) {
       const file = fileArray[i]
-      setICloudProgress({ current: i + 1, total: fileArray.length, fileName: file.name })
+      if (hasICloudFiles) {
+        setICloudProgress({ current: i + 1, total: fileArray.length, fileName: file.name })
+      }
 
       const relativePath = normalizePath((file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name)
       const pathParts = relativePath.split('/').filter(Boolean)
@@ -1701,9 +1724,12 @@ export default function DrivePage() {
         folderPathSet.add(folderParts.slice(0, depth).join('/'))
       }
 
-      const preparedFile = await prepareFileForUpload(file, (name) => {
-        setICloudProgress(prev => ({ ...prev, fileName: name }))
-      })
+      const preparedFile = file.size > 0
+        ? file
+        : await prepareFileForUpload(file, (name) => {
+            if (!hasICloudFiles) return
+            setICloudProgress(prev => ({ ...prev, fileName: name }))
+          })
 
       if (preparedFile) {
         filesWithPath.push({ file: preparedFile, folderPath: folderParts.join('/') })
@@ -1712,7 +1738,9 @@ export default function DrivePage() {
       }
     }
 
-    setICloudDownloading(false)
+    if (hasICloudFiles) {
+      setICloudDownloading(false)
+    }
 
     if (blockedFiles.length > 0) {
       showToast(`차단된 폴더 내 파일 ${blockedFiles.length}개가 제외되었습니다.`, 'info')
@@ -1768,11 +1796,16 @@ export default function DrivePage() {
     // 각 파일 준비 (iCloud 다운로드 대기)
     for (let i = 0; i < fileArray.length; i++) {
       const file = fileArray[i]
-      setICloudProgress({ current: i + 1, total: fileArray.length, fileName: file.name })
+      if (hasICloudFiles) {
+        setICloudProgress({ current: i + 1, total: fileArray.length, fileName: file.name })
+      }
 
-      const preparedFile = await prepareFileForUpload(file, (name) => {
-        setICloudProgress(prev => ({ ...prev, fileName: name }))
-      })
+      const preparedFile = file.size > 0
+        ? file
+        : await prepareFileForUpload(file, (name) => {
+            if (!hasICloudFiles) return
+            setICloudProgress(prev => ({ ...prev, fileName: name }))
+          })
 
       if (preparedFile) {
         validFiles.push(preparedFile)
@@ -1781,7 +1814,9 @@ export default function DrivePage() {
       }
     }
 
-    setICloudDownloading(false)
+    if (hasICloudFiles) {
+      setICloudDownloading(false)
+    }
 
     // 건너뛴 파일 알림
     if (skippedFiles.length > 0) {
@@ -1842,6 +1877,10 @@ export default function DrivePage() {
 
     // iCloud 파일 준비 함수 (다운로드 대기)
     const prepareFile = async (file: File): Promise<File | null> => {
+      if (file.size > 0) {
+        return file
+      }
+
       try {
         // 전체 파일을 읽어서 iCloud 다운로드 트리거 (타임아웃 5분)
         const timeoutPromise = new Promise<null>((_, reject) =>
@@ -1980,24 +2019,56 @@ export default function DrivePage() {
 
   // 중복 파일 체크
   const checkDuplicates = async (files: File[], targetFolderId: string | null): Promise<{ duplicates: DuplicateFile[], nonDuplicates: File[] }> => {
-    // 대상 폴더의 기존 파일 목록 가져오기
-    let query = supabase.from('photos').select('*')
+    if (!user?.id || files.length === 0) {
+      return { duplicates: [], nonDuplicates: files }
+    }
+
+    // 대상 폴더의 기존 파일 목록 가져오기 (필요 최소 컬럼만 조회)
+    const baseQuery = supabase
+      .from('photos')
+      .select('id,name,url,thumbnail_url')
+      .eq('user_id', user.id)
+
+    let query = baseQuery.is('deleted_at', null)
     if (targetFolderId) {
       query = query.eq('folder_id', targetFolderId)
     } else {
       query = query.is('folder_id', null)
     }
-    const { data: existingPhotos } = await query
+
+    let { data: existingPhotos, error } = await query
+
+    if (error && isMissingColumnError(error, 'deleted_at')) {
+      query = baseQuery
+      if (targetFolderId) {
+        query = query.eq('folder_id', targetFolderId)
+      } else {
+        query = query.is('folder_id', null)
+      }
+      const fallback = await query
+      existingPhotos = fallback.data
+      error = fallback.error
+    }
+
+    if (error) {
+      console.error('[Upload] Duplicate check error:', formatSupabaseError(error))
+      return { duplicates: [], nonDuplicates: files }
+    }
+
+    const existingByName = new Map<string, ExistingDuplicatePhoto>()
+    for (const photo of (existingPhotos || []) as ExistingDuplicatePhoto[]) {
+      const derivedName = photo.name || photo.url.split('/').pop()?.replace(/^\d+_\d+_/, '') || ''
+      if (!derivedName) continue
+      if (!existingByName.has(derivedName)) {
+        existingByName.set(derivedName, photo)
+      }
+    }
 
     const duplicates: DuplicateFile[] = []
     const nonDuplicates: File[] = []
 
     for (const file of files) {
-      // name 필드 또는 URL에서 추출한 이름으로 비교
-      const existingPhoto = existingPhotos?.find(p => {
-        const existingName = p.name || p.url.split('/').pop()?.replace(/^\d+_\d+_/, '') || ''
-        return existingName === file.name
-      })
+      const existingPhoto = existingByName.get(file.name)
       if (existingPhoto) {
         duplicates.push({ file, existingPhoto })
       } else {
@@ -2032,7 +2103,11 @@ export default function DrivePage() {
   }
 
   // 중복 처리 후 실제 업로드 실행
-  const executeUpload = async (filesToUpload: File[], targetFolderId: string | null, photosToDelete?: Photo[]) => {
+  const executeUpload = async (
+    filesToUpload: File[],
+    targetFolderId: string | null,
+    photosToDelete?: ExistingDuplicatePhoto[]
+  ) => {
     if (filesToUpload.length === 0) {
       setPendingFiles([])
       setDuplicateFiles([])
@@ -2198,12 +2273,9 @@ export default function DrivePage() {
         hls_status: item.isVideo ? 'pending' : 'not_applicable',
       }))
 
-      console.log('[Upload] Inserting to DB:', insertData)
       const { error: insertError } = await supabase.from('photos').insert(insertData)
       if (insertError) {
         console.error('[Upload] DB insert error:', insertError)
-      } else {
-        console.log('[Upload] DB insert success')
       }
     }
 
@@ -2220,7 +2292,7 @@ export default function DrivePage() {
     setShowDuplicateModal(false)
 
     let filesToUpload: File[] = [...nonDuplicateFiles]
-    let photosToDelete: Photo[] = []
+    let photosToDelete: ExistingDuplicatePhoto[] = []
 
     if (action === 'overwrite') {
       // 덮어쓰기: 기존 파일 삭제 후 새 파일 업로드

@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
 
     let r2Usage: number | null = null
     if (includeR2) {
-      const isR2CacheValid = r2Cache && Date.now() - r2Cache.timestamp < R2_CACHE_TTL
+      const isR2CacheValid = !shouldBypassCache && r2Cache && Date.now() - r2Cache.timestamp < R2_CACHE_TTL
       if (isR2CacheValid && r2Cache) {
         r2Usage = r2Cache.usage
       } else {
@@ -92,9 +92,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const effectiveUsage = includeR2 && r2Usage !== null
-      ? Math.max(totalUsage, r2Usage)
-      : totalUsage
+    const effectiveUsage = totalUsage
 
     return NextResponse.json(
       includeR2
@@ -102,6 +100,7 @@ export async function GET(request: NextRequest) {
             usage: effectiveUsage,
             logicalUsage: totalUsage,
             bucketUsage: r2Usage,
+            maxUsage: r2Usage !== null ? Math.max(totalUsage, r2Usage) : totalUsage,
           }
         : { usage: totalUsage },
       {

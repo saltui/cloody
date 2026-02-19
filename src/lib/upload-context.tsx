@@ -126,18 +126,30 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     }
   }, [flushPersistHistory])
 
-  // 진행률은 큐 상태에서 자동 계산
-  const uploadProgress = useMemo(() => {
-    const activeItems = uploadQueue.filter(item => item.status !== 'cancelled')
-    const total = activeItems.length
-    const current = activeItems.filter(item => item.status === 'done' || item.status === 'error').length
-    return { current, total }
+  const queueStats = useMemo(() => {
+    let total = 0
+    let current = 0
+    let uploading = false
+
+    for (const item of uploadQueue) {
+      if (item.status !== 'cancelled') {
+        total += 1
+        if (item.status === 'done' || item.status === 'error') {
+          current += 1
+        }
+      }
+
+      if (item.status === 'pending' || item.status === 'uploading') {
+        uploading = true
+      }
+    }
+
+    return { uploadProgress: { current, total }, uploading }
   }, [uploadQueue])
 
-  // 업로드 중 여부도 큐 상태에서 자동 계산
-  const uploading = useMemo(() => {
-    return uploadQueue.some(item => item.status === 'pending' || item.status === 'uploading')
-  }, [uploadQueue])
+  // 진행률/업로드 상태는 큐 상태에서 자동 계산
+  const uploadProgress = queueStats.uploadProgress
+  const uploading = queueStats.uploading
 
   // 큐에 아이템 추가 (기존 큐 유지하고 추가, timestamp 포함)
   const addToQueue = useCallback((items: UploadItem[]) => {
