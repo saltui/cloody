@@ -6,6 +6,7 @@ import { useUser } from '@/lib/user-context'
 import Sidebar from '@/components/Sidebar'
 import SecureImage from '@/components/SecureImage'
 import { FileThumbnail, isMediaFile } from '@/lib/file-icons'
+import { useToast } from '@/components/Toast'
 
 interface Photo {
   id: string
@@ -55,6 +56,7 @@ function getDaysRemaining(deletedAt: string): number {
 export default function TrashPage() {
   const router = useRouter()
   const { user, isLoading: userLoading } = useUser()
+  const { showToast } = useToast()
   const [photos, setPhotos] = useState<Photo[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
   const [loading, setLoading] = useState(true)
@@ -65,6 +67,7 @@ export default function TrashPage() {
   const [showEmptyConfirm, setShowEmptyConfirm] = useState(false)
   const [selectionMode, setSelectionMode] = useState(false)
   const [storageUsed, setStorageUsed] = useState<number>(0)
+  const [isEmptyingTrash, setIsEmptyingTrash] = useState(false)
 
   // 휴지통 데이터 로드
   const loadTrash = useCallback(async () => {
@@ -87,10 +90,17 @@ export default function TrashPage() {
   }, [user?.id])
 
   // 스토리지 사용량 로드
-  const fetchStorageUsage = useCallback(async () => {
+  const fetchStorageUsage = useCallback(async (forceRefresh = false) => {
     try {
-      const res = await fetch('/api/storage', {
+      if (!user?.id) {
+        setStorageUsed(0)
+        return
+      }
+      const endpoint = forceRefresh ? '/api/storage?refresh=1' : '/api/storage'
+      const res = await fetch(endpoint, {
         credentials: 'include',
+        cache: forceRefresh ? 'no-store' : 'default',
+        headers: { 'x-user-id': user.id },
       })
       if (!res.ok) return
       const { usage } = await res.json()
@@ -107,7 +117,7 @@ export default function TrashPage() {
     }
     if (user) {
       loadTrash()
-      fetchStorageUsage()
+      fetchStorageUsage(true)
     }
   }, [user, userLoading, router, loadTrash, fetchStorageUsage])
 
@@ -139,12 +149,15 @@ export default function TrashPage() {
 
       if (res.ok) {
         await loadTrash()
+        await fetchStorageUsage(true)
         setSelectedIds(new Set())
         setSelectedFolderIds(new Set())
         setSelectionMode(false)
+        showToast('선택 항목을 복원했습니다.', 'success')
       }
     } catch (error) {
       console.error('Restore failed:', error)
+      showToast('복원에 실패했습니다.', 'error')
     } finally {
       setActionLoading(false)
     }
@@ -171,12 +184,15 @@ export default function TrashPage() {
 
       if (res.ok) {
         await loadTrash()
+        await fetchStorageUsage(true)
         setSelectedIds(new Set())
         setSelectedFolderIds(new Set())
         setSelectionMode(false)
+        showToast('영구 삭제가 완료되었습니다.', 'success')
       }
     } catch (error) {
       console.error('Delete failed:', error)
+      showToast('영구 삭제에 실패했습니다.', 'error')
     } finally {
       setActionLoading(false)
     }
@@ -186,6 +202,7 @@ export default function TrashPage() {
   const handleEmptyTrash = async () => {
     if (!user?.id) return
     setActionLoading(true)
+    setIsEmptyingTrash(true)
     setShowEmptyConfirm(false)
 
     try {
@@ -197,17 +214,25 @@ export default function TrashPage() {
         },
         body: JSON.stringify({ emptyAll: true }),
       })
+      const data = await res.json().catch(() => null)
 
       if (res.ok) {
         await loadTrash()
+        await fetchStorageUsage(true)
         setSelectedIds(new Set())
         setSelectedFolderIds(new Set())
         setSelectionMode(false)
+
+        showToast('휴지통을 비웠습니다.', 'success')
+      } else {
+        showToast(data?.error || '휴지통 비우기에 실패했습니다.', 'error')
       }
     } catch (error) {
       console.error('Empty trash failed:', error)
+      showToast('휴지통 비우기에 실패했습니다.', 'error')
     } finally {
       setActionLoading(false)
+      setIsEmptyingTrash(false)
     }
   }
 
@@ -630,6 +655,27 @@ export default function TrashPage() {
                 {actionLoading ? '삭제 중...' : '영구 삭제'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 휴지통 비우기 진행 오버레이 */}
+      {isEmptyingTrash && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div
+            className="rounded-2xl px-6 py-5 flex flex-col items-center gap-3"
+            style={{ background: 'var(--background)', border: '1px solid var(--glass-border)' }}
+          >
+            <div
+              className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin"
+              style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }}
+            />
+            <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>
+              휴지통 비우는 중...
+            </p>
+            <p className="text-xs" style={{ color: 'var(--foreground-muted)' }}>
+              파일을 정리하고 있습니다.
+            </p>
           </div>
         </div>
       )}

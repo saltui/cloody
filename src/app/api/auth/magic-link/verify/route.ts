@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyMagicLinkToken, createUserSessionToken, updateLastLogin } from '@/lib/user-auth'
 import { logAudit } from '@/lib/audit'
-import { isEmailAllowed } from '@/lib/whitelist'
 
 function getClientIP(request: NextRequest): string {
   const forwardedFor = request.headers.get('cf-connecting-ip')
@@ -35,11 +34,6 @@ export async function GET(request: NextRequest) {
         error: '만료되었거나 유효하지 않은 링크입니다.',
         expired: true,
       }, { status: 400 })
-    }
-
-    // 허용된 이메일인지 확인
-    if (!isEmailAllowed(user.email)) {
-      return NextResponse.json({ error: '로그인이 허용되지 않은 이메일입니다.' }, { status: 403 })
     }
 
     // 마지막 로그인 시간 업데이트

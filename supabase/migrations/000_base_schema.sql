@@ -89,36 +89,6 @@ CREATE TABLE IF NOT EXISTS passkey_credentials (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Vault documents table
-CREATE TABLE IF NOT EXISTS vault_documents (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    file_id UUID REFERENCES photos(id) ON DELETE SET NULL,
-    owner_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    title VARCHAR(500) NOT NULL,
-    description TEXT,
-    required_approvals INTEGER DEFAULT 1,
-    status VARCHAR(50) DEFAULT 'pending',
-    allowed_domain VARCHAR(255),
-    expires_at TIMESTAMPTZ,
-    file_hash VARCHAR(64),
-    blockchain_tx_hash VARCHAR(100),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Vault approvals table
-CREATE TABLE IF NOT EXISTS vault_approvals (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id UUID NOT NULL REFERENCES vault_documents(id) ON DELETE CASCADE,
-    approver_email VARCHAR(255) NOT NULL,
-    decision VARCHAR(50),
-    comment TEXT,
-    wallet_address VARCHAR(255),
-    wallet_signature TEXT,
-    decided_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- Transcoding jobs table
 CREATE TABLE IF NOT EXISTS transcoding_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

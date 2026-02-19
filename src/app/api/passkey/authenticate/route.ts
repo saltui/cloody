@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAuthenticationOptions, verifyAuthentication, getPasskeysByEmail, createDiscoverableAuthenticationOptions, verifyDiscoverableAuthentication } from '@/lib/passkey'
 import { findUserById, createUserSessionToken, updateLastLogin, checkRateLimit, recordFailedAttempt, clearAttempts } from '@/lib/user-auth'
 import { logAudit } from '@/lib/audit'
-import { isEmailAllowed } from '@/lib/whitelist'
 
 function getClientIP(request: NextRequest): string {
   const forwardedFor = request.headers.get('cf-connecting-ip')
@@ -21,11 +20,6 @@ export async function GET(request: NextRequest) {
     if (!email) {
       const options = await createDiscoverableAuthenticationOptions()
       return NextResponse.json({ options })
-    }
-
-    // 허용된 이메일인지 확인
-    if (!isEmailAllowed(email)) {
-      return NextResponse.json({ error: '허용되지 않은 이메일입니다.' }, { status: 403 })
     }
 
     // 먼저 패스키가 있는지 확인
@@ -78,10 +72,6 @@ export async function POST(request: NextRequest) {
 
     // 이메일이 있으면 이메일 기반 인증, 없으면 discoverable 인증
     if (email) {
-      // 허용된 이메일인지 확인
-      if (!isEmailAllowed(email)) {
-        return NextResponse.json({ error: '로그인이 허용되지 않은 이메일입니다.' }, { status: 403 })
-      }
       result = await verifyAuthentication(email, response)
     } else {
       // Discoverable 인증 (이메일 없이)

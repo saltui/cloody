@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Cloody는 Web3 기능을 갖춘 미디어 갤러리 앱입니다. 사용자 인증(Passkey/Magic Link), 미디어 업로드/관리, 블록체인 통합 기능을 제공합니다.
+Cloody는 개인용 미디어 클라우드 앱입니다. 사용자 인증(Passkey/Magic Link), 미디어 업로드/관리 기능을 제공합니다.
 
 ## Tech Stack
 
@@ -12,10 +12,8 @@ Cloody는 Web3 기능을 갖춘 미디어 갤러리 앱입니다. 사용자 인�
 - **Styling:** Tailwind CSS v4
 - **UI:** Toss Design System Mobile (`@toss/tds-mobile`)
 - **Database:** Supabase
-- **Storage:** AWS S3
+- **Storage:** Cloudflare R2 (S3-compatible)
 - **Auth:** WebAuthn (Passkey), Magic Link, Email
-- **Web3:** RainbowKit, wagmi, viem
-- **Smart Contracts:** Hardhat, Solidity
 
 ## Development Setup
 
@@ -40,12 +38,6 @@ npm run dev
 | `npm run lint` | ESLint validation |
 | `npm run start` | Start production server |
 
-**Hardhat (Smart Contracts):**
-```bash
-npx hardhat compile    # Compile contracts
-npx hardhat test       # Run contract tests
-```
-
 ## Project Structure
 
 ```
@@ -59,7 +51,6 @@ src/
 │   ├── settings/          # Settings page
 │   ├── trash/             # Trash/deleted items
 │   └── viewer/            # Media viewer
-contracts/                  # Solidity smart contracts
 supabase/                  # Supabase migrations
 migrations/                # Database migrations
 public/                    # Static assets
@@ -85,8 +76,8 @@ public/                    # Static assets
 필수 환경 변수 (`.env.local`):
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
-- `AWS_S3_BUCKET`, `AWS_REGION`
+- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET_NAME`, `R2_PUBLIC_URL`
 
 ## Security Considerations
 

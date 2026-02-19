@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { deleteFromR2 } from '@/lib/r2'
+import { deleteManyFromR2, extractR2KeyFromUrl } from '@/lib/r2'
 
 const TRASH_RETENTION_DAYS = 30
 
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     // 30일 지난 사진 조회
     const { data: expiredPhotos, error: photosQueryError } = await supabase
       .from('photos')
-      .select('id, url, user_id')
+      .select('id, url, thumbnail_url, user_id')
       .not('deleted_at', 'is', null)
       .lt('deleted_at', cutoffISO)
       .limit(100) // 한 번에 100개씩 처리
@@ -36,27 +36,37 @@ export async function POST(request: NextRequest) {
     let deletedPhotos = 0
     let deletedFolders = 0
 
-    // R2에서 파일 삭제 및 DB 레코드 삭제
+    // R2에서 파일(원본+썸네일) 삭제 및 DB 레코드 삭제
     if (expiredPhotos && expiredPhotos.length > 0) {
+      const r2Keys = new Set<string>()
+      const photoIds = expiredPhotos.map((photo) => photo.id)
+
       for (const photo of expiredPhotos) {
-        try {
-          // R2에서 파일 삭제
-          const fileName = photo.url.split('/').pop()
-          if (fileName) {
-            await deleteFromR2(fileName)
-          }
+        const originalKey = extractR2KeyFromUrl(photo.url)
+        if (originalKey) r2Keys.add(originalKey)
 
-          // DB에서 레코드 삭제
-          await supabase
-            .from('photos')
-            .delete()
-            .eq('id', photo.id)
-
-          deletedPhotos++
-        } catch (e) {
-          console.error(`[Trash Cleanup] Failed to delete photo ${photo.id}:`, e)
-        }
+        const thumbnailKey = extractR2KeyFromUrl(photo.thumbnail_url || null)
+        if (thumbnailKey) r2Keys.add(thumbnailKey)
       }
+
+      const r2DeleteResult = await deleteManyFromR2(Array.from(r2Keys))
+      if (r2DeleteResult.failedCount > 0) {
+        console.error('[Trash Cleanup] R2 delete partial failure:', {
+          failedCount: r2DeleteResult.failedCount,
+          sample: r2DeleteResult.failedKeys.slice(0, 10),
+        })
+      }
+
+      const { count: deletedPhotosCount, error: deletePhotosError } = await supabase
+        .from('photos')
+        .delete({ count: 'exact' })
+        .in('id', photoIds)
+
+      if (deletePhotosError) {
+        throw deletePhotosError
+      }
+
+      deletedPhotos += deletedPhotosCount || 0
     }
 
     // 30일 지난 빈 폴더 삭제 (내부 사진이 없는 폴더만)

@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, useCallback, useMemo, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef, ReactNode } from 'react'
 
 const UPLOAD_HISTORY_KEY = 'cloody_upload_history'
 const MAX_HISTORY_ITEMS = 100
@@ -70,10 +70,21 @@ function saveUploadHistory(items: UploadItem[]) {
   }
 }
 
+function toPersistableUploadHistory(items: UploadItem[]): UploadItem[] {
+  return items.map(({ progress, uploadedSize, startedAt, ...rest }) => rest)
+}
+
+function getUploadHistorySignature(items: UploadItem[]): string {
+  return items
+    .map(item => `${item.id}:${item.status}:${item.url || ''}:${item.createdAt || ''}`)
+    .join('|')
+}
+
 export function UploadProvider({ children }: { children: ReactNode }) {
   const [uploadQueue, setUploadQueue] = useState<UploadItem[]>([])
   const [showUploadPanel, setShowUploadPanel] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
+  const uploadQueueRef = useRef<UploadItem[]>([])
 
   // 초기 로드
   useEffect(() => {
@@ -86,10 +97,16 @@ export function UploadProvider({ children }: { children: ReactNode }) {
 
   // 변경 시 저장
   useEffect(() => {
+    uploadQueueRef.current = uploadQueue
+  }, [uploadQueue])
+
+  const historySignature = useMemo(() => getUploadHistorySignature(uploadQueue), [uploadQueue])
+
+  useEffect(() => {
     if (isInitialized) {
-      saveUploadHistory(uploadQueue)
+      saveUploadHistory(toPersistableUploadHistory(uploadQueueRef.current))
     }
-  }, [uploadQueue, isInitialized])
+  }, [historySignature, isInitialized])
 
   // 진행률은 큐 상태에서 자동 계산
   const uploadProgress = useMemo(() => {
@@ -115,9 +132,17 @@ export function UploadProvider({ children }: { children: ReactNode }) {
 
   // ID로 아이템 상태/진행률 업데이트
   const updateQueueItem = useCallback((id: string, updates: Partial<Omit<UploadItem, 'id'>>) => {
-    setUploadQueue(prev => prev.map(item =>
-      item.id === id ? { ...item, ...updates } : item
-    ))
+    setUploadQueue(prev => {
+      let changed = false
+      const next = prev.map(item => {
+        if (item.id !== id) return item
+        const hasDiff = Object.entries(updates).some(([key, value]) => item[key as keyof UploadItem] !== value)
+        if (!hasDiff) return item
+        changed = true
+        return { ...item, ...updates }
+      })
+      return changed ? next : prev
+    })
   }, [])
 
   const removeFromQueue = useCallback((id: string) => {

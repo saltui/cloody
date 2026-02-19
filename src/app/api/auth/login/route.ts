@@ -10,7 +10,6 @@ import {
 } from '@/lib/user-auth'
 import { logAudit } from '@/lib/audit'
 import { supabase } from '@/lib/supabase'
-import { isEmailAllowed } from '@/lib/whitelist'
 
 function getClientIP(request: NextRequest): string {
   const forwardedFor = request.headers.get('cf-connecting-ip')
@@ -47,11 +46,6 @@ export async function POST(request: NextRequest) {
 
     if (!password || typeof password !== 'string') {
       return NextResponse.json({ error: '비밀번호를 입력해주세요.' }, { status: 400 })
-    }
-
-    // 허용된 이메일인지 확인
-    if (!isEmailAllowed(email)) {
-      return NextResponse.json({ error: '로그인이 허용되지 않은 이메일입니다.' }, { status: 403 })
     }
 
     // 사용자 조회

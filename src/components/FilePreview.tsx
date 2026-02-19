@@ -1,13 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { FileText, Download, Loader2 } from 'lucide-react'
-import { Document, Page, pdfjs } from 'react-pdf'
-import 'react-pdf/dist/Page/AnnotationLayer.css'
-import 'react-pdf/dist/Page/TextLayer.css'
-
-// PDF.js worker 설정 (로컬 파일 사용)
-pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
 
 // 파일 타입 감지
 export function getFileCategory(filename: string): 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'code' | 'office' | 'unknown' {
@@ -139,35 +133,7 @@ interface PDFPreviewProps {
 }
 
 export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
-  const [numPages, setNumPages] = useState<number>(0)
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
-  const [containerWidth, setContainerWidth] = useState<number>(0)
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  useLayoutEffect(() => {
-    const node = containerRef.current
-    if (!node) return
-
-    const updateWidth = () => {
-      setContainerWidth(node.clientWidth)
-    }
-    updateWidth()
-
-    const observer = new ResizeObserver(updateWidth)
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [])
-
-  const onDocumentLoadSuccess = useCallback(({ numPages }: { numPages: number }) => {
-    setNumPages(numPages)
-    setLoading(false)
-  }, [])
-
-  const onDocumentLoadError = useCallback(() => {
-    setError(true)
-    setLoading(false)
-  }, [])
 
   if (error) {
     return (
@@ -196,7 +162,7 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
         style={{ background: 'var(--background-secondary)', borderColor: 'var(--border-primary)' }}
       >
         <span className="text-sm" style={{ color: 'var(--foreground-primary)' }}>
-          {numPages ? `${numPages}페이지` : '로딩중...'}
+          PDF 미리보기
         </span>
         <div className="flex items-center gap-2">
           {onDownload && (
@@ -211,30 +177,14 @@ export function PDFPreview({ url, filename, onDownload }: PDFPreviewProps) {
         </div>
       </div>
 
-      {/* PDF 뷰어 - 스크롤 방식 */}
-      <div ref={containerRef} className="flex-1 overflow-auto">
-        {loading && (
-          <div className="flex items-center justify-center h-32">
-            <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--accent-primary)' }} />
-          </div>
-        )}
-        <Document
-          file={url}
-          onLoadSuccess={onDocumentLoadSuccess}
-          onLoadError={onDocumentLoadError}
-          loading=""
-          className="w-full flex flex-col gap-4"
-        >
-          {Array.from(new Array(numPages), (_, index) => (
-            <Page
-              key={`page_${index + 1}`}
-              pageNumber={index + 1}
-              renderTextLayer={true}
-              renderAnnotationLayer={true}
-              className="!w-full [&>canvas]:!w-full [&>canvas]:!h-auto"
-            />
-          ))}
-        </Document>
+      {/* 브라우저 내장 PDF 뷰어 사용 */}
+      <div className="flex-1 bg-white">
+        <iframe
+          src={`${url}#toolbar=1&navpanes=0`}
+          title={filename}
+          className="w-full h-full border-0"
+          onError={() => setError(true)}
+        />
       </div>
     </div>
   )

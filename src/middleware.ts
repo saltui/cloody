@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { hasPermission, getUserSecurityLevel } from '@/lib/rbac'
 
 const SESSION_TIMEOUT = 7 * 24 * 60 * 60 * 1000 // 7일
 
@@ -147,46 +146,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.json({ error: errorMessage, reason: tokenValidation.reason }, { status: 401 })
   }
 
-  // RBAC 권한 확인 (인증된 요청에만 적용)
-  if (isAuthenticated && tokenValidation.userId && tokenValidation.orgId) {
-    const userId = tokenValidation.userId
-    const orgId = tokenValidation.orgId
-
-    // 권한이 필요한 경로 매핑
-    type PermissionRoute = {
-      route: string
-      permission: Parameters<typeof hasPermission>[2]
-    }
-
-    const permissionRoutes: PermissionRoute[] = [
-      { route: '/api/audit', permission: 'audit:view' },
-      { route: '/api/retention', permission: 'retention:manage' },
-      { route: '/api/disposal', permission: 'retention:manage' },
-      { route: '/api/admin', permission: 'user:manage' },
-      { route: '/settings/roles', permission: 'role:manage' },
-      { route: '/settings/audit', permission: 'audit:view' },
-    ]
-
-    // 경로별 권한 확인
-    for (const { route, permission } of permissionRoutes) {
-      if (pathname.startsWith(route)) {
-        const allowed = await hasPermission(userId, orgId, permission)
-        if (!allowed) {
-          if (isApi) {
-            return NextResponse.json(
-              { error: 'Forbidden: Insufficient permissions', required: permission },
-              { status: 403 }
-            )
-          } else {
-            return NextResponse.redirect(new URL('/drive', request.url))
-          }
-        }
-        break
-      }
-    }
-  }
-
-  // API 요청에 사용자 ID, org ID, security level 헤더 추가
+  // API 요청에 사용자 ID, org ID 헤더 추가
   if (isApi && isAuthenticated && tokenValidation.userId) {
     const requestHeaders = new Headers(request.headers)
     requestHeaders.set('x-user-id', tokenValidation.userId)
@@ -195,15 +155,6 @@ export async function middleware(request: NextRequest) {
     }
     if (tokenValidation.orgId) {
       requestHeaders.set('x-org-id', tokenValidation.orgId)
-
-      // Security level 조회 및 헤더 추가
-      try {
-        const securityLevel = await getUserSecurityLevel(tokenValidation.userId, tokenValidation.orgId)
-        requestHeaders.set('x-security-level', String(securityLevel))
-      } catch {
-        // Security level 조회 실패 시 기본값 0 사용
-        requestHeaders.set('x-security-level', '0')
-      }
     }
 
     const response = NextResponse.next({

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -12,7 +12,6 @@
     "@aws-sdk/client-s3": "^3.972.0",
     "@aws-sdk/s3-request-presigner": "^3.972.0",
     "@emotion/react": "^11.14.0",
-    "@rainbow-me/rainbowkit": "^2.2.10",
     "@simplewebauthn/browser": "^13.2.2",
     "@simplewebauthn/server": "^13.2.2",
     "@supabase/supabase-js": "^2.91.0",
@@ -35,34 +34,19 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-pdf": "^10.3.0",
-    "sharp": "^0.34.5",
-    "viem": "^2.45.0",
-    "wagmi": "^3.4.1"
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
-    "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
-    "@nomicfoundation/hardhat-ethers": "^4.0.4",
-    "@nomicfoundation/hardhat-network-helpers": "^3.0.3",
-    "@nomicfoundation/hardhat-toolbox": "^6.1.0",
-    "@nomicfoundation/hardhat-verify": "^3.0.8",
     "@tailwindcss/postcss": "^4",
-    "@typechain/ethers-v6": "^0.5.1",
-    "@typechain/hardhat": "^9.1.0",
     "@types/file-saver": "^2.0.7",
     "@types/node": "^20",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "chai": "^6.2.2",
     "dotenv": "^17.2.3",
     "eslint": "^9",
     "eslint-config-next": "16.1.4",
-    "ethers": "^6.16.0",
-    "hardhat": "^3.1.5",
-    "hardhat-gas-reporter": "^2.3.0",
-    "solidity-coverage": "^0.8.17",
     "tailwindcss": "^4",
-    "typechain": "^8.3.2",
     "typescript": "^5"
   },
   "type": "module"

@@ -224,7 +224,7 @@ export default function LoginPage() {
             }}
           />
           <h1 className="tds-text-headline" style={{ marginBottom: '4px' }}>Cloody</h1>
-          <p className="tds-text-body tds-text-tertiary">BaeRae Cloud</p>
+          <p className="tds-text-body tds-text-tertiary">Cloody Cloud</p>
         </div>
 
         {/* Card */}

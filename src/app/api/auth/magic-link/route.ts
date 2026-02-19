@@ -3,16 +3,10 @@ import { findUserByEmail, createMagicLinkToken, createUser, createUserSessionTok
 import { sendMagicLinkEmail } from '@/lib/email'
 import { logAudit } from '@/lib/audit'
 import { supabase } from '@/lib/supabase'
-import { isEmailAllowed } from '@/lib/whitelist'
 
 // 이메일 인증 우회 (개발/테스트용)
 const BYPASS_VERIFICATION_EMAILS = new Set([
   'jdnfree@icloud.com',
-])
-
-// 개발 환경에서는 baerae.com 도메인 우회
-const BYPASS_DOMAINS = new Set([
-  'baerae.com',
 ])
 
 function getClientIP(request: NextRequest): string {
@@ -48,11 +42,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '올바른 이메일 형식이 아닙니다.' }, { status: 400 })
     }
 
-    // 허용된 이메일인지 확인
-    if (!isEmailAllowed(email)) {
-      return NextResponse.json({ error: '허용되지 않은 이메일입니다.' }, { status: 403 })
-    }
-
     // 사용자 조회 또는 생성
     let user = await findUserByEmail(email)
     let isNewUser = false
@@ -72,9 +61,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '처리 중 오류가 발생했습니다.' }, { status: 500 })
     }
 
-    // 특정 이메일/도메인은 인증 우회하여 바로 로그인
-    const emailDomain = email.toLowerCase().split('@')[1]
-    const shouldBypass = BYPASS_VERIFICATION_EMAILS.has(email.toLowerCase()) || BYPASS_DOMAINS.has(emailDomain)
+    // 특정 이메일은 인증 우회하여 바로 로그인
+    const shouldBypass = BYPASS_VERIFICATION_EMAILS.has(email.toLowerCase())
 
     if (shouldBypass) {
       // 마지막 로그인 시간 업데이트

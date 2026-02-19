@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { deleteFromR2 } from '@/lib/r2'
+import { deleteManyFromR2, extractR2KeyFromUrl, getStorageUsage } from '@/lib/r2'
 import { logAudit } from '@/lib/audit'
 
 function getClientIP(request: NextRequest): string {
@@ -9,6 +9,27 @@ function getClientIP(request: NextRequest): string {
     || request.headers.get('x-forwarded-for')?.split(',')[0]
     || '127.0.0.1'
   return forwardedFor.trim()
+}
+
+interface PhotoForR2Delete {
+  id: string
+  url: string
+  thumbnail_url?: string | null
+}
+
+function collectR2Keys(photos: PhotoForR2Delete[] | null | undefined): string[] {
+  if (!photos || photos.length === 0) return []
+
+  const keys = new Set<string>()
+  for (const photo of photos) {
+    const originalKey = extractR2KeyFromUrl(photo.url)
+    if (originalKey) keys.add(originalKey)
+
+    const thumbnailKey = extractR2KeyFromUrl(photo.thumbnail_url || null)
+    if (thumbnailKey) keys.add(thumbnailKey)
+  }
+
+  return Array.from(keys)
 }
 
 // GET: 휴지통 목록 조회
@@ -129,136 +150,180 @@ export async function DELETE(request: NextRequest) {
   try {
     const { photoIds, folderIds, emptyAll } = await request.json()
 
+    let totalRequestedR2Delete = 0
+    let totalDeletedR2Objects = 0
+    const failedR2Keys = new Set<string>()
+    let deletedPhotoRows = 0
+    let deletedFolderRows = 0
+
     // 휴지통 비우기
     if (emptyAll) {
-      // 모든 휴지통 사진 가져오기
-      const { data: trashPhotos } = await supabase
+      const { data: trashPhotos, error: trashPhotosError } = await supabase
         .from('photos')
-        .select('id, url')
+        .select('id, url, thumbnail_url')
         .eq('user_id', userId)
         .not('deleted_at', 'is', null)
 
-      // R2에서 파일 삭제
-      if (trashPhotos) {
-        for (const photo of trashPhotos) {
-          try {
-            const fileName = photo.url.split('/').pop()
-            if (fileName) {
-              await deleteFromR2(fileName)
-            }
-          } catch (e) {
-            console.error('R2 delete error:', e)
-          }
-        }
-      }
+      if (trashPhotosError) throw trashPhotosError
 
-      // DB에서 삭제
-      await supabase
+      // R2에서 원본 + 썸네일 삭제
+      const r2Keys = collectR2Keys(trashPhotos)
+      const r2DeleteResult = await deleteManyFromR2(r2Keys)
+      totalRequestedR2Delete += r2DeleteResult.requestedCount
+      totalDeletedR2Objects += r2DeleteResult.deletedCount
+      r2DeleteResult.failedKeys.forEach((key) => failedR2Keys.add(key))
+
+      const { count: deletedPhotosCount, error: deletePhotosError } = await supabase
         .from('photos')
-        .delete()
+        .delete({ count: 'exact' })
         .eq('user_id', userId)
         .not('deleted_at', 'is', null)
 
-      await supabase
+      if (deletePhotosError) throw deletePhotosError
+      deletedPhotoRows += deletedPhotosCount || 0
+
+      const { count: deletedFoldersCount, error: deleteFoldersError } = await supabase
         .from('folders')
-        .delete()
+        .delete({ count: 'exact' })
         .eq('user_id', userId)
         .not('deleted_at', 'is', null)
+
+      if (deleteFoldersError) throw deleteFoldersError
+      deletedFolderRows += deletedFoldersCount || 0
+
+      let r2UsageBytes: number | null = null
+      try {
+        r2UsageBytes = await getStorageUsage()
+      } catch (usageError) {
+        console.error('R2 usage check error:', usageError)
+      }
 
       logAudit({
         action: 'TRASH_EMPTY',
         ip,
         userAgent,
-        details: { count: trashPhotos?.length || 0 }
+        details: {
+          photos: deletedPhotoRows,
+          folders: deletedFolderRows,
+          r2DeleteRequestedCount: totalRequestedR2Delete,
+          r2DeletedCount: totalDeletedR2Objects,
+          r2FailedCount: failedR2Keys.size,
+        }
       })
 
-      return NextResponse.json({ success: true })
+      return NextResponse.json({
+        success: true,
+        deletedPhotoRows,
+        deletedFolderRows,
+        r2DeleteRequestedCount: totalRequestedR2Delete,
+        r2DeletedCount: totalDeletedR2Objects,
+        r2FailedCount: failedR2Keys.size,
+        failedR2Keys: Array.from(failedR2Keys).slice(0, 20),
+        r2UsageBytes,
+      })
     }
 
     // 특정 사진 영구 삭제
     if (photoIds && photoIds.length > 0) {
-      // 사진 URL 가져오기
-      const { data: photos } = await supabase
+      const { data: photos, error: photosQueryError } = await supabase
         .from('photos')
-        .select('id, url')
+        .select('id, url, thumbnail_url')
         .in('id', photoIds)
         .eq('user_id', userId)
         .not('deleted_at', 'is', null)
 
-      // R2에서 파일 삭제
-      if (photos) {
-        for (const photo of photos) {
-          try {
-            const fileName = photo.url.split('/').pop()
-            if (fileName) {
-              await deleteFromR2(fileName)
-            }
-          } catch (e) {
-            console.error('R2 delete error:', e)
-          }
-        }
-      }
+      if (photosQueryError) throw photosQueryError
 
-      // DB에서 삭제
-      await supabase
+      const r2Keys = collectR2Keys(photos)
+      const r2DeleteResult = await deleteManyFromR2(r2Keys)
+      totalRequestedR2Delete += r2DeleteResult.requestedCount
+      totalDeletedR2Objects += r2DeleteResult.deletedCount
+      r2DeleteResult.failedKeys.forEach((key) => failedR2Keys.add(key))
+
+      const { count: deletedCount, error: deleteError } = await supabase
         .from('photos')
-        .delete()
+        .delete({ count: 'exact' })
         .in('id', photoIds)
         .eq('user_id', userId)
+
+      if (deleteError) throw deleteError
+      deletedPhotoRows += deletedCount || 0
 
       logAudit({
         action: 'TRASH_PERMANENT_DELETE',
         ip,
         userAgent,
-        details: { photoIds }
+        details: {
+          photoIds,
+          deletedPhotoRows: deletedCount || 0,
+          r2DeleteRequestedCount: r2DeleteResult.requestedCount,
+          r2DeletedCount: r2DeleteResult.deletedCount,
+          r2FailedCount: r2DeleteResult.failedCount,
+        }
       })
     }
 
     // 특정 폴더 영구 삭제
     if (folderIds && folderIds.length > 0) {
-      // 폴더 내 사진 URL 가져오기
-      const { data: photos } = await supabase
+      const { data: photos, error: folderPhotosError } = await supabase
         .from('photos')
-        .select('id, url')
+        .select('id, url, thumbnail_url')
         .in('folder_id', folderIds)
         .eq('user_id', userId)
+        .not('deleted_at', 'is', null)
 
-      // R2에서 파일 삭제
-      if (photos) {
-        for (const photo of photos) {
-          try {
-            const fileName = photo.url.split('/').pop()
-            if (fileName) {
-              await deleteFromR2(fileName)
-            }
-          } catch (e) {
-            console.error('R2 delete error:', e)
-          }
-        }
-      }
+      if (folderPhotosError) throw folderPhotosError
 
-      // DB에서 삭제 (사진 먼저)
-      await supabase
+      const r2Keys = collectR2Keys(photos)
+      const r2DeleteResult = await deleteManyFromR2(r2Keys)
+      totalRequestedR2Delete += r2DeleteResult.requestedCount
+      totalDeletedR2Objects += r2DeleteResult.deletedCount
+      r2DeleteResult.failedKeys.forEach((key) => failedR2Keys.add(key))
+
+      const { count: deletedFolderPhotoCount, error: deletePhotosError } = await supabase
         .from('photos')
-        .delete()
+        .delete({ count: 'exact' })
         .in('folder_id', folderIds)
         .eq('user_id', userId)
+        .not('deleted_at', 'is', null)
 
-      await supabase
+      if (deletePhotosError) throw deletePhotosError
+      deletedPhotoRows += deletedFolderPhotoCount || 0
+
+      const { count: deletedFoldersCount, error: deleteFoldersError } = await supabase
         .from('folders')
-        .delete()
+        .delete({ count: 'exact' })
         .in('id', folderIds)
         .eq('user_id', userId)
+        .not('deleted_at', 'is', null)
+
+      if (deleteFoldersError) throw deleteFoldersError
+      deletedFolderRows += deletedFoldersCount || 0
 
       logAudit({
         action: 'TRASH_PERMANENT_DELETE',
         ip,
         userAgent,
-        details: { folderIds }
+        details: {
+          folderIds,
+          deletedFolderRows: deletedFoldersCount || 0,
+          deletedPhotoRows: deletedFolderPhotoCount || 0,
+          r2DeleteRequestedCount: r2DeleteResult.requestedCount,
+          r2DeletedCount: r2DeleteResult.deletedCount,
+          r2FailedCount: r2DeleteResult.failedCount,
+        }
       })
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({
+      success: true,
+      deletedPhotoRows,
+      deletedFolderRows,
+      r2DeleteRequestedCount: totalRequestedR2Delete,
+      r2DeletedCount: totalDeletedR2Objects,
+      r2FailedCount: failedR2Keys.size,
+      failedR2Keys: Array.from(failedR2Keys).slice(0, 20),
+    })
   } catch (error) {
     console.error('Permanent delete error:', error)
     return NextResponse.json({ error: 'Failed to delete permanently' }, { status: 500 })

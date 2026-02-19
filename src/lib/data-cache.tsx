@@ -31,6 +31,11 @@ interface Folder {
   created_at: string
 }
 
+interface FolderRow extends Omit<Folder, 'parent_id'> {
+  parent_id?: string | null
+  parent_folder_id?: string | null
+}
+
 interface CacheEntry<T> {
   data: T
   timestamp: number
@@ -78,6 +83,16 @@ const CACHE_TTL = 5 * 60 * 1000 // 5분
 
 const DataCacheContext = createContext<DataCacheContextType | null>(null)
 
+function normalizeFolder(row: FolderRow): Folder {
+  return {
+    id: row.id,
+    name: row.name,
+    parent_id: row.parent_id ?? row.parent_folder_id ?? null,
+    user_id: row.user_id,
+    created_at: row.created_at,
+  }
+}
+
 export function DataCacheProvider({ children }: { children: ReactNode }) {
   // 캐시 저장소
   const foldersCache = useRef<CacheEntry<Folder[]> | null>(null)
@@ -116,7 +131,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
         .is('deleted_at', null) // 휴지통 제외
         .order('created_at', { ascending: true })
 
-      const folders = (data || []) as Folder[]
+      const folders = ((data || []) as FolderRow[]).map(normalizeFolder)
       foldersCache.current = { data: folders, timestamp: Date.now(), userId }
       pendingRequests.current.delete(pendingKey)
       return folders
@@ -199,7 +214,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
           .select('*')
           .eq('user_id', userId)
           .is('deleted_at', null) // 휴지통 제외
-          .order('order', { ascending: false }) // 최신순 (getPhotosPaginated와 동일)
+          .order('created_at', { ascending: false }) // 전체 카테고리는 최신 업로드 순
           .order('id', { ascending: false }) // 보조 정렬: 일관된 순서 보장
           .range(from, from + pageSize - 1)
 
@@ -273,7 +288,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
       .select('*')
       .eq('user_id', userId)
       .is('deleted_at', null) // 휴지통 제외
-      .order('order', { ascending: false })
+      .order('created_at', { ascending: false }) // 카테고리 탭은 최신 업로드 순
       .order('id', { ascending: false }) // 보조 정렬: 일관된 순서 보장
       .range(cursor, cursor + limit)
 

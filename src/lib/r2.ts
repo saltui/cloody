@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command, GetObjectCommand, HeadObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command, GetObjectCommand, HeadObjectCommand, CopyObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
 const R2_ENDPOINT = process.env.R2_ENDPOINT // MinIO or custom S3 endpoint
@@ -42,6 +42,115 @@ export async function deleteFromR2(fileName: string) {
   })
 
   await r2Client.send(command)
+}
+
+function removeQueryAndHash(value: string): string {
+  return value.split(/[?#]/, 1)[0]
+}
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
+}
+
+export function extractR2KeyFromUrl(urlOrKey: string | null | undefined): string | null {
+  if (!urlOrKey) return null
+
+  const value = urlOrKey.trim()
+  if (!value) return null
+
+  const normalizedPublicBase = R2_PUBLIC_URL ? R2_PUBLIC_URL.replace(/\/+$/, '') : ''
+  if (normalizedPublicBase && value.startsWith(`${normalizedPublicBase}/`)) {
+    const key = removeQueryAndHash(value.slice(normalizedPublicBase.length + 1)).replace(/^\/+/, '')
+    return key ? safeDecodeURIComponent(key) : null
+  }
+
+  if (!value.startsWith('http://') && !value.startsWith('https://')) {
+    const rawKey = removeQueryAndHash(value).replace(/^\/+/, '')
+    return rawKey ? safeDecodeURIComponent(rawKey) : null
+  }
+
+  try {
+    const parsed = new URL(value)
+    let key = parsed.pathname.replace(/^\/+/, '')
+
+    if (parsed.hostname.endsWith('.r2.cloudflarestorage.com')) {
+      const bucketPrefix = `${BUCKET_NAME}/`
+      if (key.startsWith(bucketPrefix)) {
+        key = key.slice(bucketPrefix.length)
+      }
+    }
+
+    key = removeQueryAndHash(key).replace(/^\/+/, '')
+    return key ? safeDecodeURIComponent(key) : null
+  } catch {
+    const rawKey = removeQueryAndHash(value).replace(/^\/+/, '')
+    return rawKey ? safeDecodeURIComponent(rawKey) : null
+  }
+}
+
+interface DeleteManyResult {
+  requestedCount: number
+  deletedCount: number
+  failedCount: number
+  failedKeys: string[]
+}
+
+export async function deleteManyFromR2(fileNames: string[]): Promise<DeleteManyResult> {
+  const uniqueKeys = Array.from(
+    new Set(
+      fileNames
+        .map((key) => key.trim())
+        .filter((key) => key.length > 0)
+    )
+  )
+
+  if (uniqueKeys.length === 0) {
+    return {
+      requestedCount: 0,
+      deletedCount: 0,
+      failedCount: 0,
+      failedKeys: [],
+    }
+  }
+
+  const failedKeys: string[] = []
+  let deletedCount = 0
+  const BATCH_SIZE = 1000
+
+  for (let i = 0; i < uniqueKeys.length; i += BATCH_SIZE) {
+    const chunk = uniqueKeys.slice(i, i + BATCH_SIZE)
+
+    try {
+      const command = new DeleteObjectsCommand({
+        Bucket: BUCKET_NAME,
+        Delete: {
+          Objects: chunk.map((Key) => ({ Key })),
+        },
+      })
+
+      const response = await r2Client.send(command)
+      deletedCount += response.Deleted?.length || 0
+
+      if (response.Errors && response.Errors.length > 0) {
+        for (const error of response.Errors) {
+          if (error.Key) failedKeys.push(error.Key)
+        }
+      }
+    } catch {
+      failedKeys.push(...chunk)
+    }
+  }
+
+  return {
+    requestedCount: uniqueKeys.length,
+    deletedCount,
+    failedCount: failedKeys.length,
+    failedKeys,
+  }
 }
 
 export async function getStorageUsage(): Promise<number> {
