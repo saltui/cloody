@@ -54,7 +54,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     // 스토리지 사용량 가져오기
-    fetch(`/api/storage?refresh=1&ts=${Date.now()}`, {
+    fetch(`/api/storage?refresh=1&includeR2=1&ts=${Date.now()}`, {
       cache: 'no-store',
       credentials: 'include',
       headers: user?.id ? { 'x-user-id': user.id } : undefined,

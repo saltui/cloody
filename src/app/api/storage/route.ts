@@ -6,6 +6,8 @@ import { verifyUserSessionToken } from '@/lib/user-auth'
 // 간단한 메모리 캐시 (15초)
 const cache = new Map<string, { usage: number; timestamp: number }>()
 const CACHE_TTL = 15 * 1000
+const R2_CACHE_TTL = 20 * 1000
+let r2Cache: { usage: number; timestamp: number } | null = null
 
 function getClientIP(request: NextRequest): string {
   const forwardedFor = request.headers.get('cf-connecting-ip')
@@ -36,7 +38,7 @@ export async function GET(request: NextRequest) {
     : request.headers.get('x-user-id')
   const forceRefresh = request.nextUrl.searchParams.get('refresh') === '1'
   const includeR2 = request.nextUrl.searchParams.get('includeR2') === '1'
-  const shouldBypassCache = forceRefresh || includeR2
+  const shouldBypassCache = forceRefresh
 
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -77,15 +79,31 @@ export async function GET(request: NextRequest) {
 
     let r2Usage: number | null = null
     if (includeR2) {
-      try {
-        r2Usage = await getStorageUsage()
-      } catch (r2Error) {
-        console.error('R2 usage error:', r2Error)
+      const isR2CacheValid = r2Cache && Date.now() - r2Cache.timestamp < R2_CACHE_TTL
+      if (isR2CacheValid && r2Cache) {
+        r2Usage = r2Cache.usage
+      } else {
+        try {
+          r2Usage = await getStorageUsage()
+          r2Cache = { usage: r2Usage, timestamp: Date.now() }
+        } catch (r2Error) {
+          console.error('R2 usage error:', r2Error)
+        }
       }
     }
 
+    const effectiveUsage = includeR2 && r2Usage !== null
+      ? Math.max(totalUsage, r2Usage)
+      : totalUsage
+
     return NextResponse.json(
-      includeR2 ? { usage: totalUsage, r2Usage } : { usage: totalUsage },
+      includeR2
+        ? {
+            usage: effectiveUsage,
+            logicalUsage: totalUsage,
+            bucketUsage: r2Usage,
+          }
+        : { usage: totalUsage },
       {
         headers: {
           'Cache-Control': shouldBypassCache ? 'no-store' : 'private, max-age=15'

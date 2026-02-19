@@ -97,7 +97,7 @@ export default function TrashPage() {
         return
       }
       const endpoint = forceRefresh
-        ? `/api/storage?refresh=1&ts=${Date.now()}`
+        ? `/api/storage?refresh=1&includeR2=1&ts=${Date.now()}`
         : '/api/storage'
       const res = await fetch(endpoint, {
         credentials: 'include',
