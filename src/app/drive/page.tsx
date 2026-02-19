@@ -1158,13 +1158,8 @@ export default function DrivePage() {
       if (requestId !== storageUsageRequestIdRef.current) {
         return
       }
-      const logicalUsage = Number(payload.logicalUsage ?? NaN)
-      const maxUsage = Number(payload.maxUsage ?? payload.usage ?? 0)
-      // 1) 논리 사용량이 유효하고 0보다 크면 우선 표시
-      // 2) 과거 데이터(file_size 누락) 호환을 위해 0일 때는 maxUsage로 폴백
-      const usageCandidate = Number.isFinite(logicalUsage) && logicalUsage > 0
-        ? logicalUsage
-        : maxUsage
+      // 실사용(과금) 기준에 가깝게 서버의 usage(=max/logical+bucket 보정값)를 우선 표시
+      const usageCandidate = payload.usage ?? payload.maxUsage ?? payload.logicalUsage ?? 0
       const parsedUsage = Number(usageCandidate)
       setStorageUsed(Number.isFinite(parsedUsage) ? parsedUsage : 0)
     } catch (err) {
