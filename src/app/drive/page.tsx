@@ -746,6 +746,7 @@ export default function DrivePage() {
   const [isCreatingFolder, setIsCreatingFolder] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [showMoreScreen, setShowMoreScreen] = useState(false)
+  const [isDesktopViewport, setIsDesktopViewport] = useState(false)
 
   // 폴더 수정 관련
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null)
@@ -959,12 +960,16 @@ export default function DrivePage() {
     const roundedPercent = Math.max(0, Math.min(99, Math.round(percent)))
     const now = Date.now()
     const previous = uploadProgressSnapshotRef.current.get(itemId)
+    const queueSize = uploadQueue.length
+    const minPercentDelta = queueSize >= 1200 ? 6 : queueSize >= 600 ? 4 : queueSize >= 250 ? 3 : 2
+    const minLoadedDelta = queueSize >= 1200 ? 1024 * 1024 : queueSize >= 600 ? 768 * 1024 : 256 * 1024
+    const minElapsedMs = queueSize >= 1200 ? 600 : queueSize >= 600 ? 450 : 250
 
     if (previous) {
       const percentAdvanced = roundedPercent - previous.percent
       const loadedAdvanced = loaded - previous.loaded
       const elapsed = now - previous.ts
-      if (percentAdvanced < 2 && loadedAdvanced < 256 * 1024 && elapsed < 250) {
+      if (percentAdvanced < minPercentDelta && loadedAdvanced < minLoadedDelta && elapsed < minElapsedMs) {
         return
       }
     }
@@ -975,7 +980,23 @@ export default function DrivePage() {
       ts: now,
     })
     updateQueueItem(itemId, { progress: roundedPercent, uploadedSize: loaded })
-  }, [updateQueueItem])
+  }, [updateQueueItem, uploadQueue.length])
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(min-width: 1280px)')
+    const updateViewport = () => setIsDesktopViewport(mediaQuery.matches)
+    updateViewport()
+
+    mediaQuery.addEventListener('change', updateViewport)
+    return () => mediaQuery.removeEventListener('change', updateViewport)
+  }, [])
+
+  const mobileUploadItems = useMemo(() => {
+    if (uploadQueue.length <= 200) return uploadQueue
+    return uploadQueue.slice(-200)
+  }, [uploadQueue])
+
+  const hiddenMobileUploadCount = Math.max(0, uploadQueue.length - mobileUploadItems.length)
 
   const fetchData = useCallback(async (folderId: string | null, category: string = 'all') => {
     // 사용자 ID가 없으면 로딩 유지 (사용자 로딩 완료될 때까지)
@@ -5575,7 +5596,7 @@ export default function DrivePage() {
       )}
 
       {/* 업로드 현황 패널 (모바일 탭) - 더보기 화면에서는 숨김 */}
-      {showUploadPanel && !showMoreScreen && (
+      {showUploadPanel && !showMoreScreen && !isDesktopViewport && (
         <div className="xl:hidden flex-1 min-h-0 pb-20 flex flex-col" style={{ background: 'var(--background)' }}>
           {/* 헤더 */}
           <div className="sticky top-0 z-10 safe-area-top" style={{ background: 'var(--background)', borderBottom: '1px solid var(--glass-border)' }}>
@@ -5608,7 +5629,14 @@ export default function DrivePage() {
               </div>
             ) : (
               <div className="space-y-2">
-                {uploadQueue.map((item) => (
+                {hiddenMobileUploadCount > 0 && (
+                  <div className="px-1 pb-1">
+                    <p className="text-[11px]" style={{ color: 'var(--foreground-muted)' }}>
+                      최근 {mobileUploadItems.length}개 표시 중 (전체 {uploadQueue.length}개)
+                    </p>
+                  </div>
+                )}
+                {mobileUploadItems.map((item) => (
                   <div
                     key={item.id}
                     className="p-3 rounded-xl"

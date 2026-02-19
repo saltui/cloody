@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useUpload, type UploadItem } from '@/lib/upload-context'
 import { useTheme } from '@/lib/theme'
 
 type FilterType = 'all' | 'done' | 'cancelled' | 'error'
+const MAX_VISIBLE_ITEMS = 300
+const LOAD_MORE_STEP = 300
 
 // 파일 확장자 추출
 function getFileExtension(filename: string): string {
@@ -47,7 +49,18 @@ export default function UploadPanel() {
   } = useUpload()
 
   const [filter, setFilter] = useState<FilterType>('all')
+  const [isDesktopViewport, setIsDesktopViewport] = useState(false)
+  const [visibleCount, setVisibleCount] = useState(MAX_VISIBLE_ITEMS)
   const isDark = theme === 'dark'
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(min-width: 1280px)')
+    const updateViewport = () => setIsDesktopViewport(mediaQuery.matches)
+    updateViewport()
+
+    mediaQuery.addEventListener('change', updateViewport)
+    return () => mediaQuery.removeEventListener('change', updateViewport)
+  }, [])
 
   // 필터링된 항목
   const filteredItems = useMemo(() => {
@@ -58,26 +71,35 @@ export default function UploadPanel() {
     return uploadQueue
   }, [uploadQueue, filter])
 
-  // 상태별 카운트
-  const counts = useMemo(() => ({
-    all: uploadQueue.filter(item => item.status !== 'cancelled').length,
-    done: uploadQueue.filter(item => item.status === 'done').length,
-    cancelled: uploadQueue.filter(item => item.status === 'cancelled').length,
-    error: uploadQueue.filter(item => item.status === 'error').length,
-  }), [uploadQueue])
+  useEffect(() => {
+    setVisibleCount(MAX_VISIBLE_ITEMS)
+  }, [filter, uploadQueue.length])
 
-  // 전체 진행률 계산
-  const totalProgress = useMemo(() => {
-    const activeItems = uploadQueue.filter(item =>
-      item.status === 'uploading' || item.status === 'pending' || item.status === 'done'
-    )
-    if (activeItems.length === 0) return 0
-    const totalSize = activeItems.reduce((sum, item) => sum + (item.fileSize || 0), 0)
-    const uploadedSize = activeItems.reduce((sum, item) => {
-      if (item.status === 'done') return sum + (item.fileSize || 0)
-      return sum + (item.uploadedSize || 0)
-    }, 0)
-    return totalSize > 0 ? (uploadedSize / totalSize) * 100 : 0
+  const visibleItems = useMemo(() => {
+    if (filteredItems.length <= visibleCount) return filteredItems
+    return filteredItems.slice(-visibleCount)
+  }, [filteredItems, visibleCount])
+
+  const hiddenItemsCount = Math.max(0, filteredItems.length - visibleItems.length)
+
+  // 상태별 카운트
+  const counts = useMemo(() => {
+    return uploadQueue.reduce((acc, item) => {
+      if (item.status !== 'cancelled') acc.all += 1
+      if (item.status === 'done') acc.done += 1
+      if (item.status === 'cancelled') acc.cancelled += 1
+      if (item.status === 'error') acc.error += 1
+      if (item.status === 'uploading') acc.uploading += 1
+      if (item.status === 'pending') acc.pending += 1
+      return acc
+    }, {
+      all: 0,
+      done: 0,
+      cancelled: 0,
+      error: 0,
+      uploading: 0,
+      pending: 0,
+    })
   }, [uploadQueue])
 
   const footerProgressPercent = useMemo(() => {
@@ -86,12 +108,11 @@ export default function UploadPanel() {
     return Math.max(0, Math.min(100, value))
   }, [uploadProgress.current, uploadProgress.total])
 
+  // 데스크톱에서만 렌더 (모바일은 drive/page.tsx 전용 패널 사용)
+  if (!isDesktopViewport) return null
+
   // 업로드 중이거나 큐에 항목이 있을 때만 표시
   if (!uploading && uploadQueue.length === 0) return null
-
-  const uploadingCount = uploadQueue.filter(item => item.status === 'uploading').length
-  const pendingCount = uploadQueue.filter(item => item.status === 'pending').length
-  const activeCount = uploadingCount + pendingCount
 
   // 링크 복사
   const copyLink = async (url?: string) => {
@@ -235,7 +256,21 @@ export default function UploadPanel() {
                 <span className="text-sm">항목이 없습니다</span>
               </div>
             ) : (
-              filteredItems.map((item) => (
+              <>
+                {hiddenItemsCount > 0 && (
+                  <div className={`px-5 py-2 flex items-center justify-between ${isDark ? 'text-zinc-500' : 'text-gray-500'}`}>
+                    <span className="text-[11px]">
+                      최근 {visibleItems.length}개 표시 중 (전체 {filteredItems.length}개)
+                    </span>
+                    <button
+                      onClick={() => setVisibleCount(prev => prev + LOAD_MORE_STEP)}
+                      className={`text-[11px] font-medium px-2 py-1 rounded-md transition-colors ${isDark ? 'hover:bg-zinc-800 text-zinc-300' : 'hover:bg-gray-100 text-gray-700'}`}
+                    >
+                      더 보기
+                    </button>
+                  </div>
+                )}
+                {visibleItems.map((item) => (
                 <div
                   key={item.id}
                   className={`px-5 py-3 ${isDark ? 'hover:bg-zinc-800/50' : 'hover:bg-gray-50'} transition-colors`}
@@ -297,7 +332,8 @@ export default function UploadPanel() {
                     </div>
                   </div>
                 </div>
-              ))
+                ))}
+              </>
             )}
           </div>
         </>
