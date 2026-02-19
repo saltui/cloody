@@ -21,6 +21,66 @@ function truncateFileType(fileType: string | undefined): string | undefined {
   return fileType.slice(0, 50)
 }
 
+const MIN_UPLOAD_CONCURRENCY = 4
+const MAX_UPLOAD_CONCURRENCY = 16
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
+function getUploadConcurrency(files: Array<{ size: number }>): number {
+  if (files.length === 0) return MIN_UPLOAD_CONCURRENCY
+
+  // 운영 중 빠른 튜닝을 위해 환경 변수로 강제 오버라이드 지원
+  const configured = Number(process.env.NEXT_PUBLIC_UPLOAD_CONCURRENCY)
+  if (Number.isFinite(configured) && configured > 0) {
+    return clamp(Math.floor(configured), MIN_UPLOAD_CONCURRENCY, MAX_UPLOAD_CONCURRENCY)
+  }
+
+  const fileCount = files.length
+  const totalBytes = files.reduce((sum, file) => sum + (file.size || 0), 0)
+  const avgSizeMb = totalBytes / fileCount / (1024 * 1024)
+
+  // CPU 코어 수 기준 상한 (브라우저 과부하 방지)
+  const hardwareThreads = typeof navigator !== 'undefined' && navigator.hardwareConcurrency
+    ? navigator.hardwareConcurrency
+    : 8
+  const hardwareCap = clamp(Math.round(hardwareThreads * 1.5), 8, MAX_UPLOAD_CONCURRENCY)
+
+  let concurrency = 8
+  if (fileCount >= 300) concurrency = 14
+  else if (fileCount >= 120) concurrency = 12
+  else if (fileCount >= 40) concurrency = 10
+
+  // 평균 파일 크기가 크면 동시성은 조금 낮춰 브라우저 렉/실패율을 줄임
+  if (avgSizeMb >= 300) concurrency -= 3
+  else if (avgSizeMb >= 150) concurrency -= 2
+  else if (avgSizeMb >= 80) concurrency -= 1
+
+  return clamp(concurrency, MIN_UPLOAD_CONCURRENCY, hardwareCap)
+}
+
+async function runWithConcurrency(
+  total: number,
+  concurrency: number,
+  worker: (index: number) => Promise<void>
+): Promise<void> {
+  if (total <= 0) return
+
+  const limit = Math.max(1, Math.min(concurrency, total))
+  let nextIndex = 0
+
+  const runners = Array.from({ length: limit }, async () => {
+    while (nextIndex < total) {
+      const index = nextIndex
+      nextIndex += 1
+      await worker(index)
+    }
+  })
+
+  await Promise.all(runners)
+}
+
 // R2 URL을 프록시 URL로 즉시 변환
 function toProxyUrl(url: string): string {
   if (url.includes('.r2.dev/')) {
@@ -149,90 +209,152 @@ function getMimeTypeFromExtension(fileName: string, browserType: string): string
   return 'application/octet-stream'
 }
 
+async function uploadViaServerApi(
+  file: File,
+  fileName: string,
+  onProgress?: (percent: number, loaded: number, total: number) => void
+): Promise<{ url: string }> {
+  const formData = new FormData()
+  formData.append('file', file, fileName)
+  formData.append('fileName', fileName)
+
+  if (onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.timeout = 10 * 60 * 1000
+
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100)
+          onProgress(percent, event.loaded, event.total)
+        }
+      })
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText)
+            if (!data?.url) {
+              reject(new Error('Upload succeeded but response URL is missing'))
+              return
+            }
+            resolve({ url: data.url as string })
+          } catch {
+            reject(new Error('Upload succeeded but response parsing failed'))
+          }
+        } else {
+          reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`))
+        }
+      })
+
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network error during server upload'))
+      })
+      xhr.addEventListener('timeout', () => {
+        reject(new Error('Server upload timeout (10 minutes)'))
+      })
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Server upload aborted'))
+      })
+
+      xhr.open('POST', '/api/upload')
+      xhr.send(formData)
+    })
+  }
+
+  const response = await fetch('/api/upload', {
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Server upload failed: ${response.status} ${errorText}`)
+  }
+
+  const data = await response.json()
+  if (!data?.url) {
+    throw new Error('Server upload response URL is missing')
+  }
+
+  return { url: data.url as string }
+}
+
 // Presigned URL을 사용한 직접 R2 업로드 (Vercel body size 제한 우회)
 async function uploadWithPresignedUrl(
   file: File,
   fileName: string,
   onProgress?: (percent: number, loaded: number, total: number) => void
 ): Promise<{ url: string }> {
-  // 확장자 기반으로 MIME 타입 결정 (브라우저가 HEIC/MOV 등을 인식하지 못할 때)
-  const fileType = getMimeTypeFromExtension(file.name, file.type)
-
-  // 1. Presigned URL 요청
-  const presignRes = await fetch('/api/upload/presign', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      fileName,
-      fileType,
-      fileSize: file.size,
-    }),
-  })
-
-  if (!presignRes.ok) {
-    const error = await presignRes.json()
-    throw new Error(error.error || 'Presign failed')
-  }
-
-  // 서버에서 반환한 contentType 사용 (presign과 upload가 동일한 타입 사용 보장)
-  const { uploadUrl, publicUrl, contentType } = await presignRes.json()
-  const uploadContentType = contentType || fileType
-
-  // 2. R2에 직접 업로드 (진행률 추적)
-  console.log('[R2Upload] Starting upload:', { fileName, uploadContentType, fileSize: file.size })
-
-  // 진행률 추적이 필요하면 XHR 사용, 아니면 fetch 사용
-  if (onProgress) {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-
-      // 5분 타임아웃 설정
-      xhr.timeout = 5 * 60 * 1000
-
-      xhr.upload.addEventListener('progress', (event) => {
-        if (event.lengthComputable) {
-          const percent = Math.round((event.loaded / event.total) * 100)
-          onProgress(percent, event.loaded, event.total)
-          if (percent % 25 === 0) {
-            console.log('[R2Upload] Progress:', percent + '%', fileName)
-          }
-        }
-      })
-
-      xhr.addEventListener('load', () => {
-        console.log('[R2Upload] Load event:', xhr.status, xhr.statusText, fileName)
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve({ url: publicUrl })
-        } else {
-          console.error('[R2Upload] Failed:', xhr.status, xhr.responseText)
-          reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`))
-        }
-      })
-
-      xhr.addEventListener('error', (event) => {
-        console.error('[R2Upload] Network error:', event, fileName)
-        reject(new Error('Network error during upload'))
-      })
-
-      xhr.addEventListener('timeout', () => {
-        console.error('[R2Upload] Timeout:', fileName)
-        reject(new Error('Upload timeout (5 minutes)'))
-      })
-
-      xhr.addEventListener('abort', () => {
-        console.error('[R2Upload] Aborted:', fileName)
-        reject(new Error('Upload aborted'))
-      })
-
-      xhr.open('PUT', uploadUrl)
-      xhr.setRequestHeader('Content-Type', uploadContentType)
-      console.log('[R2Upload] Sending with Content-Type:', uploadContentType)
-      xhr.send(file)
-    })
-  }
-
-  // fetch API 사용 (진행률 추적 불필요시)
   try {
+    // 확장자 기반으로 MIME 타입 결정 (브라우저가 HEIC/MOV 등을 인식하지 못할 때)
+    const fileType = getMimeTypeFromExtension(file.name, file.type)
+
+    // 1. Presigned URL 요청
+    const presignRes = await fetch('/api/upload/presign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fileName,
+        fileType,
+        fileSize: file.size,
+      }),
+    })
+
+    if (!presignRes.ok) {
+      const error = await presignRes.json()
+      throw new Error(error.error || 'Presign failed')
+    }
+
+    // 서버에서 반환한 contentType 사용 (presign과 upload가 동일한 타입 사용 보장)
+    const { uploadUrl, publicUrl, contentType } = await presignRes.json()
+    const uploadContentType = contentType || fileType
+
+    // 진행률 추적이 필요하면 XHR 사용, 아니면 fetch 사용
+    if (onProgress) {
+      return await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+
+        // 5분 타임아웃 설정
+        xhr.timeout = 5 * 60 * 1000
+
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            const percent = Math.round((event.loaded / event.total) * 100)
+            onProgress(percent, event.loaded, event.total)
+          }
+        })
+
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve({ url: publicUrl })
+          } else {
+            console.warn('[R2Upload] Direct upload failed:', xhr.status, xhr.responseText)
+            reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`))
+          }
+        })
+
+        xhr.addEventListener('error', (event) => {
+          console.info('[R2Upload] Direct upload network error, fallback 예정:', event, fileName)
+          reject(new Error('Network error during upload'))
+        })
+
+        xhr.addEventListener('timeout', () => {
+          console.info('[R2Upload] Direct upload timeout, fallback 예정:', fileName)
+          reject(new Error('Upload timeout (5 minutes)'))
+        })
+
+        xhr.addEventListener('abort', () => {
+          console.info('[R2Upload] Direct upload aborted, fallback 예정:', fileName)
+          reject(new Error('Upload aborted'))
+        })
+
+        xhr.open('PUT', uploadUrl)
+        xhr.setRequestHeader('Content-Type', uploadContentType)
+        xhr.send(file)
+      })
+    }
+
     const response = await fetch(uploadUrl, {
       method: 'PUT',
       headers: {
@@ -243,15 +365,14 @@ async function uploadWithPresignedUrl(
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('[R2Upload] Fetch failed:', response.status, errorText)
+      console.warn('[R2Upload] Direct fetch upload failed:', response.status, errorText)
       throw new Error(`Upload failed: ${response.status}`)
     }
 
-    console.log('[R2Upload] Fetch success:', fileName)
     return { url: publicUrl }
   } catch (error) {
-    console.error('[R2Upload] Fetch error:', error)
-    throw error
+    console.info('[R2Upload] Falling back to /api/upload:', error)
+    return uploadViaServerApi(file, fileName, onProgress)
   }
 }
 
@@ -530,6 +651,72 @@ interface DuplicateFile {
   existingPhoto: Photo
 }
 
+interface FileWithFolderPath {
+  file: File
+  folderPath: string
+}
+
+type FolderParentColumn = 'parent_id' | 'parent_folder_id'
+
+interface SupabaseErrorLike {
+  code?: string
+  message?: string
+  details?: string
+  hint?: string
+}
+
+const BLOCKED_FOLDER_PATTERNS = [
+  /^\./, // .으로 시작하는 폴더
+  /^node_modules$/i,
+  /^__pycache__$/i,
+  /^__tests__$/i,
+  /^\.next$/i,
+  /^\.git$/i,
+  /^\.vscode$/i,
+  /^dist$/i,
+  /^build$/i,
+  /^coverage$/i,
+  /^vendor$/i,
+]
+
+function isBlockedFolderName(name: string): boolean {
+  return BLOCKED_FOLDER_PATTERNS.some(pattern => pattern.test(name))
+}
+
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+}
+
+function normalizeSupabaseError(error: unknown): SupabaseErrorLike {
+  if (!error || typeof error !== 'object') {
+    return { message: String(error || 'Unknown error') }
+  }
+  const candidate = error as SupabaseErrorLike
+  return {
+    code: candidate.code,
+    message: candidate.message || 'Unknown error',
+    details: candidate.details,
+    hint: candidate.hint,
+  }
+}
+
+function formatSupabaseError(error: unknown): string {
+  const normalized = normalizeSupabaseError(error)
+  return [normalized.code, normalized.message, normalized.details, normalized.hint]
+    .filter(Boolean)
+    .join(' | ')
+}
+
+function isMissingColumnError(error: unknown, columnName?: string): boolean {
+  const normalized = normalizeSupabaseError(error)
+  const code = normalized.code || ''
+  const message = `${normalized.message || ''} ${normalized.details || ''} ${normalized.hint || ''}`.toLowerCase()
+  if (code === '42703' || code === 'PGRST204') {
+    return !columnName || message.includes(columnName.toLowerCase())
+  }
+  return message.includes('column') && (!columnName || message.includes(columnName.toLowerCase()))
+}
+
 export default function DrivePage() {
   const { theme, viewMode, setTheme, setViewMode } = useTheme()
   const { uploading, uploadQueue, uploadProgress, showUploadPanel, setShowUploadPanel, addToQueue, updateQueueItem, removeFromQueue, clearCompleted, clearAll } = useUpload()
@@ -685,6 +872,110 @@ export default function DrivePage() {
 
   // fetch 요청 카운터 (race condition 방지)
   const fetchCounterRef = useRef(0)
+  const folderParentColumnRef = useRef<FolderParentColumn>('parent_id')
+  const uploadProgressSnapshotRef = useRef<Map<string, { percent: number; loaded: number; ts: number }>>(new Map())
+  const optimisticPhotoBufferRef = useRef<Photo[]>([])
+  const optimisticPhotoFlushTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const pendingStorageDeltaRef = useRef(0)
+  const pendingStorageFlushTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const getFolderParentColumns = useCallback((): FolderParentColumn[] => {
+    return folderParentColumnRef.current === 'parent_folder_id'
+      ? ['parent_folder_id', 'parent_id']
+      : ['parent_id', 'parent_folder_id']
+  }, [])
+
+  const shouldDisplayUploadedInCurrentView = useCallback((folderId: string | null, isVideo: boolean, fileType?: string): boolean => {
+    const category = searchParams.get('category') || 'all'
+    if (category === 'all') {
+      return (folderId === null && currentFolderId === null) || folderId === currentFolderId
+    }
+    if (category === 'photos') return !isVideo
+    if (category === 'videos') return isVideo
+    if (category === 'documents') {
+      const normalizedType = (fileType || '').toLowerCase()
+      return !isVideo && !normalizedType.startsWith('image/')
+    }
+    return false
+  }, [searchParams, currentFolderId])
+
+  const flushOptimisticPhotos = useCallback(() => {
+    const queued = optimisticPhotoBufferRef.current
+    if (queued.length === 0) return
+    optimisticPhotoBufferRef.current = []
+
+    setPhotos(prev => {
+      const existingUrls = new Set(prev.map(item => item.url))
+      const appended = queued.filter(item => !existingUrls.has(item.url))
+      if (appended.length === 0) return prev
+      return [...prev, ...appended]
+    })
+  }, [])
+
+  const flushStorageDelta = useCallback(() => {
+    if (pendingStorageDeltaRef.current === 0) return
+    const delta = pendingStorageDeltaRef.current
+    pendingStorageDeltaRef.current = 0
+    setStorageUsed(prev => Math.max(0, prev + delta))
+  }, [])
+
+  const enqueueStorageDelta = useCallback((delta: number) => {
+    if (!Number.isFinite(delta) || delta === 0) return
+    pendingStorageDeltaRef.current += delta
+    if (pendingStorageFlushTimerRef.current) return
+
+    pendingStorageFlushTimerRef.current = setTimeout(() => {
+      pendingStorageFlushTimerRef.current = null
+      flushStorageDelta()
+    }, 250)
+  }, [flushStorageDelta])
+
+  const enqueueOptimisticPhoto = useCallback((photo: Photo) => {
+    optimisticPhotoBufferRef.current.push(photo)
+    if (optimisticPhotoFlushTimerRef.current) return
+
+    optimisticPhotoFlushTimerRef.current = setTimeout(() => {
+      optimisticPhotoFlushTimerRef.current = null
+      flushOptimisticPhotos()
+    }, 200)
+  }, [flushOptimisticPhotos])
+
+  useEffect(() => {
+    return () => {
+      if (optimisticPhotoFlushTimerRef.current) {
+        clearTimeout(optimisticPhotoFlushTimerRef.current)
+        optimisticPhotoFlushTimerRef.current = null
+      }
+      if (pendingStorageFlushTimerRef.current) {
+        clearTimeout(pendingStorageFlushTimerRef.current)
+        pendingStorageFlushTimerRef.current = null
+      }
+      pendingStorageDeltaRef.current = 0
+      flushOptimisticPhotos()
+      uploadProgressSnapshotRef.current.clear()
+    }
+  }, [flushOptimisticPhotos])
+
+  const updateQueueProgressThrottled = useCallback((itemId: string, percent: number, loaded: number) => {
+    const roundedPercent = Math.max(0, Math.min(99, Math.round(percent)))
+    const now = Date.now()
+    const previous = uploadProgressSnapshotRef.current.get(itemId)
+
+    if (previous) {
+      const percentAdvanced = roundedPercent - previous.percent
+      const loadedAdvanced = loaded - previous.loaded
+      const elapsed = now - previous.ts
+      if (percentAdvanced < 2 && loadedAdvanced < 256 * 1024 && elapsed < 250) {
+        return
+      }
+    }
+
+    uploadProgressSnapshotRef.current.set(itemId, {
+      percent: roundedPercent,
+      loaded,
+      ts: now,
+    })
+    updateQueueItem(itemId, { progress: roundedPercent, uploadedSize: loaded })
+  }, [updateQueueItem])
 
   const fetchData = useCallback(async (folderId: string | null, category: string = 'all') => {
     // 사용자 ID가 없으면 로딩 유지 (사용자 로딩 완료될 때까지)
@@ -714,9 +1005,10 @@ export default function DrivePage() {
 
     setAllFolders(fetchedFolders)
 
-    const childFolders = fetchedFolders.filter(f =>
-      folderId ? f.parent_id === folderId : f.parent_id === null
-    )
+    const childFolders = fetchedFolders.filter(f => {
+      const normalizedParentId = f.parent_id ?? null
+      return folderId ? normalizedParentId === folderId : normalizedParentId === null
+    })
     setFolders(childFolders)
 
     await buildBreadcrumbs(folderId, fetchedFolders)
@@ -802,10 +1094,19 @@ export default function DrivePage() {
     }
   }, [user?.id, loadingMore, hasMore, cursor, searchParams, dataCache])
 
-  const fetchStorageUsage = useCallback(async () => {
+  const fetchStorageUsage = useCallback(async (forceRefresh = false) => {
     try {
-      const res = await fetch('/api/storage', {
+      if (!user?.id) {
+        setStorageUsed(0)
+        return
+      }
+      const endpoint = forceRefresh ? '/api/storage?refresh=1' : '/api/storage'
+      const res = await fetch(endpoint, {
         credentials: 'include', // 쿠키 포함
+        cache: forceRefresh ? 'no-store' : 'default',
+        headers: {
+          'x-user-id': user.id,
+        },
       })
       if (!res.ok) {
         console.error('Storage usage error:', res.status)
@@ -816,7 +1117,7 @@ export default function DrivePage() {
     } catch (err) {
       console.error('Failed to fetch storage usage:', err)
     }
-  }, [])
+  }, [user?.id])
 
   // 이전 폴더 ID 추적 (폴더 변경 시에만 선택 초기화)
   const prevFolderIdRef = useRef<string | null>(null)
@@ -834,10 +1135,22 @@ export default function DrivePage() {
 
     setCurrentFolderId(folderId)
     fetchData(folderId, category)
-    fetchStorageUsage()
+    fetchStorageUsage(true)
   }, [searchParams, fetchData, fetchStorageUsage])
 
-  // tab=more 쿼리 파라미터 처리 (Vault/휴지통에서 뒤로가기 시)
+  useEffect(() => {
+    if (!uploading || !user?.id) return
+
+    const timer = window.setInterval(() => {
+      void fetchStorageUsage(true)
+    }, 8000)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [uploading, user?.id, fetchStorageUsage])
+
+  // tab=more 쿼리 파라미터 처리 (휴지통 등에서 뒤로가기 시)
   useEffect(() => {
     const tab = searchParams.get('tab')
     if (tab === 'more') {
@@ -898,20 +1211,34 @@ export default function DrivePage() {
         .eq('user_id', user.id)
 
       // 하위 폴더 수 가져오기
-      const { count: folderCount } = await supabase
-        .from('folders')
-        .select('*', { count: 'exact', head: true })
-        .eq('parent_id', infoFolder.id)
-        .eq('user_id', user.id)
+      let folderCount = 0
+      for (const parentColumn of getFolderParentColumns()) {
+        const { count, error } = await supabase
+          .from('folders')
+          .select('*', { count: 'exact', head: true })
+          .eq(parentColumn, infoFolder.id)
+          .eq('user_id', user.id)
+
+        if (!error) {
+          folderParentColumnRef.current = parentColumn
+          folderCount = count || 0
+          break
+        }
+
+        if (!isMissingColumnError(error, parentColumn)) {
+          console.error('[Folder Info] Child folder count error:', formatSupabaseError(error))
+          break
+        }
+      }
 
       setInfoFolderCounts({
         files: fileCount || 0,
-        folders: folderCount || 0
+        folders: folderCount
       })
     }
 
     fetchFolderCounts()
-  }, [infoFolder, user])
+  }, [infoFolder, user, getFolderParentColumns])
 
   // 모달이 열릴 때 body 스크롤 차단 (입력 모달 제외 - 키보드 문제 방지)
   useEffect(() => {
@@ -979,6 +1306,421 @@ export default function DrivePage() {
     } catch {
       return null
     }
+  }
+
+  const uploadFolderStructure = async (
+    filesWithPath: FileWithFolderPath[],
+    rawFolderPaths: string[],
+    skippedFiles: string[] = []
+  ) => {
+    const userId = user?.id
+    if (!userId) {
+      showToast('로그인 정보를 확인한 뒤 다시 시도해주세요.', 'error')
+      return
+    }
+
+    const parentColumns = getFolderParentColumns()
+
+    const normalizedRawPaths = rawFolderPaths
+      .map(normalizePath)
+      .filter(path => path.length > 0)
+
+    const filteredPaths = normalizedRawPaths.filter(path => {
+      const parts = path.split('/')
+      return !parts.some(part => isBlockedFolderName(part))
+    })
+
+    const blockedPathCount = normalizedRawPaths.length - filteredPaths.length
+    if (blockedPathCount > 0) {
+      showToast(`개발 관련 폴더 ${blockedPathCount}개가 제외되었습니다.`, 'info')
+    }
+
+    const filteredFilesWithPath = filesWithPath.filter(({ folderPath }) => {
+      const normalized = normalizePath(folderPath)
+      if (!normalized) return false
+      const parts = normalized.split('/')
+      return !parts.some(part => isBlockedFolderName(part))
+    })
+
+    const blockedFileCount = filesWithPath.length - filteredFilesWithPath.length
+    if (blockedFileCount > 0) {
+      showToast(`차단된 폴더 내 파일 ${blockedFileCount}개가 제외되었습니다.`, 'info')
+    }
+
+    // 폴더 경로를 정렬 (상위 폴더가 먼저 생성되도록)
+    const sortedPaths = [...new Set(filteredPaths)].sort((a, b) => a.split('/').length - b.split('/').length)
+
+    // 폴더 경로 -> ID 매핑
+    const folderIdMap: Record<string, string> = {}
+
+    const findExistingFolderId = async (folderName: string, parentId: string | null): Promise<string | null> => {
+      let lastError: unknown = null
+
+      for (const parentColumn of parentColumns) {
+        for (const useDeletedAtFilter of [true, false]) {
+          let query = supabase
+            .from('folders')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('name', folderName)
+            .limit(1)
+
+          if (useDeletedAtFilter) {
+            query = query.is('deleted_at', null)
+          }
+
+          if (parentId) {
+            query = query.eq(parentColumn, parentId)
+          } else {
+            query = query.is(parentColumn, null)
+          }
+
+          const { data, error } = await query
+          if (!error) {
+            folderParentColumnRef.current = parentColumn
+            return data?.[0]?.id || null
+          }
+
+          lastError = error
+          const missingParentColumn = isMissingColumnError(error, parentColumn)
+          const missingDeletedAt = useDeletedAtFilter && isMissingColumnError(error, 'deleted_at')
+
+          if (missingDeletedAt) {
+            continue
+          }
+          if (!missingParentColumn) {
+            break
+          }
+        }
+      }
+
+      if (lastError) {
+        console.error('[Upload Folder] Existing folder lookup error:', {
+          folderName,
+          parentId,
+          detail: formatSupabaseError(lastError),
+        })
+      }
+      return null
+    }
+
+    const createFolder = async (
+      folderName: string,
+      parentId: string | null
+    ): Promise<{ id: string | null; error: unknown }> => {
+      let lastError: unknown = null
+
+      for (const parentColumn of parentColumns) {
+        const payload: Record<string, unknown> = {
+          name: folderName,
+          user_id: userId,
+          [parentColumn]: parentId,
+        }
+
+        const { data, error } = await supabase
+          .from('folders')
+          .insert(payload)
+          .select('id')
+          .single()
+
+        if (!error) {
+          folderParentColumnRef.current = parentColumn
+          return { id: data?.id || null, error: null }
+        }
+
+        lastError = error
+        if (!isMissingColumnError(error, parentColumn)) {
+          break
+        }
+      }
+
+      return { id: null, error: lastError }
+    }
+
+    // 폴더 생성
+    for (const folderPath of sortedPaths) {
+      const pathParts = folderPath.split('/')
+      const folderName = pathParts[pathParts.length - 1]
+      const parentPath = pathParts.slice(0, -1).join('/')
+
+      // 부모 폴더 ID 결정
+      let parentId: string | null = currentFolderId
+      if (parentPath && folderIdMap[parentPath]) {
+        parentId = folderIdMap[parentPath]
+      }
+
+      // 이미 있는 폴더면 재사용
+      const existingFolderId = await findExistingFolderId(folderName, parentId)
+      if (existingFolderId) {
+        folderIdMap[folderPath] = existingFolderId
+        continue
+      }
+
+      const { id: createdFolderId, error: createError } = await createFolder(folderName, parentId)
+
+      if (createError) {
+        console.error('[Upload Folder] Folder create error:', {
+          folderPath,
+          folderName,
+          parentId,
+          detail: formatSupabaseError(createError),
+        })
+      }
+
+      const resolvedFolderId = createdFolderId || await findExistingFolderId(folderName, parentId)
+      if (!resolvedFolderId) {
+        throw new Error(`폴더 생성 실패: ${folderPath} (${formatSupabaseError(createError) || '원인 미상'})`)
+      }
+
+      folderIdMap[folderPath] = resolvedFolderId
+    }
+
+    // iCloud 등에서 다운로드되지 않은 파일 경고
+    if (skippedFiles.length > 0) {
+      showToast(`${skippedFiles.length}개 파일을 업로드할 수 없습니다. iCloud에서 다운로드 후 다시 시도해주세요.`, 'error')
+    }
+
+    // 파일이 없고 폴더만 있는 경우
+    if (filteredFilesWithPath.length === 0) {
+      dataCache.invalidateFolders()
+      await fetchData(currentFolderId, searchParams.get('category') || 'all')
+      return
+    }
+
+    const uploadId = Date.now().toString()
+    const currentFolderName = currentFolderId
+      ? folders.find(f => f.id === currentFolderId)?.name || '내 드라이브'
+      : '내 드라이브'
+
+    const newItems = filteredFilesWithPath.map((f, i) => ({
+      id: `${uploadId}-${i}`,
+      name: f.file.name,
+      status: 'pending' as const,
+      fileType: f.file.name.split('.').pop()?.toUpperCase() || '',
+      fileSize: f.file.size,
+      folderName: f.folderPath || currentFolderName,
+    }))
+    addToQueue(newItems)
+    setShowUploadPanel(true)
+
+    // 병렬 업로드 (파일 수/평균 크기/기기 코어 수 기반 자동 조절)
+    const CONCURRENT_UPLOADS = getUploadConcurrency(filteredFilesWithPath.map(item => item.file))
+    const uploadResults: { url: string, thumbnailUrl: string | null, name: string, folderId: string | null, index: number, fileType?: string, fileSize?: number, isVideo?: boolean }[] = []
+
+    const uploadFile = async (index: number) => {
+      const { file, folderPath } = filteredFilesWithPath[index]
+      const itemId = `${uploadId}-${index}`
+      const normalizedFolderPath = normalizePath(folderPath)
+      let targetFolderId: string | null = currentFolderId
+      if (normalizedFolderPath && folderIdMap[normalizedFolderPath]) {
+        targetFolderId = folderIdMap[normalizedFolderPath]
+      }
+
+      updateQueueItem(itemId, { status: 'uploading', progress: 0, startedAt: Date.now() })
+      uploadProgressSnapshotRef.current.set(itemId, { percent: 0, loaded: 0, ts: Date.now() })
+
+      const timestamp = Date.now()
+      const uniqueFileName = `${timestamp}_${index}_${file.name}`
+
+      try {
+        // 1. 원본 업로드 (Presigned URL로 R2 직접 업로드)
+        const { url } = await uploadWithPresignedUrl(file, uniqueFileName, (percent, loaded) => {
+          // 원본 업로드는 90%까지, 썸네일은 10%
+          updateQueueProgressThrottled(itemId, percent * 0.9, loaded)
+        })
+
+        // 2. 썸네일 생성 및 업로드
+        let thumbnailUrl: string | null = null
+        const thumbnailBlob = await generateThumbnail(file)
+
+        if (thumbnailBlob) {
+          const thumbFileName = `thumb_${timestamp}_${index}_${file.name.replace(/\.[^.]+$/, '.webp')}`
+          const thumbFormData = new FormData()
+          thumbFormData.append('file', thumbnailBlob, thumbFileName)
+          thumbFormData.append('fileName', thumbFileName)
+
+          const thumbRes = await fetch('/api/upload', {
+            method: 'POST',
+            body: thumbFormData,
+          })
+
+          if (thumbRes.ok) {
+            const thumbData = await thumbRes.json()
+            thumbnailUrl = thumbData.url
+          }
+        } else if (isHeicFile(file)) {
+          const thumbFileName = `thumb_${timestamp}_${index}_${file.name.replace(/\.[^.]+$/, '.jpg')}`
+          thumbnailUrl = await generateHeicThumbnailServerSide(uniqueFileName, thumbFileName)
+        }
+        const isVideo = file.type.startsWith('video/')
+        uploadResults.push({
+          url,
+          thumbnailUrl,
+          name: file.name,
+          folderId: targetFolderId,
+          index,
+          fileType: file.type,
+          fileSize: file.size,
+          isVideo,
+        })
+
+        if (shouldDisplayUploadedInCurrentView(targetFolderId, isVideo, file.type)) {
+          enqueueOptimisticPhoto({
+            id: `temp-${Date.now()}-${index}`,
+            url,
+            thumbnail_url: thumbnailUrl,
+            name: file.name,
+            order: 0,
+            folder_id: targetFolderId,
+            created_at: new Date().toISOString(),
+            file_type: truncateFileType(file.type),
+            file_size: file.size,
+            is_video: isVideo,
+          })
+        }
+
+        uploadProgressSnapshotRef.current.delete(itemId)
+        updateQueueItem(itemId, { status: 'done', progress: 100, url, uploadedSize: file.size })
+        enqueueStorageDelta(file.size)
+      } catch {
+        uploadProgressSnapshotRef.current.delete(itemId)
+        updateQueueItem(itemId, { status: 'error' })
+      }
+    }
+
+    await runWithConcurrency(filteredFilesWithPath.length, CONCURRENT_UPLOADS, uploadFile)
+
+    // DB 배치 인서트
+    if (uploadResults.length > 0) {
+      // 폴더별로 그룹화하여 order 계산
+      const byFolder = new Map<string | null, typeof uploadResults>()
+      for (const result of uploadResults) {
+        const key = result.folderId
+        if (!byFolder.has(key)) byFolder.set(key, [])
+        byFolder.get(key)!.push(result)
+      }
+
+      for (const [folderId, items] of byFolder) {
+        let query = supabase.from('photos').select('order').eq('user_id', user?.id).order('order', { ascending: false }).limit(1)
+        if (folderId) {
+          query = query.eq('folder_id', folderId)
+        } else {
+          query = query.is('folder_id', null)
+        }
+        const { data: maxOrderData } = await query
+        const baseOrder = (maxOrderData?.[0]?.order || 0)
+
+        const sortedItems = [...items].sort((a, b) => a.index - b.index)
+        const insertData = sortedItems.map((item, idx) => ({
+          url: item.url,
+          thumbnail_url: item.thumbnailUrl,
+          name: item.name,
+          order: baseOrder + idx + 1,
+          folder_id: folderId,
+          user_id: user?.id,
+          file_type: truncateFileType(item.fileType),
+          file_size: item.fileSize,
+          is_video: item.isVideo,
+          hls_status: item.isVideo ? 'pending' : 'not_applicable',
+        }))
+
+        console.log('[Upload Folder] Inserting to DB:', insertData)
+        const { error: insertError } = await supabase.from('photos').insert(insertData)
+        if (insertError) {
+          console.error('[Upload Folder] DB insert error:', insertError)
+        } else {
+          console.log('[Upload Folder] DB insert success')
+        }
+      }
+    }
+
+    dataCache.invalidateFolders()
+    dataCache.invalidatePhotos()
+    await fetchData(currentFolderId, searchParams.get('category') || 'all')
+    await fetchStorageUsage(true)
+  }
+
+  const handleFolderFileList = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+
+    const fileArray = Array.from(files)
+    const filesWithPath: FileWithFolderPath[] = []
+    const folderPathSet = new Set<string>()
+    const skippedFiles: string[] = []
+    const blockedFiles: string[] = []
+
+    const hasICloudFiles = fileArray.some(f => f.size === 0)
+    if (hasICloudFiles) {
+      setICloudDownloading(true)
+      setICloudProgress({ current: 0, total: fileArray.length, fileName: '' })
+    }
+
+    for (let i = 0; i < fileArray.length; i++) {
+      const file = fileArray[i]
+      setICloudProgress({ current: i + 1, total: fileArray.length, fileName: file.name })
+
+      const relativePath = normalizePath((file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name)
+      const pathParts = relativePath.split('/').filter(Boolean)
+
+      // 폴더 경로가 없는 일반 파일 선택은 제외
+      if (pathParts.length < 2) {
+        continue
+      }
+
+      const folderParts = pathParts.slice(0, -1)
+      if (folderParts.some(part => isBlockedFolderName(part))) {
+        blockedFiles.push(relativePath)
+        continue
+      }
+
+      for (let depth = 1; depth <= folderParts.length; depth++) {
+        folderPathSet.add(folderParts.slice(0, depth).join('/'))
+      }
+
+      const preparedFile = await prepareFileForUpload(file, (name) => {
+        setICloudProgress(prev => ({ ...prev, fileName: name }))
+      })
+
+      if (preparedFile) {
+        filesWithPath.push({ file: preparedFile, folderPath: folderParts.join('/') })
+      } else {
+        skippedFiles.push(file.name)
+      }
+    }
+
+    setICloudDownloading(false)
+
+    if (blockedFiles.length > 0) {
+      showToast(`차단된 폴더 내 파일 ${blockedFiles.length}개가 제외되었습니다.`, 'info')
+    }
+
+    if (filesWithPath.length === 0) {
+      showToast('업로드 가능한 폴더 파일을 찾지 못했습니다.', 'info')
+      return
+    }
+
+    await uploadFolderStructure(filesWithPath, Array.from(folderPathSet), skippedFiles)
+  }
+
+  const openFolderPicker = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.multiple = true
+
+    const folderInput = input as HTMLInputElement & { webkitdirectory?: boolean; directory?: boolean }
+    if (!('webkitdirectory' in folderInput)) {
+      showToast('현재 브라우저는 폴더 업로드를 지원하지 않습니다.', 'error')
+      return
+    }
+    folderInput.webkitdirectory = true
+    folderInput.directory = true
+
+    input.onchange = async () => {
+      await handleFolderFileList(input.files)
+      input.remove()
+    }
+
+    input.click()
   }
 
   // 파일 선택 시
@@ -1061,9 +1803,18 @@ export default function DrivePage() {
     dragCounter.current = 0
 
     const items = e.dataTransfer.items
-    const filesWithPath: { file: File, folderPath: string }[] = []
-    const folderPaths: string[] = []
+    const filesWithPath: FileWithFolderPath[] = []
+    const folderPathSet = new Set<string>()
     let hasDroppedFolders = false
+
+    const addFolderPathChain = (folderPath: string) => {
+      const normalized = normalizePath(folderPath)
+      if (!normalized) return
+      const parts = normalized.split('/').filter(Boolean)
+      for (let depth = 1; depth <= parts.length; depth++) {
+        folderPathSet.add(parts.slice(0, depth).join('/'))
+      }
+    }
 
     // iCloud 파일 준비 함수 (다운로드 대기)
     const prepareFile = async (file: File): Promise<File | null> => {
@@ -1090,7 +1841,21 @@ export default function DrivePage() {
               // iCloud 파일 준비 (다운로드 대기)
               const preparedFile = await prepareFile(file)
               if (preparedFile) {
-                filesWithPath.push({ file: preparedFile, folderPath: path })
+                let folderPath = normalizePath(path)
+                if (!folderPath) {
+                  const entryFullPath = normalizePath((entry as FileSystemEntry & { fullPath?: string }).fullPath || '')
+                  const relativePath = normalizePath((file as File & { webkitRelativePath?: string }).webkitRelativePath || '')
+                  const candidatePath = entryFullPath || relativePath
+                  if (candidatePath) {
+                    const parts = candidatePath.split('/').filter(Boolean)
+                    if (parts.length > 1) {
+                      folderPath = parts.slice(0, -1).join('/')
+                      hasDroppedFolders = true
+                      addFolderPathChain(folderPath)
+                    }
+                  }
+                }
+                filesWithPath.push({ file: preparedFile, folderPath })
               } else {
                 skippedFiles.push(file.name)
               }
@@ -1108,7 +1873,7 @@ export default function DrivePage() {
         hasDroppedFolders = true
         const dirEntry = entry as FileSystemDirectoryEntry
         const fullPath = path ? `${path}/${entry.name}` : entry.name
-        folderPaths.push(fullPath)
+        addFolderPathChain(fullPath)
         const reader = dirEntry.createReader()
         return new Promise((resolve) => {
           const readEntries = async () => {
@@ -1132,251 +1897,45 @@ export default function DrivePage() {
     // DataTransferItemList 처리
     const entries: FileSystemEntry[] = []
     for (let i = 0; i < items.length; i++) {
-      const entry = items[i].webkitGetAsEntry()
+      const entry = (items[i] as DataTransferItem & { webkitGetAsEntry?: () => FileSystemEntry | null }).webkitGetAsEntry?.()
       if (entry) {
         entries.push(entry)
       }
     }
 
-    // 모든 엔트리 처리
-    for (const entry of entries) {
-      await processEntry(entry)
+    if (entries.length > 0) {
+      // 모든 엔트리 처리
+      for (const entry of entries) {
+        await processEntry(entry)
+      }
+    } else {
+      // 브라우저가 webkitGetAsEntry를 제공하지 않는 경우 폴백
+      const droppedFiles = Array.from(e.dataTransfer.files || [])
+      for (const file of droppedFiles) {
+        const preparedFile = await prepareFile(file)
+        if (!preparedFile) {
+          skippedFiles.push(file.name)
+          continue
+        }
+
+        const relativePath = normalizePath((file as File & { webkitRelativePath?: string }).webkitRelativePath || '')
+        let folderPath = ''
+        if (relativePath) {
+          const parts = relativePath.split('/').filter(Boolean)
+          if (parts.length > 1) {
+            folderPath = parts.slice(0, -1).join('/')
+            hasDroppedFolders = true
+            addFolderPathChain(folderPath)
+          }
+        }
+
+        filesWithPath.push({ file: preparedFile, folderPath })
+      }
     }
 
     // 폴더가 드롭된 경우: 폴더 구조 생성 후 파일 자동 업로드
-    if (hasDroppedFolders && folderPaths.length > 0) {
-      // 개발 관련 폴더 필터링 (node_modules, .git 등)
-      const BLOCKED_FOLDER_PATTERNS = [
-        /^\./, // .으로 시작하는 폴더
-        /^node_modules$/i,
-        /^__pycache__$/i,
-        /^__tests__$/i,
-        /^\.next$/i,
-        /^\.git$/i,
-        /^\.vscode$/i,
-        /^dist$/i,
-        /^build$/i,
-        /^coverage$/i,
-        /^vendor$/i,
-      ]
-
-      const isBlockedFolder = (name: string) =>
-        BLOCKED_FOLDER_PATTERNS.some(pattern => pattern.test(name))
-
-      // 차단된 폴더 경로 필터링
-      const filteredPaths = folderPaths.filter(path => {
-        const parts = path.split('/')
-        return !parts.some(part => isBlockedFolder(part))
-      })
-
-      if (filteredPaths.length < folderPaths.length) {
-        const blocked = folderPaths.length - filteredPaths.length
-        showToast(`개발 관련 폴더 ${blocked}개가 제외되었습니다.`, 'info')
-      }
-
-      // 폴더 경로를 정렬 (상위 폴더가 먼저 생성되도록)
-      const sortedPaths = [...new Set(filteredPaths)].sort((a, b) => a.split('/').length - b.split('/').length)
-
-      // 폴더 경로 -> ID 매핑
-      const folderIdMap: Record<string, string> = {}
-
-      // 폴더 생성
-      for (const folderPath of sortedPaths) {
-        const pathParts = folderPath.split('/')
-        const folderName = pathParts[pathParts.length - 1]
-        const parentPath = pathParts.slice(0, -1).join('/')
-
-        // 부모 폴더 ID 결정
-        let parentId: string | null = currentFolderId
-        if (parentPath && folderIdMap[parentPath]) {
-          parentId = folderIdMap[parentPath]
-        }
-
-        // 폴더 생성
-        const { data: newFolder } = await supabase.from('folders').insert({
-          name: folderName,
-          parent_id: parentId,
-          user_id: user?.id
-        }).select('id').single()
-
-        if (newFolder) {
-          folderIdMap[folderPath] = newFolder.id
-        }
-      }
-
-      // iCloud 등에서 다운로드되지 않은 파일 경고
-      if (skippedFiles.length > 0) {
-        showToast(`${skippedFiles.length}개 파일을 업로드할 수 없습니다. iCloud에서 다운로드 후 다시 시도해주세요.`, 'error')
-      }
-
-      // 파일이 있으면 바로 업로드 (폴더 피커 없이)
-      if (filesWithPath.length > 0) {
-        const uploadId = Date.now().toString()
-        // 현재 폴더명 가져오기
-        const currentFolderName = currentFolderId
-          ? folders.find(f => f.id === currentFolderId)?.name || '내 드라이브'
-          : '내 드라이브'
-        const newItems = filesWithPath.map((f, i) => ({
-          id: `${uploadId}-${i}`,
-          name: f.file.name,
-          status: 'pending' as const,
-          fileType: f.file.name.split('.').pop()?.toUpperCase() || '',
-          fileSize: f.file.size,
-          folderName: f.folderPath || currentFolderName,
-        }))
-        addToQueue(newItems)
-        setShowUploadPanel(true)
-
-        // 병렬 업로드 (10개씩 동시 처리)
-        const CONCURRENT_UPLOADS = 10
-        let completedCount = 0
-        const uploadResults: { url: string, thumbnailUrl: string | null, name: string, folderId: string | null, index: number, fileType?: string, fileSize?: number, isVideo?: boolean }[] = []
-
-        const uploadFile = async (index: number) => {
-          const { file, folderPath } = filesWithPath[index]
-          const itemId = `${uploadId}-${index}`
-          let targetFolderId: string | null = currentFolderId
-          if (folderPath && folderIdMap[folderPath]) {
-            targetFolderId = folderIdMap[folderPath]
-          }
-
-          updateQueueItem(itemId, { status: 'uploading', progress: 0, startedAt: Date.now() })
-
-          const timestamp = Date.now()
-          const uniqueFileName = `${timestamp}_${index}_${file.name}`
-
-          try {
-            // 1. 원본 업로드 (Presigned URL로 R2 직접 업로드)
-            const { url } = await uploadWithPresignedUrl(file, uniqueFileName, (percent, loaded) => {
-              // 원본 업로드는 90%까지, 썸네일은 10%
-              updateQueueItem(itemId, { progress: Math.round(percent * 0.9), uploadedSize: loaded })
-            })
-
-            // 2. 썸네일 생성 및 업로드
-            let thumbnailUrl: string | null = null
-            const thumbnailBlob = await generateThumbnail(file)
-
-            if (thumbnailBlob) {
-              const thumbFileName = `thumb_${timestamp}_${index}_${file.name.replace(/\.[^.]+$/, '.webp')}`
-              const thumbFormData = new FormData()
-              thumbFormData.append('file', thumbnailBlob, thumbFileName)
-              thumbFormData.append('fileName', thumbFileName)
-
-              const thumbRes = await fetch('/api/upload', {
-                method: 'POST',
-                body: thumbFormData,
-              })
-
-              if (thumbRes.ok) {
-                const thumbData = await thumbRes.json()
-                thumbnailUrl = thumbData.url
-              }
-            } else if (isHeicFile(file)) {
-              // 클라이언트 측 HEIC 변환 실패 시 서버 측 생성 시도
-              const thumbFileName = `thumb_${timestamp}_${index}_${file.name.replace(/\.[^.]+$/, '.jpg')}`
-              thumbnailUrl = await generateHeicThumbnailServerSide(uniqueFileName, thumbFileName)
-            }
-            updateQueueItem(itemId, { progress: 100 })
-
-            const isVideo = file.type.startsWith('video/')
-            uploadResults.push({
-              url,
-              thumbnailUrl,
-              name: file.name,
-              folderId: targetFolderId,
-              index,
-              fileType: file.type,
-              fileSize: file.size,
-              isVideo,
-            })
-
-            // 현재 폴더에 업로드된 경우 즉시 화면에 표시
-            const isSameFolder = (targetFolderId === null && currentFolderId === null) || targetFolderId === currentFolderId
-            if (isSameFolder) {
-              setPhotos(prev => {
-                const exists = prev.some(p => p.url === url)
-                if (exists) return prev
-                return [...prev, {
-                  id: `temp-${Date.now()}-${index}`,
-                  url,
-                  thumbnail_url: thumbnailUrl,
-                  name: file.name,
-                  order: prev.length + 1,
-                  folder_id: targetFolderId,
-                  created_at: new Date().toISOString(),
-                  file_type: truncateFileType(file.type),
-                  file_size: file.size,
-                  is_video: isVideo,
-                }]
-              })
-            }
-
-            updateQueueItem(itemId, { status: 'done', progress: 100, url, uploadedSize: file.size })
-          } catch {
-            updateQueueItem(itemId, { status: 'error' })
-          }
-
-          completedCount++
-        }
-
-        // 청크로 나눠서 병렬 처리
-        for (let i = 0; i < filesWithPath.length; i += CONCURRENT_UPLOADS) {
-          const chunk = filesWithPath.slice(i, i + CONCURRENT_UPLOADS)
-          await Promise.all(chunk.map((_, idx) => uploadFile(i + idx)))
-        }
-
-        // DB 배치 인서트
-        if (uploadResults.length > 0) {
-          // 폴더별로 그룹화하여 order 계산
-          const byFolder = new Map<string | null, typeof uploadResults>()
-          for (const result of uploadResults) {
-            const key = result.folderId
-            if (!byFolder.has(key)) byFolder.set(key, [])
-            byFolder.get(key)!.push(result)
-          }
-
-          for (const [folderId, items] of byFolder) {
-            let query = supabase.from('photos').select('order').eq('user_id', user?.id).order('order', { ascending: false }).limit(1)
-            if (folderId) {
-              query = query.eq('folder_id', folderId)
-            } else {
-              query = query.is('folder_id', null)
-            }
-            const { data: maxOrderData } = await query
-            const baseOrder = (maxOrderData?.[0]?.order || 0)
-
-            const insertData = items.map((item, idx) => ({
-              url: item.url,
-              thumbnail_url: item.thumbnailUrl,
-              name: item.name,
-              order: baseOrder + idx + 1,
-              folder_id: folderId,
-              user_id: user?.id,
-              file_type: truncateFileType(item.fileType),
-              file_size: item.fileSize,
-              is_video: item.isVideo,
-              hls_status: item.isVideo ? 'pending' : 'not_applicable',
-            }))
-
-            console.log('[Upload Folder] Inserting to DB:', insertData)
-            const { error: insertError } = await supabase.from('photos').insert(insertData)
-            if (insertError) {
-              console.error('[Upload Folder] DB insert error:', insertError)
-            } else {
-              console.log('[Upload Folder] DB insert success')
-            }
-          }
-        }
-
-        dataCache.invalidateFolders()
-        dataCache.invalidatePhotos()
-        await fetchData(currentFolderId, searchParams.get('category') || 'all')
-        await fetchStorageUsage()
-      } else {
-        // 파일 없이 폴더만 드롭한 경우
-        dataCache.invalidateFolders()
-        await fetchData(currentFolderId, searchParams.get('category') || 'all')
-      }
+    if (hasDroppedFolders && folderPathSet.size > 0) {
+      await uploadFolderStructure(filesWithPath, Array.from(folderPathSet), skippedFiles)
     } else if (filesWithPath.length > 0) {
       // 폴더 없이 파일만 드롭한 경우: 현재 디렉토리에 바로 업로드
       const files = filesWithPath.map(f => f.file)
@@ -1506,9 +2065,8 @@ export default function DrivePage() {
     addToQueue(newItems)
     setShowUploadPanel(true)
 
-    // 병렬 업로드 (10개씩 동시 처리)
-    const CONCURRENT_UPLOADS = 10
-    let completedCount = 0
+    // 병렬 업로드 (파일 수/평균 크기/기기 코어 수 기반 자동 조절)
+    const CONCURRENT_UPLOADS = getUploadConcurrency(fileList)
     const uploadResults: { url: string, thumbnailUrl: string | null, name: string, index: number, fileType?: string, fileSize?: number, isVideo?: boolean }[] = []
 
     const uploadFile = async (index: number) => {
@@ -1516,6 +2074,7 @@ export default function DrivePage() {
       const itemId = `${uploadId}-${index}`
 
       updateQueueItem(itemId, { status: 'uploading', progress: 0, startedAt: Date.now() })
+      uploadProgressSnapshotRef.current.set(itemId, { percent: 0, loaded: 0, ts: Date.now() })
 
       const timestamp = Date.now()
       const uniqueFileName = `${timestamp}_${index}_${file.name}`
@@ -1524,7 +2083,7 @@ export default function DrivePage() {
         // 1. 원본 업로드 (Presigned URL로 R2 직접 업로드)
         const { url } = await uploadWithPresignedUrl(file, uniqueFileName, (percent, loaded) => {
           // 원본 업로드는 90%까지, 썸네일은 10%
-          updateQueueItem(itemId, { progress: Math.round(percent * 0.9), uploadedSize: loaded })
+          updateQueueProgressThrottled(itemId, percent * 0.9, loaded)
         })
 
         // 2. 썸네일 생성 및 업로드
@@ -1551,8 +2110,6 @@ export default function DrivePage() {
           const thumbFileName = `thumb_${timestamp}_${index}_${file.name.replace(/\.[^.]+$/, '.jpg')}`
           thumbnailUrl = await generateHeicThumbnailServerSide(uniqueFileName, thumbFileName)
         }
-        updateQueueItem(itemId, { progress: 100 })
-
         const isVideo = file.type.startsWith('video/')
         uploadResults.push({
           url,
@@ -1564,41 +2121,31 @@ export default function DrivePage() {
           isVideo,
         })
 
-        // 현재 폴더에 업로드된 경우 즉시 화면에 표시
-        const isSameFolder = (targetFolderId === null && currentFolderId === null) || targetFolderId === currentFolderId
-        if (isSameFolder) {
-          setPhotos(prev => {
-            // 이미 있는 temp 항목 제외하고 추가
-            const exists = prev.some(p => p.url === url)
-            if (exists) return prev
-            return [...prev, {
-              id: `temp-${Date.now()}-${index}`,
-              url,
-              thumbnail_url: thumbnailUrl,
-              name: file.name,
-              order: prev.length + 1,
-              folder_id: targetFolderId,
-              created_at: new Date().toISOString(),
-              file_type: truncateFileType(file.type),
-              file_size: file.size,
-              is_video: isVideo,
-            }]
+        if (shouldDisplayUploadedInCurrentView(targetFolderId, isVideo, file.type)) {
+          enqueueOptimisticPhoto({
+            id: `temp-${Date.now()}-${index}`,
+            url,
+            thumbnail_url: thumbnailUrl,
+            name: file.name,
+            order: 0,
+            folder_id: targetFolderId,
+            created_at: new Date().toISOString(),
+            file_type: truncateFileType(file.type),
+            file_size: file.size,
+            is_video: isVideo,
           })
         }
 
+        uploadProgressSnapshotRef.current.delete(itemId)
         updateQueueItem(itemId, { status: 'done', progress: 100, url, uploadedSize: file.size })
+        enqueueStorageDelta(file.size)
       } catch {
+        uploadProgressSnapshotRef.current.delete(itemId)
         updateQueueItem(itemId, { status: 'error' })
       }
-
-      completedCount++
     }
 
-    // 청크로 나눠서 병렬 처리
-    for (let i = 0; i < fileList.length; i += CONCURRENT_UPLOADS) {
-      const chunk = fileList.slice(i, i + CONCURRENT_UPLOADS)
-      await Promise.all(chunk.map((_, idx) => uploadFile(i + idx)))
-    }
+    await runWithConcurrency(fileList.length, CONCURRENT_UPLOADS, uploadFile)
 
     // DB 배치 인서트
     if (uploadResults.length > 0) {
@@ -1641,7 +2188,7 @@ export default function DrivePage() {
     setNonDuplicateFiles([])
     dataCache.invalidatePhotos()
     await fetchData(currentFolderId, searchParams.get('category') || 'all')
-    await fetchStorageUsage()
+    await fetchStorageUsage(true)
   }
 
   // 중복 파일 처리 선택
@@ -1708,6 +2255,7 @@ export default function DrivePage() {
       dataCache.invalidateFolders()
       dataCache.invalidatePhotos()
       await fetchData(currentFolderId, searchParams.get('category') || 'all')
+      await fetchStorageUsage(true)
     } catch (error) {
       console.error('Delete error:', error)
       showToast('삭제 중 오류가 발생했습니다.', 'error')
@@ -1752,11 +2300,27 @@ export default function DrivePage() {
             continue
           }
 
-          await supabase
-            .from('folders')
-            .update({ parent_id: targetFolderId })
-            .eq('id', folderId)
-            .eq('user_id', user?.id)
+          let moved = false
+          for (const parentColumn of getFolderParentColumns()) {
+            const { error } = await supabase
+              .from('folders')
+              .update({ [parentColumn]: targetFolderId })
+              .eq('id', folderId)
+              .eq('user_id', user?.id)
+
+            if (!error) {
+              folderParentColumnRef.current = parentColumn
+              moved = true
+              break
+            }
+            if (!isMissingColumnError(error, parentColumn)) {
+              throw error
+            }
+          }
+
+          if (!moved) {
+            throw new Error('폴더 이동 실패: parent column not resolved')
+          }
         }
       }
 
@@ -1766,6 +2330,7 @@ export default function DrivePage() {
       dataCache.invalidateFolders()
       dataCache.invalidatePhotos()
       await fetchData(currentFolderId, searchParams.get('category') || 'all')
+      await fetchStorageUsage(true)
     } catch (error) {
       console.error('Move error:', error)
     } finally {
@@ -1814,12 +2379,26 @@ export default function DrivePage() {
           .eq('user_id', user?.id)
           .is('deleted_at', null)
 
-        const { data: subFolders } = await supabase
-          .from('folders')
-          .select('id, name')
-          .eq('parent_id', folderId)
-          .eq('user_id', user?.id)
-          .is('deleted_at', null)
+        let subFolders: { id: string; name: string }[] = []
+        for (const parentColumn of getFolderParentColumns()) {
+          const { data, error } = await supabase
+            .from('folders')
+            .select('id, name')
+            .eq(parentColumn, folderId)
+            .eq('user_id', user?.id)
+            .is('deleted_at', null)
+
+          if (!error) {
+            folderParentColumnRef.current = parentColumn
+            subFolders = (data || []) as { id: string; name: string }[]
+            break
+          }
+
+          if (!isMissingColumnError(error, parentColumn)) {
+            console.error('[Download] Folder fetch error:', formatSupabaseError(error))
+            break
+          }
+        }
 
         return [
           ...(folderPhotos || []).map(p => ({ id: p.id, name: p.name, url: p.url, type: 'photo' as const })),
@@ -1844,15 +2423,35 @@ export default function DrivePage() {
 
     setIsCreatingFolder(true)
     try {
-      await supabase.from('folders').insert({
-        name: newFolderName.trim(),
-        parent_id: currentFolderId,
-        user_id: user.id
-      })
+      let created = false
+      for (const parentColumn of getFolderParentColumns()) {
+        const { error } = await supabase.from('folders').insert({
+          name: newFolderName.trim(),
+          [parentColumn]: currentFolderId,
+          user_id: user.id
+        })
+
+        if (!error) {
+          folderParentColumnRef.current = parentColumn
+          created = true
+          break
+        }
+        if (!isMissingColumnError(error, parentColumn)) {
+          throw error
+        }
+      }
+
+      if (!created) {
+        throw new Error('폴더 생성 실패: parent column not resolved')
+      }
+
       setNewFolderName('')
       setShowNewFolderInput(false)
       dataCache.invalidateFolders()
       await fetchData(currentFolderId, searchParams.get('category') || 'all')
+    } catch (error) {
+      console.error('[Create Folder] Error:', formatSupabaseError(error))
+      showToast('폴더 생성에 실패했습니다.', 'error')
     } finally {
       setIsCreatingFolder(false)
     }
@@ -2868,6 +3467,7 @@ export default function DrivePage() {
                 if (res.ok) {
                   setPhotos(prev => prev.filter(p => p.id !== photo.id))
                   dataCache.invalidatePhotos()
+                  await fetchStorageUsage(true)
                 }
               } catch (error) {
                 console.error('Delete error:', error)
@@ -3969,9 +4569,9 @@ export default function DrivePage() {
 
             {/* 빈 상태 */}
             {sortedPhotos.length === 0 && sortedFolders.length === 0 && (
-              <div className="py-16 text-center">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{ background: 'var(--background-secondary)' }}>
-                  <svg className="w-8 h-8" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="empty-state h-[60vh] animate-fade-in">
+                <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl flex items-center justify-center mb-4 sm:mb-6" style={{ background: 'var(--background-secondary)' }}>
+                  <svg className="empty-state-icon !w-10 !h-10 sm:!w-12 sm:!h-12 !mb-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     {searchQuery ? (
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     ) : (
@@ -3981,15 +4581,15 @@ export default function DrivePage() {
                 </div>
                 {searchQuery ? (
                   <>
-                    <p className="font-medium mb-1">&quot;{searchQuery}&quot; 검색 결과 없음</p>
-                    <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>
+                    <p className="empty-state-title text-base sm:text-lg">&quot;{searchQuery}&quot; 검색 결과 없음</p>
+                    <p className="empty-state-description text-xs sm:text-sm">
                       다른 검색어로 시도해보세요
                     </p>
                   </>
                 ) : (
                   <>
-                    <p className="font-medium mb-1">아직 비어있어요</p>
-                    <p className="text-sm" style={{ color: 'var(--foreground-muted)' }}>
+                    <p className="empty-state-title text-base sm:text-lg">아직 비어있어요</p>
+                    <p className="empty-state-description text-xs sm:text-sm">
                       <span className="xl:hidden">+ 버튼을 눌러 파일을 추가하세요</span>
                       <span className="hidden xl:inline">업로드 버튼 또는 드래그앤드롭으로 추가해보세요</span>
                     </p>
@@ -4001,7 +4601,7 @@ export default function DrivePage() {
         )}
 
         {/* 빈 상태 (그리드 뷰) */}
-        {!loading && !userLoading && viewMode === 'grid' && sortedPhotos.length === 0 && sortedFolders.length === 0 && (
+        {!loading && !userLoading && effectiveViewMode === 'grid' && sortedPhotos.length === 0 && sortedFolders.length === 0 && (
           <div className="empty-state h-[60vh] animate-fade-in">
             <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl flex items-center justify-center mb-4 sm:mb-6" style={{ background: 'var(--background-secondary)' }}>
               <svg className="empty-state-icon !w-10 !h-10 sm:!w-12 sm:!h-12 !mb-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4695,7 +5295,7 @@ export default function DrivePage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
                 </div>
-                <span className="tds-text-body" style={{ fontWeight: 500 }}>파일 업로드</span>
+                <span className="tds-text-body" style={{ fontWeight: 500 }}>업로드</span>
                 <input
                   ref={fabFileInputRef}
                   type="file"
@@ -4758,7 +5358,7 @@ export default function DrivePage() {
 
       {/* 더보기 화면 (모바일 전용 탭) */}
       {showMoreScreen && (
-        <div className="xl:hidden min-h-screen pb-20" style={{ background: 'var(--background)' }}>
+        <div className="xl:hidden flex-1 min-h-0 pb-20 flex flex-col" style={{ background: 'var(--background)' }}>
           {/* 헤더 */}
           <div className="sticky top-0 z-10 safe-area-top" style={{ background: 'var(--background)', borderBottom: '1px solid var(--glass-border)' }}>
             <div className="flex items-center h-14 px-4">
@@ -4767,7 +5367,7 @@ export default function DrivePage() {
           </div>
 
           {/* 내용 */}
-          <div className="overflow-y-auto pb-4 h-full">
+          <div className="flex-1 min-h-0 overflow-y-auto pb-4">
             {/* 사용자 프로필 */}
             <div className="p-4">
               <div className="flex items-center gap-4 p-4 rounded-2xl" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
@@ -4864,25 +5464,6 @@ export default function DrivePage() {
                 관리
               </p>
               <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
-                {/* Vault 기능 숨김 - 코드 유지
-                <Link
-                  href="/vault"
-                  prefetch={true}
-                  className="w-full flex items-center gap-4 px-4 py-4 transition-colors active:bg-black/5"
-                  style={{ color: 'var(--foreground)' }}
-                >
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  </div>
-                  <span className="text-[15px] font-medium">Vault</span>
-                  <svg className="w-5 h-5 ml-auto" style={{ color: 'var(--foreground-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </Link>
-                */}
-
                 <Link
                   href="/trash"
                   prefetch={true}
@@ -4992,14 +5573,14 @@ export default function DrivePage() {
 
       {/* 업로드 현황 패널 (모바일 탭) - 더보기 화면에서는 숨김 */}
       {showUploadPanel && !showMoreScreen && (
-        <div className="xl:hidden min-h-screen pb-20" style={{ background: 'var(--background)' }}>
+        <div className="xl:hidden flex-1 min-h-0 pb-20 flex flex-col" style={{ background: 'var(--background)' }}>
           {/* 헤더 */}
           <div className="sticky top-0 z-10 safe-area-top" style={{ background: 'var(--background)', borderBottom: '1px solid var(--glass-border)' }}>
             <div className="flex items-center h-14 px-4">
               <h1 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>업로드</h1>
             </div>
           </div>
-          <div className="p-4" style={{ background: 'var(--background)' }}>
+          <div className="flex-1 min-h-0 overflow-y-auto p-4" style={{ background: 'var(--background)' }}>
             {uploadQueue.length > 0 && (
               <div className="flex items-center justify-end mb-4">
                 <button

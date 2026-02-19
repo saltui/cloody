@@ -202,6 +202,8 @@ export async function createEmailVerificationToken(userId: string): Promise<stri
 
 // 세션 토큰 (기존 auth.ts 기반 확장)
 const SECRET_KEY = process.env.GALLERY_PASSWORD || 'default-secret-key-change-me'
+const SESSION_INACTIVITY_TIMEOUT = 7 * 24 * 60 * 60 * 1000 // 7일
+const STRICT_IP_BINDING = process.env.SESSION_STRICT_IP_BINDING === '1'
 
 interface UserSessionToken {
   userId: string
@@ -276,14 +278,13 @@ export function verifyUserSessionToken(token: string, currentIp?: string): Token
     return { valid: false, reason: 'expired' }
   }
 
-  // IP 바인딩 확인
-  if (currentIp && payload.ip !== currentIp) {
+  // 모바일/와이파이 전환 환경에서 잦은 로그아웃 방지를 위해 기본적으로 IP 고정 비활성화
+  if (STRICT_IP_BINDING && currentIp && payload.ip !== currentIp) {
     return { valid: false, reason: 'ip_mismatch' }
   }
 
-  // 30분 비활성 타임아웃
-  const inactivityTimeout = 30 * 60 * 1000
-  if (now - payload.lastActivity > inactivityTimeout) {
+  // 비활성 타임아웃 (middleware와 동일 기준)
+  if (now - payload.lastActivity > SESSION_INACTIVITY_TIMEOUT) {
     return { valid: false, reason: 'session_timeout' }
   }
 
@@ -305,8 +306,8 @@ export function refreshUserSessionToken(token: string, currentIp: string): strin
   // 만료된 토큰은 갱신 불가
   if (now > payload.expiresAt) return null
 
-  // IP 바인딩 확인
-  if (payload.ip !== currentIp) return null
+  // strict 모드에서만 IP 바인딩 확인
+  if (STRICT_IP_BINDING && payload.ip !== currentIp) return null
 
   // lastActivity 업데이트
   payload.lastActivity = now

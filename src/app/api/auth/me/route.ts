@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyUserSessionToken, findUserById } from '@/lib/user-auth'
+import { verifyUserSessionToken, refreshUserSessionToken, findUserById } from '@/lib/user-auth'
 
 function getClientIP(request: NextRequest): string {
   const forwardedFor = request.headers.get('cf-connecting-ip')
@@ -33,5 +33,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ user: null }, { status: 401 })
   }
 
-  return NextResponse.json({ user })
+  const response = NextResponse.json({ user })
+  const refreshedToken = refreshUserSessionToken(sessionCookie.value, ip)
+  if (refreshedToken) {
+    response.cookies.set('gallery_session', refreshedToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 30 * 24 * 60 * 60,
+      path: '/',
+    })
+  }
+
+  return response
 }
