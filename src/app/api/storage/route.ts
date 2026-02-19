@@ -92,7 +92,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const effectiveUsage = totalUsage
+    const effectiveUsage = includeR2 && r2Usage !== null
+      ? Math.max(totalUsage, r2Usage)
+      : totalUsage
 
     return NextResponse.json(
       includeR2
@@ -100,7 +102,7 @@ export async function GET(request: NextRequest) {
             usage: effectiveUsage,
             logicalUsage: totalUsage,
             bucketUsage: r2Usage,
-            maxUsage: r2Usage !== null ? Math.max(totalUsage, r2Usage) : totalUsage,
+            maxUsage: effectiveUsage,
           }
         : { usage: totalUsage },
       {

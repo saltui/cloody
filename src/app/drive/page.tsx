@@ -1150,12 +1150,21 @@ export default function DrivePage() {
         console.error('Storage usage error:', res.status)
         return
       }
-      const payload = await res.json() as { usage?: number | string; logicalUsage?: number | string }
+      const payload = await res.json() as {
+        usage?: number | string
+        logicalUsage?: number | string
+        maxUsage?: number | string
+      }
       if (requestId !== storageUsageRequestIdRef.current) {
         return
       }
-      // 즉시 반영은 DB 논리 사용량(logicalUsage)을 우선 사용
-      const usageCandidate = payload.logicalUsage ?? payload.usage ?? 0
+      const logicalUsage = Number(payload.logicalUsage ?? NaN)
+      const maxUsage = Number(payload.maxUsage ?? payload.usage ?? 0)
+      // 1) 논리 사용량이 유효하고 0보다 크면 우선 표시
+      // 2) 과거 데이터(file_size 누락) 호환을 위해 0일 때는 maxUsage로 폴백
+      const usageCandidate = Number.isFinite(logicalUsage) && logicalUsage > 0
+        ? logicalUsage
+        : maxUsage
       const parsedUsage = Number(usageCandidate)
       setStorageUsed(Number.isFinite(parsedUsage) ? parsedUsage : 0)
     } catch (err) {
