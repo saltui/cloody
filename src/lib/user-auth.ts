@@ -1,7 +1,8 @@
-import { createHmac, randomBytes } from 'crypto'
+import { randomBytes } from 'crypto'
 import bcrypt from 'bcrypt'
 import { supabase } from './supabase'
 import { RateLimiter } from './rate-limit'
+import { signUserToken, verifyUserToken } from './token'
 
 // 비밀번호 해싱
 const SALT_ROUNDS = 12
@@ -202,48 +203,14 @@ export async function createEmailVerificationToken(userId: string): Promise<stri
 }
 
 // 세션 토큰 (기존 auth.ts 기반 확장)
-const SECRET_KEY = process.env.GALLERY_PASSWORD || 'default-secret-key-change-me'
 const SESSION_INACTIVITY_TIMEOUT = 7 * 24 * 60 * 60 * 1000 // 7일
 const STRICT_IP_BINDING = process.env.SESSION_STRICT_IP_BINDING === '1'
-
-interface UserSessionToken {
-  userId: string
-  email: string
-  displayName: string | null
-  sessionId: string
-  createdAt: number
-  expiresAt: number
-  ip: string
-  lastActivity: number
-}
-
-function signToken(payload: UserSessionToken): string {
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64')
-  const signature = createHmac('sha256', SECRET_KEY).update(data).digest('hex')
-  return `${data}.${signature}`
-}
-
-function verifySignature(token: string): UserSessionToken | null {
-  const parts = token.split('.')
-  if (parts.length !== 2) return null
-
-  const [data, signature] = parts
-  const expectedSignature = createHmac('sha256', SECRET_KEY).update(data).digest('hex')
-
-  if (signature !== expectedSignature) return null
-
-  try {
-    return JSON.parse(Buffer.from(data, 'base64').toString())
-  } catch {
-    return null
-  }
-}
 
 export function createUserSessionToken(user: User, ip: string, rememberMe = false): string {
   const now = Date.now()
   const expiresIn = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000 // 30일 or 7일
 
-  const payload: UserSessionToken = {
+  return signUserToken({
     userId: user.id,
     email: user.email,
     displayName: user.display_name,
@@ -252,9 +219,7 @@ export function createUserSessionToken(user: User, ip: string, rememberMe = fals
     expiresAt: now + expiresIn,
     ip,
     lastActivity: now,
-  }
-
-  return signToken(payload)
+  })
 }
 
 export interface TokenValidation {
@@ -266,7 +231,7 @@ export interface TokenValidation {
 }
 
 export function verifyUserSessionToken(token: string, currentIp?: string): TokenValidation {
-  const payload = verifySignature(token)
+  const payload = verifyUserToken(token)
 
   if (!payload) {
     return { valid: false, reason: 'invalid_signature' }
@@ -298,7 +263,7 @@ export function verifyUserSessionToken(token: string, currentIp?: string): Token
 }
 
 export function refreshUserSessionToken(token: string, currentIp: string): string | null {
-  const payload = verifySignature(token)
+  const payload = verifyUserToken(token)
 
   if (!payload) return null
 
@@ -311,9 +276,7 @@ export function refreshUserSessionToken(token: string, currentIp: string): strin
   if (STRICT_IP_BINDING && payload.ip !== currentIp) return null
 
   // lastActivity 업데이트
-  payload.lastActivity = now
-
-  return signToken(payload)
+  return signUserToken({ ...payload, lastActivity: now })
 }
 
 // 사용자 프로필 업데이트

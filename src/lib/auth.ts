@@ -1,24 +1,9 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
+import { randomBytes } from 'crypto'
 import { RateLimiter } from './rate-limit'
+import { signGalleryToken, verifyGalleryToken } from './token'
 
-const SECRET_KEY = process.env.GALLERY_PASSWORD || 'fallback-secret-key'
 const TOKEN_EXPIRY = 30 * 24 * 60 * 60 * 1000 // 30일 (밀리초)
 const SESSION_TIMEOUT = 7 * 24 * 60 * 60 * 1000 // 7일 비활동 시 타임아웃
-
-interface SessionToken {
-  sessionId: string
-  createdAt: number
-  expiresAt: number
-  ip: string // IP 바인딩
-  lastActivity: number // 마지막 활동 시간
-}
-
-// 토큰 서명 생성
-function createSignature(data: string): string {
-  return createHmac('sha256', SECRET_KEY)
-    .update(data)
-    .digest('base64url')
-}
 
 // 세션 토큰 생성 (IP 바인딩 포함)
 export function createSessionToken(ip: string): string {
@@ -27,30 +12,14 @@ export function createSessionToken(ip: string): string {
   const expiresAt = createdAt + TOKEN_EXPIRY
   const lastActivity = createdAt
 
-  const payload: SessionToken = { sessionId, createdAt, expiresAt, ip, lastActivity }
-  const payloadStr = Buffer.from(JSON.stringify(payload)).toString('base64url')
-  const signature = createSignature(payloadStr)
-
-  return `${payloadStr}.${signature}`
+  return signGalleryToken({ sessionId, createdAt, expiresAt, ip, lastActivity })
 }
 
 // 세션 토큰 갱신 (활동 시간 업데이트)
 export function refreshSessionToken(token: string, currentIp: string): string | null {
   try {
-    const [payloadStr, signature] = token.split('.')
-    if (!payloadStr || !signature) return null
-
-    // 서명 검증
-    const expectedSignature = createSignature(payloadStr)
-    const signatureBuffer = Buffer.from(signature, 'base64url')
-    const expectedBuffer = Buffer.from(expectedSignature, 'base64url')
-
-    if (signatureBuffer.length !== expectedBuffer.length) return null
-    if (!timingSafeEqual(signatureBuffer, expectedBuffer)) return null
-
-    const payload: SessionToken = JSON.parse(
-      Buffer.from(payloadStr, 'base64url').toString()
-    )
+    const payload = verifyGalleryToken(token)
+    if (!payload) return null
 
     // IP 검증
     if (payload.ip !== currentIp) return null
@@ -59,14 +28,7 @@ export function refreshSessionToken(token: string, currentIp: string): string | 
     if (Date.now() > payload.expiresAt) return null
 
     // 새 토큰 생성 (활동 시간 갱신)
-    const newPayload: SessionToken = {
-      ...payload,
-      lastActivity: Date.now()
-    }
-    const newPayloadStr = Buffer.from(JSON.stringify(newPayload)).toString('base64url')
-    const newSignature = createSignature(newPayloadStr)
-
-    return `${newPayloadStr}.${newSignature}`
+    return signGalleryToken({ ...payload, lastActivity: Date.now() })
   } catch {
     return null
   }
@@ -75,21 +37,8 @@ export function refreshSessionToken(token: string, currentIp: string): string | 
 // 세션 토큰 검증 (IP 바인딩 + 세션 타임아웃 포함)
 export function verifySessionToken(token: string, currentIp?: string): { valid: boolean; reason?: string } {
   try {
-    const [payloadStr, signature] = token.split('.')
-    if (!payloadStr || !signature) return { valid: false, reason: 'invalid_format' }
-
-    // 서명 검증 (타이밍 공격 방지)
-    const expectedSignature = createSignature(payloadStr)
-    const signatureBuffer = Buffer.from(signature, 'base64url')
-    const expectedBuffer = Buffer.from(expectedSignature, 'base64url')
-
-    if (signatureBuffer.length !== expectedBuffer.length) return { valid: false, reason: 'invalid_signature' }
-    if (!timingSafeEqual(signatureBuffer, expectedBuffer)) return { valid: false, reason: 'invalid_signature' }
-
-    // 페이로드 파싱
-    const payload: SessionToken = JSON.parse(
-      Buffer.from(payloadStr, 'base64url').toString()
-    )
+    const payload = verifyGalleryToken(token)
+    if (!payload) return { valid: false, reason: 'invalid_signature' }
 
     // 만료 시간 확인
     if (Date.now() > payload.expiresAt) return { valid: false, reason: 'expired' }
