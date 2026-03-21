@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { updateUserProfile } from '@/lib/user-auth'
+import { updateUserProfile } from '@/lib/auth'
 
 export async function PATCH(request: NextRequest) {
   const userId = request.headers.get('x-user-id')

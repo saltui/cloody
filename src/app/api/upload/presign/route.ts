@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPresignedUploadUrl } from '@/lib/r2'
-import { verifyUserSessionToken, findUserById } from '@/lib/user-auth'
+import { verifyUserSessionToken, findUserById } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { getClientIP } from '@/lib/request-utils'
 

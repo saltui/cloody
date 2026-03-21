@@ -1,0 +1,37 @@
+// Gallery auth exports
+export {
+  createSessionToken,
+  verifySessionToken,
+  refreshSessionToken,
+  isSessionValid,
+  checkRateLimit as checkGalleryRateLimit,
+  recordFailedAttempt as recordGalleryFailedAttempt,
+  clearAttempts as clearGalleryAttempts,
+} from './gallery'
+
+// User auth exports (primary — used across most routes)
+export {
+  hashPassword,
+  verifyPassword,
+  findUserByEmail,
+  findUserById,
+  findUserByWalletAddress,
+  createUser,
+  createEmailVerificationToken,
+  verifyEmailToken,
+  createMagicLinkToken,
+  verifyMagicLinkToken,
+  createUserSessionToken,
+  verifyUserSessionToken,
+  refreshUserSessionToken,
+  updateUserProfile,
+  updateWalletAddress,
+  changePassword,
+  updateLastLogin,
+  checkRateLimit,
+  recordFailedAttempt,
+  clearAttempts,
+  type User,
+  type UserWithSecret,
+  type TokenValidation,
+} from './user'

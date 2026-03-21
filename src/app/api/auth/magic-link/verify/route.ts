@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyMagicLinkToken, createUserSessionToken, updateLastLogin } from '@/lib/user-auth'
+import { verifyMagicLinkToken, createUserSessionToken, updateLastLogin } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { getClientIP } from '@/lib/request-utils'
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyEmailToken } from '@/lib/user-auth'
+import { verifyEmailToken } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get('token')

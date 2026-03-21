@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { verifyUserSessionToken } from './user-auth'
+import { verifyUserSessionToken } from './auth'
 import { ErrorCode } from './errors'
 
 export function getClientIP(request: NextRequest): string {

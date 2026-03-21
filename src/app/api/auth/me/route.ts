@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyUserSessionToken, refreshUserSessionToken, findUserById } from '@/lib/user-auth'
+import { verifyUserSessionToken, refreshUserSessionToken, findUserById } from '@/lib/auth'
 import { getClientIP } from '@/lib/request-utils'
 
 export async function GET(request: NextRequest) {

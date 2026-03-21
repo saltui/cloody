@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { getStorageUsage } from '@/lib/r2'
-import { verifyUserSessionToken } from '@/lib/user-auth'
+import { verifyUserSessionToken } from '@/lib/auth'
 import { getClientIP } from '@/lib/request-utils'
 
 // 간단한 메모리 캐시 (15초)

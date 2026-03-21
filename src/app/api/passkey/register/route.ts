@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyUserSessionToken, findUserById } from '@/lib/user-auth'
+import { verifyUserSessionToken, findUserById } from '@/lib/auth'
 import { createRegistrationOptions, verifyRegistration, getUserPasskeys } from '@/lib/passkey'
 import { logAudit } from '@/lib/audit'
 import { supabase } from '@/lib/supabase'

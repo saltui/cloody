@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import {
   createSessionToken,
-  checkRateLimit,
-  recordFailedAttempt,
-  clearAttempts
+  checkGalleryRateLimit as checkRateLimit,
+  recordGalleryFailedAttempt as recordFailedAttempt,
+  clearGalleryAttempts as clearAttempts,
 } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { is2FAEnabled, verifyTotpCode } from '@/lib/totp'

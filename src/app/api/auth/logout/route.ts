@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { logAudit } from '@/lib/audit'
-import { verifyUserSessionToken } from '@/lib/user-auth'
+import { verifyUserSessionToken } from '@/lib/auth'
 import { getClientIP } from '@/lib/request-utils'
 
 export async function POST(request: NextRequest) {

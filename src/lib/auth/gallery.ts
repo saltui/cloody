@@ -1,6 +1,6 @@
 import { randomBytes } from 'crypto'
-import { RateLimiter } from './rate-limit'
-import { signGalleryToken, verifyGalleryToken } from './token'
+import { RateLimiter } from '../rate-limit'
+import { signGalleryToken, verifyGalleryToken } from '../token'
 
 const TOKEN_EXPIRY = 30 * 24 * 60 * 60 * 1000 // 30일 (밀리초)
 const SESSION_TIMEOUT = 7 * 24 * 60 * 60 * 1000 // 7일 비활동 시 타임아웃

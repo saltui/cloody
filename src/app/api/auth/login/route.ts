@@ -7,7 +7,7 @@ import {
   checkRateLimit,
   recordFailedAttempt,
   clearAttempts,
-} from '@/lib/user-auth'
+} from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { supabase } from '@/lib/supabase'
 import { getClientIP } from '@/lib/request-utils'

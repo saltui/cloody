@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { uploadToR2 } from '@/lib/r2'
 import { logAudit } from '@/lib/audit'
-import { verifyUserSessionToken, findUserById } from '@/lib/user-auth'
+import { verifyUserSessionToken, findUserById } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { getClientIP } from '@/lib/request-utils'
 

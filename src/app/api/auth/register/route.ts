@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createUser, createUserSessionToken, checkRateLimit, recordFailedAttempt } from '@/lib/user-auth'
+import { createUser, createUserSessionToken, checkRateLimit, recordFailedAttempt } from '@/lib/auth'
 import { sendVerificationEmail } from '@/lib/email'
 import { logAudit } from '@/lib/audit'
 import { supabase } from '@/lib/supabase'

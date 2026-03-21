@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { changePassword } from '@/lib/user-auth'
+import { changePassword } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { getClientIP } from '@/lib/request-utils'
 

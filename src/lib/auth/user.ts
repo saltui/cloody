@@ -1,8 +1,8 @@
 import { randomBytes } from 'crypto'
 import bcrypt from 'bcrypt'
-import { supabase } from './supabase'
-import { RateLimiter } from './rate-limit'
-import { signUserToken, verifyUserToken } from './token'
+import { supabase } from '../supabase'
+import { RateLimiter } from '../rate-limit'
+import { signUserToken, verifyUserToken } from '../token'
 
 // 비밀번호 해싱
 const SALT_ROUNDS = 12

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAuthenticationOptions, verifyAuthentication, getPasskeysByEmail, createDiscoverableAuthenticationOptions, verifyDiscoverableAuthentication } from '@/lib/passkey'
-import { findUserById, createUserSessionToken, updateLastLogin, checkRateLimit, recordFailedAttempt, clearAttempts } from '@/lib/user-auth'
+import { findUserById, createUserSessionToken, updateLastLogin, checkRateLimit, recordFailedAttempt, clearAttempts } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { getClientIP } from '@/lib/request-utils'
 
