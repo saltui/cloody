@@ -2,15 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { copyObject, R2_PUBLIC_URL } from '@/lib/r2'
 import { logAudit } from '@/lib/audit'
-
-// 클라이언트 IP 가져오기
-function getClientIP(request: NextRequest): string {
-  const forwardedFor = request.headers.get('cf-connecting-ip')
-    || request.headers.get('x-real-ip')
-    || request.headers.get('x-forwarded-for')?.split(',')[0]
-    || '127.0.0.1'
-  return forwardedFor.trim()
-}
+import { getClientIP } from '@/lib/request-utils'
 
 // 파일 복사
 export async function POST(request: NextRequest) {

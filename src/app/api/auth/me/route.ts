@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyUserSessionToken, refreshUserSessionToken, findUserById } from '@/lib/user-auth'
-
-function getClientIP(request: NextRequest): string {
-  const forwardedFor = request.headers.get('cf-connecting-ip')
-    || request.headers.get('x-real-ip')
-    || request.headers.get('x-forwarded-for')?.split(',')[0]
-    || '127.0.0.1'
-  return forwardedFor.trim()
-}
+import { getClientIP } from '@/lib/request-utils'
 
 export async function GET(request: NextRequest) {
   const sessionCookie = request.cookies.get('gallery_session')

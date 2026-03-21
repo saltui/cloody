@@ -1,14 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyUserSessionToken } from '@/lib/user-auth'
 import { getUserPasskeys, renamePasskey } from '@/lib/passkey'
-
-function getClientIP(request: NextRequest): string {
-  const forwardedFor = request.headers.get('cf-connecting-ip')
-    || request.headers.get('x-real-ip')
-    || request.headers.get('x-forwarded-for')?.split(',')[0]
-    || '127.0.0.1'
-  return forwardedFor.trim()
-}
+import { getClientIP } from '@/lib/request-utils'
 
 // GET: 사용자의 패스키 목록 조회
 export async function GET(request: NextRequest) {

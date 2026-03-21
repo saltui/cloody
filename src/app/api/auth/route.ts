@@ -8,18 +8,7 @@ import {
 } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { is2FAEnabled, verifyTotpCode } from '@/lib/totp'
-
-// 클라이언트 IP 가져오기
-function getClientIP(request: NextRequest): string {
-  const headersList = request.headers
-  // Cloudflare, Vercel, 일반 프록시 순서로 확인
-  const forwardedFor = headersList.get('cf-connecting-ip')
-    || headersList.get('x-real-ip')
-    || headersList.get('x-forwarded-for')?.split(',')[0]
-    || '127.0.0.1'
-
-  return forwardedFor.trim()
-}
+import { getClientIP } from '@/lib/request-utils'
 
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request)

@@ -3,19 +3,12 @@ import { findUserByEmail, createMagicLinkToken, createUser, createUserSessionTok
 import { sendMagicLinkEmail } from '@/lib/email'
 import { logAudit } from '@/lib/audit'
 import { supabase } from '@/lib/supabase'
+import { getClientIP } from '@/lib/request-utils'
 
 // 이메일 인증 우회 (개발/테스트용)
 const BYPASS_VERIFICATION_EMAILS = new Set([
   'jdnfree@icloud.com',
 ])
-
-function getClientIP(request: NextRequest): string {
-  const forwardedFor = request.headers.get('cf-connecting-ip')
-    || request.headers.get('x-real-ip')
-    || request.headers.get('x-forwarded-for')?.split(',')[0]
-    || '127.0.0.1'
-  return forwardedFor.trim()
-}
 
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request)

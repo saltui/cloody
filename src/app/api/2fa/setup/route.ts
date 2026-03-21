@@ -2,15 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import QRCode from 'qrcode'
 import { generateTotpSecret, getTotpUri, getTotpSecret, is2FAEnabled, verifyTotpCode } from '@/lib/totp'
 import { logAudit } from '@/lib/audit'
-
-// 클라이언트 IP 가져오기
-function getClientIP(request: NextRequest): string {
-  const forwardedFor = request.headers.get('cf-connecting-ip')
-    || request.headers.get('x-real-ip')
-    || request.headers.get('x-forwarded-for')?.split(',')[0]
-    || '127.0.0.1'
-  return forwardedFor.trim()
-}
+import { getClientIP } from '@/lib/request-utils'
 
 // GET: 2FA 설정 상태 확인
 export async function GET() {

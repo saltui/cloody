@@ -2,20 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { getStorageUsage } from '@/lib/r2'
 import { verifyUserSessionToken } from '@/lib/user-auth'
+import { getClientIP } from '@/lib/request-utils'
 
 // 간단한 메모리 캐시 (15초)
 const cache = new Map<string, { usage: number; timestamp: number }>()
 const CACHE_TTL = 15 * 1000
 const R2_CACHE_TTL = 20 * 1000
 let r2Cache: { usage: number; timestamp: number } | null = null
-
-function getClientIP(request: NextRequest): string {
-  const forwardedFor = request.headers.get('cf-connecting-ip')
-    || request.headers.get('x-real-ip')
-    || request.headers.get('x-forwarded-for')?.split(',')[0]
-    || '127.0.0.1'
-  return forwardedFor.trim()
-}
 
 function isMissingColumnError(error: unknown, columnName: string): boolean {
   if (!error || typeof error !== 'object') return false

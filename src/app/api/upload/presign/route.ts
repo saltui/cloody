@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPresignedUploadUrl } from '@/lib/r2'
 import { verifyUserSessionToken, findUserById } from '@/lib/user-auth'
 import { supabase } from '@/lib/supabase'
+import { getClientIP } from '@/lib/request-utils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -79,14 +80,6 @@ const ALLOWED_TYPES = new Set([
   'application/vnd.rar',
   'application/octet-stream',
 ])
-
-function getClientIP(request: NextRequest): string {
-  const forwardedFor = request.headers.get('cf-connecting-ip')
-    || request.headers.get('x-real-ip')
-    || request.headers.get('x-forwarded-for')?.split(',')[0]
-    || '127.0.0.1'
-  return forwardedFor.trim()
-}
 
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request)

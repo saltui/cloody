@@ -3,6 +3,7 @@ import { uploadToR2 } from '@/lib/r2'
 import { logAudit } from '@/lib/audit'
 import { verifyUserSessionToken, findUserById } from '@/lib/user-auth'
 import { supabase } from '@/lib/supabase'
+import { getClientIP } from '@/lib/request-utils'
 
 // 대용량 파일 업로드를 위한 설정
 export const runtime = 'nodejs'
@@ -15,15 +16,6 @@ const UNLIMITED_STORAGE_EMAILS = new Set([
 
 // 일반 사용자 스토리지 제한 (1GB)
 const STORAGE_LIMIT = 1 * 1024 * 1024 * 1024 // 1GB
-
-// 클라이언트 IP 가져오기
-function getClientIP(request: NextRequest): string {
-  const forwardedFor = request.headers.get('cf-connecting-ip')
-    || request.headers.get('x-real-ip')
-    || request.headers.get('x-forwarded-for')?.split(',')[0]
-    || '127.0.0.1'
-  return forwardedFor.trim()
-}
 
 // Magic bytes로 파일 타입 검증
 const FILE_SIGNATURES: Record<string, { bytes: number[]; offset?: number }[]> = {
