@@ -4,6 +4,8 @@ import { sendVerificationEmail } from '@/lib/email'
 import { logAudit } from '@/lib/audit'
 import { supabase } from '@/lib/supabase'
 import { getClientIP } from '@/lib/request-utils'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request)
@@ -12,10 +14,9 @@ export async function POST(request: NextRequest) {
   // Rate limiting
   const rateLimit = checkRateLimit(ip)
   if (!rateLimit.allowed) {
-    return NextResponse.json({
-      error: '너무 많은 시도가 있었습니다. 잠시 후 다시 시도해주세요.',
+    return errorResponse(ErrorCode.RATE_LIMITED, '너무 많은 시도가 있었습니다. 잠시 후 다시 시도해주세요.', {
       lockoutUntil: rateLimit.lockoutUntil,
-    }, { status: 429 })
+    })
   }
 
   try {
@@ -23,16 +24,16 @@ export async function POST(request: NextRequest) {
 
     // 유효성 검사
     if (!email || typeof email !== 'string') {
-      return NextResponse.json({ error: '이메일을 입력해주세요.' }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, '이메일을 입력해주세요.')
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(email)) {
-      return NextResponse.json({ error: '올바른 이메일 형식이 아닙니다.' }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, '올바른 이메일 형식이 아닙니다.')
     }
 
     if (!password || typeof password !== 'string' || password.length < 8) {
-      return NextResponse.json({ error: '비밀번호는 8자 이상이어야 합니다.' }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, '비밀번호는 8자 이상이어야 합니다.')
     }
 
     // 사용자 생성
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
 
     if (error || !user) {
       recordFailedAttempt(ip)
-      return NextResponse.json({ error: error || '계정 생성에 실패했습니다.' }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, error || '계정 생성에 실패했습니다.')
     }
 
     // 이메일 인증 토큰 가져오기
@@ -82,6 +83,6 @@ export async function POST(request: NextRequest) {
 
     return response
   } catch {
-    return NextResponse.json({ error: '요청 처리 중 오류가 발생했습니다.' }, { status: 500 })
+    return errorResponse(ErrorCode.INTERNAL_ERROR, '요청 처리 중 오류가 발생했습니다.')
   }
 }

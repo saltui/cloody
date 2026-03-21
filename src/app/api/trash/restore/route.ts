@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { logAudit } from '@/lib/audit'
 import { getClientIP } from '@/lib/request-utils'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 // POST: 휴지통에서 복원
 export async function POST(request: NextRequest) {
@@ -10,7 +12,7 @@ export async function POST(request: NextRequest) {
   const userId = request.headers.get('x-user-id')
 
   if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return errorResponse(ErrorCode.UNAUTHORIZED)
   }
 
   try {
@@ -66,6 +68,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Restore error:', error)
-    return NextResponse.json({ error: 'Failed to restore' }, { status: 500 })
+    return errorResponse(ErrorCode.INTERNAL_ERROR, 'Failed to restore')
   }
 }

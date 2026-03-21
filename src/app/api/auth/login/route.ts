@@ -9,8 +9,9 @@ import {
   clearAttempts,
 } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
-import { supabase } from '@/lib/supabase'
 import { getClientIP } from '@/lib/request-utils'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request)
@@ -24,21 +25,20 @@ export async function POST(request: NextRequest) {
       ip,
       userAgent,
     })
-    return NextResponse.json({
-      error: '너무 많은 로그인 시도가 있었습니다. 잠시 후 다시 시도해주세요.',
+    return errorResponse(ErrorCode.RATE_LIMITED, '너무 많은 로그인 시도가 있었습니다. 잠시 후 다시 시도해주세요.', {
       lockoutUntil: rateLimit.lockoutUntil,
-    }, { status: 429 })
+    })
   }
 
   try {
     const { email, password, totpCode, rememberMe } = await request.json()
 
     if (!email || typeof email !== 'string') {
-      return NextResponse.json({ error: '이메일을 입력해주세요.' }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, '이메일을 입력해주세요.')
     }
 
     if (!password || typeof password !== 'string') {
-      return NextResponse.json({ error: '비밀번호를 입력해주세요.' }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, '비밀번호를 입력해주세요.')
     }
 
     // 사용자 조회
@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
         details: { email, reason: 'user_not_found' },
       })
       // 타이밍 공격 방지를 위해 동일한 에러 메시지 사용
-      return NextResponse.json({ error: '이메일 또는 비밀번호가 올바르지 않습니다.' }, { status: 401 })
+      return errorResponse(ErrorCode.UNAUTHORIZED, '이메일 또는 비밀번호가 올바르지 않습니다.')
     }
 
     // 비밀번호 검증
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
         userAgent,
         details: { email, reason: 'invalid_password' },
       })
-      return NextResponse.json({ error: '이메일 또는 비밀번호가 올바르지 않습니다.' }, { status: 401 })
+      return errorResponse(ErrorCode.UNAUTHORIZED, '이메일 또는 비밀번호가 올바르지 않습니다.')
     }
 
     // 2FA 확인
@@ -91,10 +91,9 @@ export async function POST(request: NextRequest) {
           userAgent,
           details: { email },
         })
-        return NextResponse.json({
-          error: '인증 코드가 올바르지 않습니다.',
+        return errorResponse(ErrorCode.UNAUTHORIZED, '인증 코드가 올바르지 않습니다.', {
           needsTwoFactor: true,
-        }, { status: 401 })
+        })
       }
 
       await logAudit({
@@ -150,6 +149,6 @@ export async function POST(request: NextRequest) {
     return response
   } catch (error) {
     console.error('Login error:', error)
-    return NextResponse.json({ error: '로그인 처리 중 오류가 발생했습니다.' }, { status: 500 })
+    return errorResponse(ErrorCode.INTERNAL_ERROR, '로그인 처리 중 오류가 발생했습니다.')
   }
 }

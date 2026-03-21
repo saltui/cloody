@@ -3,6 +3,8 @@ import { createAuthenticationOptions, verifyAuthentication, getPasskeysByEmail, 
 import { findUserById, createUserSessionToken, updateLastLogin, checkRateLimit, recordFailedAttempt, clearAttempts } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { getClientIP } from '@/lib/request-utils'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 // GET: 패스키 인증 옵션 생성
 export async function GET(request: NextRequest) {
@@ -27,9 +29,7 @@ export async function GET(request: NextRequest) {
     console.error('Passkey authentication options error:', error)
     // discoverable 요청 시 에러면 에러 반환
     if (!email) {
-      return NextResponse.json({
-        error: error instanceof Error ? error.message : '패스키 옵션 생성에 실패했습니다.'
-      }, { status: 500 })
+      return errorResponse(ErrorCode.INTERNAL_ERROR, error instanceof Error ? error.message : '패스키 옵션 생성에 실패했습니다.')
     }
     return NextResponse.json({ hasPasskey: false })
   }
@@ -48,17 +48,16 @@ export async function POST(request: NextRequest) {
       ip,
       userAgent,
     })
-    return NextResponse.json({
-      error: '너무 많은 로그인 시도가 있었습니다. 잠시 후 다시 시도해주세요.',
+    return errorResponse(ErrorCode.RATE_LIMITED, '너무 많은 로그인 시도가 있었습니다. 잠시 후 다시 시도해주세요.', {
       lockoutUntil: rateLimit.lockoutUntil,
-    }, { status: 429 })
+    })
   }
 
   try {
     const { email, response, rememberMe } = await request.json()
 
     if (!response) {
-      return NextResponse.json({ error: '인증 응답이 필요합니다.' }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, '인증 응답이 필요합니다.')
     }
 
     let result
@@ -79,7 +78,7 @@ export async function POST(request: NextRequest) {
         userAgent,
         details: { email, reason: 'passkey_verification_failed' },
       })
-      return NextResponse.json({ error: '패스키 인증에 실패했습니다.' }, { status: 401 })
+      return errorResponse(ErrorCode.UNAUTHORIZED, '패스키 인증에 실패했습니다.')
     }
 
     // 로그인 성공
@@ -87,7 +86,7 @@ export async function POST(request: NextRequest) {
 
     const user = await findUserById(result.userId)
     if (!user) {
-      return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 401 })
+      return errorResponse(ErrorCode.UNAUTHORIZED, '사용자를 찾을 수 없습니다.')
     }
 
     // 마지막 로그인 시간 업데이트
@@ -140,8 +139,6 @@ export async function POST(request: NextRequest) {
       userAgent,
       details: { reason: 'passkey_error', error: String(error) },
     })
-    return NextResponse.json({
-      error: error instanceof Error ? error.message : '패스키 인증에 실패했습니다.'
-    }, { status: 401 })
+    return errorResponse(ErrorCode.UNAUTHORIZED, error instanceof Error ? error.message : '패스키 인증에 실패했습니다.')
   }
 }

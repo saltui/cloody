@@ -3,6 +3,8 @@ import { supabase } from '@/lib/supabase'
 import { copyObject, R2_PUBLIC_URL } from '@/lib/r2'
 import { logAudit } from '@/lib/audit'
 import { getClientIP } from '@/lib/request-utils'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 // 파일 복사
 export async function POST(request: NextRequest) {
@@ -11,14 +13,14 @@ export async function POST(request: NextRequest) {
   const userId = request.headers.get('x-user-id')
 
   if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return errorResponse(ErrorCode.UNAUTHORIZED)
   }
 
   try {
     const { photoId } = await request.json()
 
     if (!photoId) {
-      return NextResponse.json({ error: 'photoId is required' }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, 'photoId is required')
     }
 
     // 사진 정보 가져오기
@@ -30,7 +32,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (photoError || !photo) {
-      return NextResponse.json({ error: 'Photo not found' }, { status: 404 })
+      return errorResponse(ErrorCode.NOT_FOUND, 'Photo not found')
     }
 
     // 원본 파일 키 추출 (R2 URL에서 파일 경로만 가져오기)
@@ -91,7 +93,7 @@ export async function POST(request: NextRequest) {
 
     if (insertError) {
       console.error('Photo copy insert error:', insertError)
-      return NextResponse.json({ error: 'Failed to create photo copy' }, { status: 500 })
+      return errorResponse(ErrorCode.INTERNAL_ERROR, 'Failed to create photo copy')
     }
 
     // 감사 로그 - 파일 복사
@@ -109,6 +111,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ photo: newPhoto })
   } catch (error) {
     console.error('Copy API error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return errorResponse(ErrorCode.INTERNAL_ERROR)
   }
 }

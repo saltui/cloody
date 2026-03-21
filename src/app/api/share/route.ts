@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import crypto from 'crypto'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
@@ -9,14 +11,14 @@ export async function POST(request: NextRequest) {
   const userId = request.headers.get('x-user-id')
 
   if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return errorResponse(ErrorCode.UNAUTHORIZED)
   }
 
   try {
     const { photoId, expiresIn } = await request.json()
 
     if (!photoId) {
-      return NextResponse.json({ error: 'photoId is required' }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, 'photoId is required')
     }
 
     // 사진이 사용자의 것인지 확인
@@ -28,7 +30,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (photoError || !photo) {
-      return NextResponse.json({ error: 'Photo not found' }, { status: 404 })
+      return errorResponse(ErrorCode.NOT_FOUND, 'Photo not found')
     }
 
     // 고유 토큰 생성
@@ -52,7 +54,7 @@ export async function POST(request: NextRequest) {
 
     if (insertError) {
       console.error('Share link insert error:', insertError)
-      return NextResponse.json({ error: 'Failed to create share link' }, { status: 500 })
+      return errorResponse(ErrorCode.INTERNAL_ERROR, 'Failed to create share link')
     }
 
     const shareUrl = `${APP_URL}/share/${token}`
@@ -64,6 +66,6 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('Share API error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return errorResponse(ErrorCode.INTERNAL_ERROR)
   }
 }

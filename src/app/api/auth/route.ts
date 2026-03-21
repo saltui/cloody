@@ -9,6 +9,8 @@ import {
 import { logAudit } from '@/lib/audit'
 import { is2FAEnabled, verifyTotpCode } from '@/lib/totp'
 import { getClientIP } from '@/lib/request-utils'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request)
@@ -21,16 +23,11 @@ export async function POST(request: NextRequest) {
     const retryAfter = Math.ceil(((rateLimit.lockoutUntil ?? Date.now()) - Date.now()) / 1000)
     // 감사 로그
     logAudit({ action: 'RATE_LIMITED', ip, userAgent })
-    return NextResponse.json(
-      {
-        success: false,
-        error: `너무 많은 시도입니다. ${Math.ceil(retryAfter / 60)}분 후에 다시 시도해주세요.`
-      },
-      {
-        status: 429,
-        headers: { 'Retry-After': retryAfter.toString() }
-      }
-    )
+    const rateLimitRes = errorResponse(ErrorCode.RATE_LIMITED, `너무 많은 시도입니다. ${Math.ceil(retryAfter / 60)}분 후에 다시 시도해주세요.`, {
+      success: false,
+    })
+    rateLimitRes.headers.set('Retry-After', retryAfter.toString())
+    return rateLimitRes
   }
 
   try {
@@ -68,15 +65,12 @@ export async function POST(request: NextRequest) {
             userAgent
           })
 
-          return NextResponse.json(
-            {
-              success: false,
-              needsTwoFactor: true,
-              error: remaining > 0
-                ? `잘못된 인증 코드입니다. (${remaining}회 남음)`
-                : '잘못된 인증 코드입니다.'
-            },
-            { status: 401 }
+          return errorResponse(
+            ErrorCode.UNAUTHORIZED,
+            remaining > 0
+              ? `잘못된 인증 코드입니다. (${remaining}회 남음)`
+              : '잘못된 인증 코드입니다.',
+            { success: false, needsTwoFactor: true }
           )
         }
 
@@ -118,20 +112,15 @@ export async function POST(request: NextRequest) {
       details: { remainingAttempts: remaining }
     })
 
-    return NextResponse.json(
-      {
-        success: false,
-        error: remaining > 0
-          ? `비밀번호가 틀렸습니다. (${remaining}회 남음)`
-          : '비밀번호가 틀렸습니다.'
-      },
-      { status: 401 }
+    return errorResponse(
+      ErrorCode.UNAUTHORIZED,
+      remaining > 0
+        ? `비밀번호가 틀렸습니다. (${remaining}회 남음)`
+        : '비밀번호가 틀렸습니다.',
+      { success: false }
     )
   } catch {
-    return NextResponse.json(
-      { success: false, error: '잘못된 요청입니다.' },
-      { status: 400 }
-    )
+    return errorResponse(ErrorCode.INVALID_INPUT, '잘못된 요청입니다.', { success: false })
   }
 }
 

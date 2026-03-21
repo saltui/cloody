@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyMagicLinkToken, createUserSessionToken, updateLastLogin } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { getClientIP } from '@/lib/request-utils'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 export async function GET(request: NextRequest) {
   const ip = getClientIP(request)
@@ -10,7 +12,7 @@ export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get('token')
 
   if (!token) {
-    return NextResponse.json({ error: '유효하지 않은 링크입니다.' }, { status: 400 })
+    return errorResponse(ErrorCode.INVALID_INPUT, '유효하지 않은 링크입니다.')
   }
 
   try {
@@ -23,10 +25,9 @@ export async function GET(request: NextRequest) {
         userAgent,
         details: { reason: 'invalid_magic_link' },
       })
-      return NextResponse.json({
-        error: '만료되었거나 유효하지 않은 링크입니다.',
+      return errorResponse(ErrorCode.INVALID_INPUT, '만료되었거나 유효하지 않은 링크입니다.', {
         expired: true,
-      }, { status: 400 })
+      })
     }
 
     // 마지막 로그인 시간 업데이트
@@ -58,6 +59,6 @@ export async function GET(request: NextRequest) {
 
     return response
   } catch {
-    return NextResponse.json({ error: '처리 중 오류가 발생했습니다.' }, { status: 500 })
+    return errorResponse(ErrorCode.INTERNAL_ERROR, '처리 중 오류가 발생했습니다.')
   }
 }

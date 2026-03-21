@@ -3,6 +3,8 @@ import { supabase } from '@/lib/supabase'
 import { deleteManyFromR2, extractR2KeyFromUrl, getStorageUsage } from '@/lib/r2'
 import { logAudit } from '@/lib/audit'
 import { getClientIP } from '@/lib/request-utils'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 interface PhotoForR2Delete {
   id: string
@@ -29,7 +31,7 @@ function collectR2Keys(photos: PhotoForR2Delete[] | null | undefined): string[] 
 export async function GET(request: NextRequest) {
   const userId = request.headers.get('x-user-id')
   if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return errorResponse(ErrorCode.UNAUTHORIZED)
   }
 
   try {
@@ -59,7 +61,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('Trash list error:', error)
-    return NextResponse.json({ error: 'Failed to get trash' }, { status: 500 })
+    return errorResponse(ErrorCode.INTERNAL_ERROR, 'Failed to get trash')
   }
 }
 
@@ -70,7 +72,7 @@ export async function POST(request: NextRequest) {
   const userId = request.headers.get('x-user-id')
 
   if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return errorResponse(ErrorCode.UNAUTHORIZED)
   }
 
   try {
@@ -126,7 +128,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Trash move error:', error)
-    return NextResponse.json({ error: 'Failed to move to trash' }, { status: 500 })
+    return errorResponse(ErrorCode.INTERNAL_ERROR, 'Failed to move to trash')
   }
 }
 
@@ -137,7 +139,7 @@ export async function DELETE(request: NextRequest) {
   const userId = request.headers.get('x-user-id')
 
   if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return errorResponse(ErrorCode.UNAUTHORIZED)
   }
 
   try {
@@ -319,6 +321,6 @@ export async function DELETE(request: NextRequest) {
     })
   } catch (error) {
     console.error('Permanent delete error:', error)
-    return NextResponse.json({ error: 'Failed to delete permanently' }, { status: 500 })
+    return errorResponse(ErrorCode.INTERNAL_ERROR, 'Failed to delete permanently')
   }
 }

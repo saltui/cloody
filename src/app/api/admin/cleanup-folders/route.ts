@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 // 의심스러운 폴더 패턴 (개발 관련 폴더들)
 const SUSPICIOUS_PATTERNS = [
@@ -40,7 +42,7 @@ export async function GET(request: NextRequest) {
   const userId = request.headers.get('x-user-id')
 
   if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return errorResponse(ErrorCode.UNAUTHORIZED)
   }
 
   try {
@@ -78,7 +80,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('Cleanup folders error:', error)
-    return NextResponse.json({ error: 'Failed to fetch folders' }, { status: 500 })
+    return errorResponse(ErrorCode.INTERNAL_ERROR, 'Failed to fetch folders')
   }
 }
 
@@ -87,14 +89,14 @@ export async function DELETE(request: NextRequest) {
   const userId = request.headers.get('x-user-id')
 
   if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return errorResponse(ErrorCode.UNAUTHORIZED)
   }
 
   try {
     const { folderIds } = await request.json()
 
     if (!folderIds || !Array.isArray(folderIds) || folderIds.length === 0) {
-      return NextResponse.json({ error: 'folderIds is required' }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, 'folderIds is required')
     }
 
     // 해당 폴더들의 하위 폴더도 모두 찾기
@@ -140,6 +142,6 @@ export async function DELETE(request: NextRequest) {
     })
   } catch (error) {
     console.error('Delete folders error:', error)
-    return NextResponse.json({ error: 'Failed to delete folders' }, { status: 500 })
+    return errorResponse(ErrorCode.INTERNAL_ERROR, 'Failed to delete folders')
   }
 }
