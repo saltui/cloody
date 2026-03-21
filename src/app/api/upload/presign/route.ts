@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPresignedUploadUrl } from '@/lib/r2'
-import { verifyUserSessionToken, findUserById } from '@/lib/auth'
+import { findUserById } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
-import { getClientIP } from '@/lib/request-utils'
+import { requireSession, SessionError } from '@/lib/request-utils'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -82,29 +84,18 @@ const ALLOWED_TYPES = new Set([
 ])
 
 export async function POST(request: NextRequest) {
-  const ip = getClientIP(request)
-
-  // 사용자 인증 확인
-  const sessionCookie = request.cookies.get('gallery_session')
-  if (!sessionCookie) {
-    return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
-  }
-
-  const validation = verifyUserSessionToken(sessionCookie.value, ip)
-  if (!validation.valid || !validation.userId) {
-    return NextResponse.json({ error: '세션이 만료되었습니다.' }, { status: 401 })
-  }
-
-  const user = await findUserById(validation.userId)
-  if (!user) {
-    return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 401 })
-  }
-
   try {
+    const { userId } = requireSession(request)
+
+    const user = await findUserById(userId)
+    if (!user) {
+      return errorResponse(ErrorCode.UNAUTHORIZED, '사용자를 찾을 수 없습니다.')
+    }
+
     const { fileName, fileType, fileSize } = await request.json()
 
     if (!fileName || !fileType || !fileSize) {
-      return NextResponse.json({ error: 'fileName, fileType, fileSize are required' }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, 'fileName, fileType, fileSize are required')
     }
 
     console.log('Presign request:', { fileName, fileType, fileSize, userEmail: user.email })
@@ -112,13 +103,13 @@ export async function POST(request: NextRequest) {
     // 파일 크기 검증
     if (fileSize > MAX_FILE_SIZE) {
       console.log('Presign rejected: file too large', { fileSize, max: MAX_FILE_SIZE })
-      return NextResponse.json({ error: '파일 크기는 4.5GB를 초과할 수 없습니다.' }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, '파일 크기는 4.5GB를 초과할 수 없습니다.')
     }
 
     // MIME 타입 검증
     if (!ALLOWED_TYPES.has(fileType)) {
       console.log('Presign rejected: unsupported type', { fileType, allowedTypes: Array.from(ALLOWED_TYPES) })
-      return NextResponse.json({ error: `지원하지 않는 파일 형식입니다: ${fileType}` }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, `지원하지 않는 파일 형식입니다: ${fileType}`)
     }
 
     // 스토리지 제한 확인 (무제한 사용자 제외)
@@ -135,12 +126,11 @@ export async function POST(request: NextRequest) {
       if (newUsage > STORAGE_LIMIT) {
         const usedGB = (currentUsage / (1024 * 1024 * 1024)).toFixed(2)
         const limitGB = (STORAGE_LIMIT / (1024 * 1024 * 1024)).toFixed(0)
-        return NextResponse.json({
-          error: `스토리지 용량이 부족합니다. (현재 ${usedGB}GB / ${limitGB}GB 제한)`,
+        return errorResponse(ErrorCode.STORAGE_LIMIT, `스토리지 용량이 부족합니다. (현재 ${usedGB}GB / ${limitGB}GB 제한)`, {
           storageExceeded: true,
           currentUsage,
           limit: STORAGE_LIMIT,
-        }, { status: 403 })
+        })
       }
     }
 
@@ -154,8 +144,9 @@ export async function POST(request: NextRequest) {
 
     // contentType도 반환하여 클라이언트가 동일한 타입으로 업로드하도록 함
     return NextResponse.json({ uploadUrl, publicUrl, fileName: sanitizedFileName, contentType: fileType })
-  } catch (error) {
-    console.error('Presign error:', error)
-    return NextResponse.json({ error: 'Presign failed' }, { status: 500 })
+  } catch (e) {
+    if (e instanceof SessionError) return errorResponse(e.code, e.message)
+    console.error('Presign error:', e)
+    return errorResponse(ErrorCode.INTERNAL_ERROR, 'Presign failed')
   }
 }

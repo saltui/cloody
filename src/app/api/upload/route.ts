@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { uploadToR2 } from '@/lib/r2'
 import { logAudit } from '@/lib/audit'
-import { verifyUserSessionToken, findUserById } from '@/lib/auth'
+import { findUserById } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
-import { getClientIP } from '@/lib/request-utils'
+import { requireSession, SessionError } from '@/lib/request-utils'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 // 대용량 파일 업로드를 위한 설정
 export const runtime = 'nodejs'
@@ -153,34 +155,22 @@ function detectFileType(buffer: Buffer): string | null {
 const MAX_FILE_SIZE = 500 * 1024 * 1024
 
 export async function POST(request: NextRequest) {
-  const ip = getClientIP(request)
-  const userAgent = request.headers.get('user-agent') || undefined
-
-  // 사용자 인증 확인
-  const sessionCookie = request.cookies.get('gallery_session')
-  if (!sessionCookie) {
-    return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 })
-  }
-
-  const validation = verifyUserSessionToken(sessionCookie.value, ip)
-  if (!validation.valid || !validation.userId) {
-    return NextResponse.json({ error: '세션이 만료되었습니다.' }, { status: 401 })
-  }
-
-  // 사용자 정보 가져오기
-  const user = await findUserById(validation.userId)
-  if (!user) {
-    return NextResponse.json({ error: '사용자를 찾을 수 없습니다.' }, { status: 401 })
-  }
-
   try {
+    const { userId, ip, userAgent } = requireSession(request)
+
+    // 사용자 정보 가져오기
+    const user = await findUserById(userId)
+    if (!user) {
+      return errorResponse(ErrorCode.UNAUTHORIZED, '사용자를 찾을 수 없습니다.')
+    }
+
     const formData = await request.formData()
     const file = formData.get('file') as File
     const fileName = formData.get('fileName') as string
 
     if (!file || !fileName) {
       console.log('Upload validation failed: missing file or fileName', { file: !!file, fileName: !!fileName })
-      return NextResponse.json({ error: 'File and fileName are required' }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, 'File and fileName are required')
     }
 
     console.log('Upload attempt:', { fileName, fileType: file.type, fileSize: file.size, userEmail: user.email })
@@ -188,7 +178,7 @@ export async function POST(request: NextRequest) {
     // 파일 크기 검증
     if (file.size > MAX_FILE_SIZE) {
       console.log('Upload validation failed: file too large', { size: file.size, max: MAX_FILE_SIZE })
-      return NextResponse.json({ error: '파일 크기는 500MB를 초과할 수 없습니다.' }, { status: 400 })
+      return errorResponse(ErrorCode.INVALID_INPUT, '파일 크기는 500MB를 초과할 수 없습니다.')
     }
 
     // 스토리지 제한 확인 (무제한 사용자 제외)
@@ -207,12 +197,11 @@ export async function POST(request: NextRequest) {
         const usedGB = (currentUsage / (1024 * 1024 * 1024)).toFixed(2)
         const limitGB = (STORAGE_LIMIT / (1024 * 1024 * 1024)).toFixed(0)
         console.log('Upload rejected: storage limit exceeded', { currentUsage, fileSize: file.size, limit: STORAGE_LIMIT })
-        return NextResponse.json({
-          error: `스토리지 용량이 부족합니다. (현재 ${usedGB}GB / ${limitGB}GB 제한)`,
+        return errorResponse(ErrorCode.STORAGE_LIMIT, `스토리지 용량이 부족합니다. (현재 ${usedGB}GB / ${limitGB}GB 제한)`, {
           storageExceeded: true,
           currentUsage,
           limit: STORAGE_LIMIT,
-        }, { status: 403 })
+        })
       }
     }
 
@@ -227,7 +216,7 @@ export async function POST(request: NextRequest) {
       const detectedType = detectFileType(buffer)
       if (!detectedType) {
         console.log('Upload validation failed: could not detect file type', { declaredType: file.type, firstBytes: buffer.slice(0, 16).toString('hex') })
-        return NextResponse.json({ error: '파일 형식을 확인할 수 없습니다.' }, { status: 400 })
+        return errorResponse(ErrorCode.INVALID_INPUT, '파일 형식을 확인할 수 없습니다.')
       }
 
       // 선언된 타입과 실제 타입이 다르면 거부
@@ -235,9 +224,7 @@ export async function POST(request: NextRequest) {
       console.log('Type check:', { declaredType: file.type, detectedType, declaredCategory, detectedCategory })
       if (declaredCategory !== detectedCategory) {
         console.log('Upload validation failed: type mismatch', { declaredCategory, detectedCategory })
-        return NextResponse.json({
-          error: `파일 형식이 일치하지 않습니다: ${file.type} vs ${detectedType}`
-        }, { status: 400 })
+        return errorResponse(ErrorCode.INVALID_INPUT, `파일 형식이 일치하지 않습니다: ${file.type} vs ${detectedType}`)
       }
       finalType = detectedType
     }
@@ -262,8 +249,9 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json({ url })
-  } catch (error) {
-    console.error('Upload error:', error)
-    return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
+  } catch (e) {
+    if (e instanceof SessionError) return errorResponse(e.code, e.message)
+    console.error('Upload error:', e)
+    return errorResponse(ErrorCode.INTERNAL_ERROR, 'Upload failed')
   }
 }

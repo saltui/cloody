@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { refreshUserSessionToken } from '@/lib/auth'
 import { getClientIP } from '@/lib/request-utils'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 export async function POST(request: NextRequest) {
   const currentToken = request.cookies.get('gallery_session')?.value
 
   if (!currentToken) {
-    return NextResponse.json({ error: 'No session' }, { status: 401 })
+    return errorResponse(ErrorCode.UNAUTHORIZED, 'No session')
   }
 
   const ip = getClientIP(request)
   const newToken = refreshUserSessionToken(currentToken, ip)
 
   if (!newToken) {
-    const response = NextResponse.json({ error: 'Session invalid' }, { status: 401 })
+    const response = errorResponse(ErrorCode.SESSION_EXPIRED, 'Session invalid')
     response.cookies.delete('gallery_session')
     return response
   }

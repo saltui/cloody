@@ -3,6 +3,8 @@ import { supabase } from '@/lib/supabase'
 import { getStorageUsage } from '@/lib/r2'
 import { verifyUserSessionToken } from '@/lib/auth'
 import { getClientIP } from '@/lib/request-utils'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 // 간단한 메모리 캐시 (15초)
 const cache = new Map<string, { usage: number; timestamp: number }>()
@@ -34,7 +36,7 @@ export async function GET(request: NextRequest) {
   const shouldBypassCache = forceRefresh
 
   if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return errorResponse(ErrorCode.UNAUTHORIZED)
   }
 
   // 캐시 확인
@@ -106,6 +108,6 @@ export async function GET(request: NextRequest) {
     )
   } catch (error) {
     console.error('Storage usage error:', error)
-    return NextResponse.json({ error: 'Failed to get storage usage' }, { status: 500 })
+    return errorResponse(ErrorCode.INTERNAL_ERROR, 'Failed to get storage usage')
   }
 }
