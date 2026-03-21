@@ -23,7 +23,8 @@ export async function POST(request: NextRequest) {
       exists: !!user,
       hasPassword: user?.password_hash ? true : false,
     })
-  } catch {
+  } catch (error) {
+    console.error('[auth] check-email failed:', error)
     return errorResponse(ErrorCode.INTERNAL_ERROR, '요청 처리 중 오류가 발생했습니다.')
   }
 }

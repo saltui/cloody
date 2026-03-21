@@ -46,7 +46,8 @@ function toProxyUrl(originalUrl: string): string {
         const fileName = pathParts.slice(2).join('/')
         return `/api/image/${fileName}`
       }
-    } catch {
+    } catch (error) {
+      console.error('[download] toProxyUrl URL parse failed:', error)
       return originalUrl
     }
   }

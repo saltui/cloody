@@ -129,7 +129,8 @@ export async function POST(request: NextRequest) {
       isNewUser,
       message: '로그인 링크가 이메일로 전송되었습니다.',
     })
-  } catch {
+  } catch (error) {
+    console.error('[auth] magic-link POST failed:', error)
     return errorResponse(ErrorCode.INTERNAL_ERROR, '요청 처리 중 오류가 발생했습니다.')
   }
 }

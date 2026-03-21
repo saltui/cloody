@@ -52,8 +52,8 @@ function loadUploadHistory(): UploadItem[] {
           status: item.status === 'uploading' || item.status === 'pending' ? 'cancelled' : item.status
         }))
     }
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('[upload] loadUploadHistory failed:', error)
   }
   return []
 }
@@ -65,8 +65,8 @@ function saveUploadHistory(items: UploadItem[]) {
     // 최신 100개만 유지
     const toSave = items.slice(-MAX_HISTORY_ITEMS)
     localStorage.setItem(UPLOAD_HISTORY_KEY, JSON.stringify(toSave))
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('[upload] saveUploadHistory failed:', error)
   }
 }
 

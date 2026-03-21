@@ -119,7 +119,8 @@ export async function POST(request: NextRequest) {
         : '비밀번호가 틀렸습니다.',
       { success: false }
     )
-  } catch {
+  } catch (error) {
+    console.error('[auth] login POST failed:', error)
     return errorResponse(ErrorCode.INVALID_INPUT, '잘못된 요청입니다.', { success: false })
   }
 }

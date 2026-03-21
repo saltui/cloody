@@ -29,7 +29,8 @@ function extractKeyFromUrl(url: string): string | null {
       return parts.slice(2).join('/')
     }
     return null
-  } catch {
+  } catch (error) {
+    console.error('[transcode] extractKeyFromUrl failed:', error)
     return null
   }
 }
@@ -169,8 +170,8 @@ async function processJob(photoId: string): Promise<{ success: boolean; error?: 
         const content = await readFile(join(segmentDir, segment))
         await uploadHLSToR2(photoId, content, `segments/${segment}`, 'video/MP2T')
       }
-    } catch {
-      // 세그먼트 디렉토리가 없을 수 있음
+    } catch (error) {
+      console.error('[transcode] segment upload failed:', error)
     }
 
     // 품질별 플레이리스트 업로드
@@ -207,8 +208,8 @@ async function processJob(photoId: string): Promise<{ success: boolean; error?: 
     // 임시 파일 정리
     try {
       await rm(workDir, { recursive: true, force: true })
-    } catch {
-      // 무시
+    } catch (error) {
+      console.error('[transcode] cleanup workDir failed:', error)
     }
   }
 }
@@ -258,8 +259,8 @@ export async function GET(request: NextRequest) {
         .from('transcoding_jobs')
         .update({ status: 'processing', attempts: supabase.rpc('increment', { x: 1 }) })
         .eq('photo_id', photo.id)
-    } catch {
-      // 테이블이 없을 수 있음
+    } catch (error) {
+      console.error('[transcode] transcoding_jobs update processing failed:', error)
     }
 
     const result = await processJob(photo.id)
@@ -277,8 +278,8 @@ export async function GET(request: NextRequest) {
           .from('transcoding_jobs')
           .update({ status: 'failed', error_message: result.error })
           .eq('photo_id', photo.id)
-      } catch {
-        // 테이블이 없을 수 있음
+      } catch (error) {
+        console.error('[transcode] transcoding_jobs update failed status failed:', error)
       }
     } else {
       // 성공 시 작업 완료 처리
@@ -287,8 +288,8 @@ export async function GET(request: NextRequest) {
           .from('transcoding_jobs')
           .update({ status: 'completed', completed_at: new Date().toISOString() })
           .eq('photo_id', photo.id)
-      } catch {
-        // 테이블이 없을 수 있음
+      } catch (error) {
+        console.error('[transcode] transcoding_jobs update completed status failed:', error)
       }
     }
   }

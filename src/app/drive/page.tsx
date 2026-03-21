@@ -138,7 +138,8 @@ function uploadWithProgress(
         try {
           const response = JSON.parse(xhr.responseText)
           resolve(response)
-        } catch {
+        } catch (error) {
+          console.error('[upload] uploadWithProgress response parse failed:', error)
           reject(new Error('Invalid response'))
         }
       } else {
@@ -255,7 +256,8 @@ async function uploadViaServerApi(
               return
             }
             resolve({ url: data.url as string })
-          } catch {
+          } catch (error) {
+            console.error('[upload] uploadViaServerApi response parse failed:', error)
             reject(new Error('Upload succeeded but response parsing failed'))
           }
         } else if (xhr.status === 413) {
@@ -328,8 +330,8 @@ async function uploadWithPresignedUrl(
       try {
         const error = await presignRes.json() as { error?: string }
         message = error.error || message
-      } catch {
-        // ignore json parsing error
+      } catch (error) {
+        console.error('[upload] presign error response parse failed:', error)
       }
       // Presign이 비즈니스 규칙으로 거절된 경우(4xx)는 서버 업로드 폴백 대상이 아님
       if (presignRes.status >= 400 && presignRes.status < 500) {
@@ -499,7 +501,8 @@ const generateVideoThumbnail = (file: File, maxSize: number = 400): Promise<Blob
           'image/webp',
           0.8
         )
-      } catch {
+      } catch (error) {
+        console.error('[drive] captureFrame canvas.toBlob failed:', error)
         if (!resolved) {
           resolved = true
           cleanup()
@@ -1377,7 +1380,8 @@ export default function DrivePage() {
       const readPromise = file.arrayBuffer().then(() => file)
       const result = await Promise.race([readPromise, timeoutPromise])
       return result
-    } catch {
+    } catch (error) {
+      console.error('[drive] iCloud file prepare failed:', error)
       return null
     }
   }
@@ -1656,7 +1660,8 @@ export default function DrivePage() {
         uploadProgressSnapshotRef.current.delete(itemId)
         updateQueueItem(itemId, { status: 'done', progress: 100, url, uploadedSize: file.size })
         enqueueStorageDelta(file.size)
-      } catch {
+      } catch (error) {
+        console.error('[upload] uploadFile failed:', error)
         uploadProgressSnapshotRef.current.delete(itemId)
         updateQueueItem(itemId, { status: 'error' })
       }
@@ -1664,7 +1669,7 @@ export default function DrivePage() {
 
     await runWithConcurrency(filteredFilesWithPath.length, CONCURRENT_UPLOADS, uploadFile)
 
-    // DB 배치 인서트
+    // DB 배치 인서트 (folder upload)
     if (uploadResults.length > 0) {
       // 폴더별로 그룹화하여 order 계산
       const byFolder = new Map<string | null, typeof uploadResults>()
@@ -1914,7 +1919,8 @@ export default function DrivePage() {
         )
         const readPromise = file.arrayBuffer().then(() => file)
         return await Promise.race([readPromise, timeoutPromise])
-      } catch {
+      } catch (error) {
+        console.error('[drive] iCloud prepareFile failed:', error)
         return null
       }
     }
@@ -2264,7 +2270,8 @@ export default function DrivePage() {
         uploadProgressSnapshotRef.current.delete(itemId)
         updateQueueItem(itemId, { status: 'done', progress: 100, url, uploadedSize: file.size })
         enqueueStorageDelta(file.size)
-      } catch {
+      } catch (error) {
+        console.error('[upload] uploadFile failed:', error)
         uploadProgressSnapshotRef.current.delete(itemId)
         updateQueueItem(itemId, { status: 'error' })
       }

@@ -97,7 +97,8 @@ function validateToken(token: string | undefined, currentIp: string): TokenValid
     }
 
     return { valid: true, userId: payload.userId, email: payload.email, orgId: payload.orgId }
-  } catch {
+  } catch (error) {
+    console.error('[middleware] validateToken failed:', error)
     return { valid: false, reason: 'invalid' }
   }
 }

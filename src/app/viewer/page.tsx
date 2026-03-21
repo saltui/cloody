@@ -521,7 +521,8 @@ export default function ViewerPage() {
       await navigator.clipboard.writeText(shareUrl)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
-    } catch {
+    } catch (error) {
+      console.error('[viewer] clipboard writeText failed, using execCommand fallback:', error)
       // 폴백: 텍스트 선택
       const textArea = document.createElement('textarea')
       textArea.value = shareUrl

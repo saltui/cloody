@@ -40,7 +40,8 @@ function toProxyUrl(originalUrl: string): string {
         const fileName = pathParts.slice(2).join('/')
         return `/api/image/${fileName}`
       }
-    } catch {
+    } catch (error) {
+      console.error('[share] toProxyUrl URL parse failed:', error)
       return originalUrl
     }
   }
@@ -75,7 +76,8 @@ export default function SharePage() {
 
         const data = await res.json()
         setPhoto(data.photo)
-      } catch {
+      } catch (error) {
+        console.error('[share] fetchSharedPhoto failed:', error)
         setError('네트워크 오류가 발생했습니다.')
       } finally {
         setLoading(false)

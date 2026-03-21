@@ -82,7 +82,8 @@ export async function POST(request: NextRequest) {
     })
 
     return response
-  } catch {
+  } catch (error) {
+    console.error('[auth] register POST failed:', error)
     return errorResponse(ErrorCode.INTERNAL_ERROR, '요청 처리 중 오류가 발생했습니다.')
   }
 }

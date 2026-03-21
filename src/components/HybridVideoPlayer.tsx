@@ -297,8 +297,8 @@ export default memo(function HybridVideoPlayer({
       if (!document.fullscreenElement && orientation?.unlock) {
         try {
           orientation.unlock()
-        } catch {
-          // ignore
+        } catch (error) {
+          console.error('[video-player] orientation.unlock failed:', error)
         }
       }
     }

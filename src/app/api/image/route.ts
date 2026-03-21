@@ -62,14 +62,15 @@ export async function POST(request: NextRequest) {
 
         try {
           signedUrls[url] = await getSignedImageUrl(fileName, 3600)
-        } catch {
-          // 개별 실패는 무시
+        } catch (error) {
+          console.error('[image] getSignedImageUrl failed for', fileName, error)
         }
       })
     )
 
     return NextResponse.json({ signedUrls })
-  } catch {
+  } catch (error) {
+    console.error('[image] signed URLs POST failed:', error)
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   }
 }

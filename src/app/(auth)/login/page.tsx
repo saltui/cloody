@@ -40,7 +40,8 @@ export default function LoginPage() {
           setHasPasskey(data.hasPasskey)
           setPasskeyOptions(data.options)
         }
-      } catch {
+      } catch (error) {
+        console.error('[login] checkPasskey failed:', error)
         setHasPasskey(false)
       }
     }
@@ -165,7 +166,8 @@ export default function LoginPage() {
       }
 
       setStep('sent')
-    } catch {
+    } catch (error) {
+      console.error('[login] handleSubmit failed:', error)
       showToast('네트워크 오류가 발생했습니다.', 'error')
       setStep('email')
     } finally {
@@ -191,7 +193,8 @@ export default function LoginPage() {
       }
 
       showToast('로그인 링크를 다시 보냈습니다.', 'success')
-    } catch {
+    } catch (error) {
+      console.error('[login] handleRetry failed:', error)
       showToast('네트워크 오류가 발생했습니다.', 'error')
     } finally {
       setIsLoading(false)

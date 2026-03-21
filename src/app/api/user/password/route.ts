@@ -45,7 +45,8 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json({ success: true })
-  } catch {
+  } catch (error) {
+    console.error('[user] password change failed:', error)
     return errorResponse(ErrorCode.INTERNAL_ERROR, '요청 처리 중 오류가 발생했습니다.')
   }
 }

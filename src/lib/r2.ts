@@ -51,7 +51,8 @@ function removeQueryAndHash(value: string): string {
 function safeDecodeURIComponent(value: string): string {
   try {
     return decodeURIComponent(value)
-  } catch {
+  } catch (error) {
+    console.error('[r2] safeDecodeURIComponent failed:', error)
     return value
   }
 }
@@ -86,7 +87,8 @@ export function extractR2KeyFromUrl(urlOrKey: string | null | undefined): string
 
     key = removeQueryAndHash(key).replace(/^\/+/, '')
     return key ? safeDecodeURIComponent(key) : null
-  } catch {
+  } catch (error) {
+    console.error('[r2] extractR2KeyFromUrl URL parse failed:', error)
     const rawKey = removeQueryAndHash(value).replace(/^\/+/, '')
     return rawKey ? safeDecodeURIComponent(rawKey) : null
   }
@@ -140,7 +142,8 @@ export async function deleteManyFromR2(fileNames: string[]): Promise<DeleteManyR
           if (error.Key) failedKeys.push(error.Key)
         }
       }
-    } catch {
+    } catch (error) {
+      console.error('[r2] deleteManyFromR2 batch delete failed:', error)
       failedKeys.push(...chunk)
     }
   }

@@ -24,7 +24,8 @@ export function verifyTotpCode(token: string): boolean {
     // epochTolerance: 1 = 앞뒤 30초씩 허용 (동기화 오차 대비)
     const result = otp.verifySync({ secret, token, epochTolerance: 1 })
     return result.valid
-  } catch {
+  } catch (error) {
+    console.error('[totp] verifyTotpCode failed:', error)
     return false
   }
 }

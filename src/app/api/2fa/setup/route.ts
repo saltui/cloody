@@ -65,7 +65,8 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json({ success: false, error: '잘못된 2FA 코드입니다.' }, { status: 401 })
-  } catch {
+  } catch (error) {
+    console.error('[2fa] setup POST failed:', error)
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   }
 }

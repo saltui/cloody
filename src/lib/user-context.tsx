@@ -66,8 +66,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
           if (!isAuthPath(window.location.pathname)) {
             try {
               await fetch('/api/auth/logout', { method: 'POST' })
-            } catch {
-              // 로그아웃 API 실패 시에도 클라이언트 리다이렉트는 진행
+            } catch (error) {
+              console.error('[user] logout API call failed:', error)
             }
             window.location.href = '/login'
           }
@@ -75,7 +75,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
         }
 
         setError('세션 확인에 실패했습니다. 잠시 후 다시 시도해주세요.')
-      } catch {
+      } catch (error) {
+        console.error('[user] fetchUser network error:', error)
         // 일시적인 네트워크 오류로 로그인 상태를 강제로 해제하지 않음
         setError('네트워크 상태를 확인해주세요. 세션은 유지됩니다.')
       } finally {

@@ -47,8 +47,8 @@ export async function POST(request: NextRequest) {
       if (jobError) {
         console.warn('Could not create transcoding job (table may not exist):', jobError)
       }
-    } catch {
-      // 테이블이 없을 수 있음 - 무시
+    } catch (error) {
+      console.error('[transcode] transcoding_jobs upsert failed:', error)
     }
 
     // 상태 업데이트

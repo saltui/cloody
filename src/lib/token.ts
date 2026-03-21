@@ -46,7 +46,8 @@ export function verifyGalleryToken(token: string): GallerySessionPayload | null 
     if (!timingSafeEqual(sigBuf, expBuf)) return null
 
     return JSON.parse(Buffer.from(payloadStr, 'base64url').toString()) as GallerySessionPayload
-  } catch {
+  } catch (error) {
+    console.error('[token] verifyGalleryToken failed:', error)
     return null
   }
 }
@@ -93,7 +94,8 @@ export function verifyUserToken(token: string): UserSessionPayload | null {
     if (!timingSafeEqual(sigBuf, expBuf)) return null
 
     return JSON.parse(Buffer.from(data, 'base64').toString()) as UserSessionPayload
-  } catch {
+  } catch (error) {
+    console.error('[token] verifyUserToken failed:', error)
     return null
   }
 }

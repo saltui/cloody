@@ -258,8 +258,8 @@ export default function UploadPanel() {
     try {
       await navigator.clipboard.writeText(url)
       // TODO: toast notification
-    } catch {
-      // ignore
+    } catch (error) {
+      console.error('[upload-panel] clipboard copyLink failed:', error)
     }
   }, [])
 

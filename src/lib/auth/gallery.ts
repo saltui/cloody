@@ -29,7 +29,8 @@ export function refreshSessionToken(token: string, currentIp: string): string | 
 
     // 새 토큰 생성 (활동 시간 갱신)
     return signGalleryToken({ ...payload, lastActivity: Date.now() })
-  } catch {
+  } catch (error) {
+    console.error('[auth] refreshSessionToken failed:', error)
     return null
   }
 }
@@ -54,7 +55,8 @@ export function verifySessionToken(token: string, currentIp?: string): { valid: 
     }
 
     return { valid: true }
-  } catch {
+  } catch (error) {
+    console.error('[auth] verifySessionToken failed:', error)
     return { valid: false, reason: 'parse_error' }
   }
 }

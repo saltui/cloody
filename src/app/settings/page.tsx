@@ -83,8 +83,8 @@ export default function SettingsPage() {
         const data = await res.json()
         setPasskeys(data.passkeys || [])
       }
-    } catch {
-      // 패스키 조회 실패 (무시)
+    } catch (error) {
+      console.error('[settings] fetchPasskeys failed:', error)
     }
   }
 
@@ -215,7 +215,8 @@ export default function SettingsPage() {
         showToast(data.error || '잘못된 코드입니다.', 'error')
         setTotpCode('')
       }
-    } catch {
+    } catch (error) {
+      console.error('[settings] 2FA verify failed:', error)
       showToast('확인에 실패했습니다.', 'error')
     } finally {
       setIsLoading(false)

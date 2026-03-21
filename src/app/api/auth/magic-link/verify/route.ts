@@ -58,7 +58,8 @@ export async function GET(request: NextRequest) {
     })
 
     return response
-  } catch {
+  } catch (error) {
+    console.error('[auth] magic-link verify GET failed:', error)
     return errorResponse(ErrorCode.INTERNAL_ERROR, '처리 중 오류가 발생했습니다.')
   }
 }
