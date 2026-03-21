@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getObjectMetadata, getObjectWithRange } from '@/lib/r2'
+import { getObjectMetadata, getObjectWithRange, uploadToR2 } from '@/lib/r2'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const heicConvert = require('heic-convert')
 
@@ -66,15 +66,34 @@ export async function GET(
       })
     }
 
-    // Range 요청이 없는 경우 (일반 이미지)
-    const response = await getObjectWithRange(fileName)
-
-    if (!response.Body) {
-      return NextResponse.json({ error: 'File not found' }, { status: 404 })
-    }
-
-    // HEIC 파일인 경우 JPEG로 변환 (heic-convert 사용)
+    // HEIC 파일인 경우 캐시 확인 후 변환
     if (isHeicFile(fileName)) {
+      const cachedKey = `converted/${fileName}.jpg`
+
+      // 캐시된 JPEG 버전 확인
+      try {
+        const cached = await getObjectWithRange(cachedKey)
+        if (cached.Body) {
+          const stream = cached.Body.transformToWebStream()
+          return new NextResponse(stream, {
+            headers: {
+              'Content-Type': 'image/jpeg',
+              'Content-Length': (cached.ContentLength || 0).toString(),
+              'Cache-Control': 'public, max-age=31536000, immutable',
+            },
+          })
+        }
+      } catch {
+        // 캐시 미스 — 원본 다운로드 후 변환
+      }
+
+      // 원본 다운로드 및 변환
+      const response = await getObjectWithRange(fileName)
+
+      if (!response.Body) {
+        return NextResponse.json({ error: 'File not found' }, { status: 404 })
+      }
+
       try {
         const arrayBuffer = await response.Body.transformToByteArray()
         const jpegBuffer = await heicConvert({
@@ -82,6 +101,11 @@ export async function GET(
           format: 'JPEG',
           quality: 0.9,
         })
+
+        // Fire-and-forget: 변환된 버전을 R2에 캐싱
+        uploadToR2(cachedKey, Buffer.from(jpegBuffer), 'image/jpeg').catch((err) =>
+          console.error('[image-proxy] Failed to cache HEIC conversion:', err)
+        )
 
         return new NextResponse(new Uint8Array(jpegBuffer), {
           headers: {
@@ -91,9 +115,17 @@ export async function GET(
           },
         })
       } catch (heicError) {
-        console.error('HEIC conversion failed:', heicError)
-        // 변환 실패시 원본 반환
+        console.error('[image-proxy] HEIC conversion failed:', heicError)
+        // 변환 실패 시 원본 반환 (fall through은 불가 — Body가 이미 소비됨)
+        return NextResponse.json({ error: 'HEIC conversion failed' }, { status: 500 })
       }
+    }
+
+    // Range 요청이 없는 경우 (일반 이미지/파일)
+    const response = await getObjectWithRange(fileName)
+
+    if (!response.Body) {
+      return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
 
     const contentType = response.ContentType || 'application/octet-stream'
