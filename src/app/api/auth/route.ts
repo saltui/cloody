@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   // Rate limit 확인
   const rateLimit = checkRateLimit(ip)
   if (!rateLimit.allowed) {
-    const retryAfter = Math.ceil((rateLimit.resetAt! - Date.now()) / 1000)
+    const retryAfter = Math.ceil(((rateLimit.lockoutUntil ?? Date.now()) - Date.now()) / 1000)
     // 감사 로그
     logAudit({ action: 'RATE_LIMITED', ip, userAgent })
     return NextResponse.json(

@@ -1,4 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
+import { RateLimiter } from './rate-limit'
 
 const SECRET_KEY = process.env.GALLERY_PASSWORD || 'fallback-secret-key'
 const TOKEN_EXPIRY = 30 * 24 * 60 * 60 * 1000 // 30일 (밀리초)
@@ -115,67 +116,8 @@ export function isSessionValid(token: string): boolean {
 }
 
 // Rate limiting을 위한 메모리 저장소 (프로덕션에서는 Redis 권장)
-const loginAttempts = new Map<string, { count: number; resetAt: number }>()
+const rateLimiter = new RateLimiter(5, 15 * 60 * 1000)
 
-const MAX_ATTEMPTS = 5
-const LOCKOUT_DURATION = 15 * 60 * 1000 // 15분
-
-// 로그인 시도 확인 및 기록
-export function checkRateLimit(ip: string): { allowed: boolean; remainingAttempts: number; resetAt?: number } {
-  // 100회 호출마다 오래된 기록 정리 (메모리 관리)
-  if (loginAttempts.size > 100) {
-    cleanupOldRecords()
-  }
-
-  const now = Date.now()
-  const record = loginAttempts.get(ip)
-
-  // 기록이 없거나 리셋 시간이 지났으면 허용
-  if (!record || now > record.resetAt) {
-    return { allowed: true, remainingAttempts: MAX_ATTEMPTS }
-  }
-
-  // 시도 횟수 초과
-  if (record.count >= MAX_ATTEMPTS) {
-    return {
-      allowed: false,
-      remainingAttempts: 0,
-      resetAt: record.resetAt
-    }
-  }
-
-  return {
-    allowed: true,
-    remainingAttempts: MAX_ATTEMPTS - record.count
-  }
-}
-
-// 실패한 로그인 시도 기록
-export function recordFailedAttempt(ip: string): void {
-  const now = Date.now()
-  const record = loginAttempts.get(ip)
-
-  if (!record || now > record.resetAt) {
-    loginAttempts.set(ip, {
-      count: 1,
-      resetAt: now + LOCKOUT_DURATION
-    })
-  } else {
-    record.count++
-  }
-}
-
-// 성공한 로그인 시 기록 초기화
-export function clearAttempts(ip: string): void {
-  loginAttempts.delete(ip)
-}
-
-// 오래된 기록 정리 (checkRateLimit 호출 시 자동 정리)
-function cleanupOldRecords(): void {
-  const now = Date.now()
-  for (const [ip, record] of loginAttempts.entries()) {
-    if (now > record.resetAt) {
-      loginAttempts.delete(ip)
-    }
-  }
-}
+export function checkRateLimit(ip: string) { return rateLimiter.check(ip) }
+export function recordFailedAttempt(ip: string) { rateLimiter.record(ip) }
+export function clearAttempts(ip: string) { rateLimiter.clear(ip) }

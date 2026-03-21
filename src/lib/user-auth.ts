@@ -1,6 +1,7 @@
 import { createHmac, randomBytes } from 'crypto'
 import bcrypt from 'bcrypt'
 import { supabase } from './supabase'
+import { RateLimiter } from './rate-limit'
 
 // 비밀번호 해싱
 const SALT_ROUNDS = 12
@@ -410,46 +411,8 @@ export async function updateLastLogin(userId: string): Promise<void> {
 }
 
 // Rate Limiting (IP 기반)
-const loginAttempts = new Map<string, { count: number; firstAttempt: number }>()
-const MAX_ATTEMPTS = 5
-const LOCKOUT_DURATION = 15 * 60 * 1000 // 15분
+const rateLimiter = new RateLimiter(5, 15 * 60 * 1000)
 
-export function checkRateLimit(ip: string): { allowed: boolean; remainingAttempts: number; lockoutUntil?: number } {
-  const now = Date.now()
-  const record = loginAttempts.get(ip)
-
-  if (!record) {
-    return { allowed: true, remainingAttempts: MAX_ATTEMPTS }
-  }
-
-  // 잠금 해제 확인
-  if (now - record.firstAttempt > LOCKOUT_DURATION) {
-    loginAttempts.delete(ip)
-    return { allowed: true, remainingAttempts: MAX_ATTEMPTS }
-  }
-
-  if (record.count >= MAX_ATTEMPTS) {
-    return {
-      allowed: false,
-      remainingAttempts: 0,
-      lockoutUntil: record.firstAttempt + LOCKOUT_DURATION,
-    }
-  }
-
-  return { allowed: true, remainingAttempts: MAX_ATTEMPTS - record.count }
-}
-
-export function recordFailedAttempt(ip: string): void {
-  const now = Date.now()
-  const record = loginAttempts.get(ip)
-
-  if (!record || now - record.firstAttempt > LOCKOUT_DURATION) {
-    loginAttempts.set(ip, { count: 1, firstAttempt: now })
-  } else {
-    record.count++
-  }
-}
-
-export function clearAttempts(ip: string): void {
-  loginAttempts.delete(ip)
-}
+export function checkRateLimit(ip: string) { return rateLimiter.check(ip) }
+export function recordFailedAttempt(ip: string) { rateLimiter.record(ip) }
+export function clearAttempts(ip: string) { rateLimiter.clear(ip) }
