@@ -29,6 +29,7 @@ export async function GET(
       const metadata = await getObjectMetadata(fileName)
       const fileSize = metadata.ContentLength || 0
       const contentType = metadata.ContentType || 'application/octet-stream'
+      const etag = metadata.ETag
 
       const rangeMatch = rangeHeader.match(/bytes=(\d*)-(\d*)/)
       if (!rangeMatch) {
@@ -54,15 +55,18 @@ export async function GET(
 
       const stream = response.Body.transformToWebStream()
 
+      const rangeHeaders: Record<string, string> = {
+        'Content-Type': contentType,
+        'Content-Length': chunkSize.toString(),
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      }
+      if (etag) rangeHeaders['ETag'] = etag
+
       return new NextResponse(stream, {
         status: 206,
-        headers: {
-          'Content-Type': contentType,
-          'Content-Length': chunkSize.toString(),
-          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-          'Accept-Ranges': 'bytes',
-          'Cache-Control': 'public, max-age=31536000, immutable',
-        },
+        headers: rangeHeaders,
       })
     }
 
@@ -74,14 +78,28 @@ export async function GET(
       try {
         const cached = await getObjectWithRange(cachedKey)
         if (cached.Body) {
+          // ETag 조건부 요청 처리 (캐시된 버전)
+          let cachedEtag: string | undefined
+          try {
+            const cachedMeta = await getObjectMetadata(cachedKey)
+            cachedEtag = cachedMeta.ETag
+          } catch {
+            // ETag 조회 실패 시 무시
+          }
+
+          if (cachedEtag && request.headers.get('if-none-match') === cachedEtag) {
+            return new NextResponse(null, { status: 304 })
+          }
+
           const stream = cached.Body.transformToWebStream()
-          return new NextResponse(stream, {
-            headers: {
-              'Content-Type': 'image/jpeg',
-              'Content-Length': (cached.ContentLength || 0).toString(),
-              'Cache-Control': 'public, max-age=31536000, immutable',
-            },
-          })
+          const cachedHeaders: Record<string, string> = {
+            'Content-Type': 'image/jpeg',
+            'Content-Length': (cached.ContentLength || 0).toString(),
+            'Cache-Control': 'public, max-age=31536000, immutable',
+          }
+          if (cachedEtag) cachedHeaders['ETag'] = cachedEtag
+
+          return new NextResponse(stream, { headers: cachedHeaders })
         }
       } catch {
         // 캐시 미스 — 원본 다운로드 후 변환
@@ -122,6 +140,14 @@ export async function GET(
     }
 
     // Range 요청이 없는 경우 (일반 이미지/파일)
+    // ETag 기반 조건부 요청 처리
+    const metadata = await getObjectMetadata(fileName)
+    const etag = metadata.ETag
+
+    if (etag && request.headers.get('if-none-match') === etag) {
+      return new NextResponse(null, { status: 304 })
+    }
+
     const response = await getObjectWithRange(fileName)
 
     if (!response.Body) {
@@ -132,14 +158,15 @@ export async function GET(
     const contentLength = response.ContentLength || 0
     const stream = response.Body.transformToWebStream()
 
-    return new NextResponse(stream, {
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': contentLength.toString(),
-        'Accept-Ranges': 'bytes',
-        'Cache-Control': 'public, max-age=31536000, immutable',
-      },
-    })
+    const headers: Record<string, string> = {
+      'Content-Type': contentType,
+      'Content-Length': contentLength.toString(),
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    }
+    if (etag) headers['ETag'] = etag
+
+    return new NextResponse(stream, { headers })
   } catch (error) {
     console.error('Image proxy error:', error)
     return NextResponse.json({ error: 'Failed to fetch image' }, { status: 500 })
