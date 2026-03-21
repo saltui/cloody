@@ -6,6 +6,9 @@ import { supabase } from '@/lib/supabase'
 import { requireSession, SessionError } from '@/lib/request-utils'
 import { errorResponse } from '@/lib/response-utils'
 import { ErrorCode } from '@/lib/errors'
+import sharp from 'sharp'
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const heicConvert = require('heic-convert')
 
 // 대용량 파일 업로드를 위한 설정
 export const runtime = 'nodejs'
@@ -151,6 +154,11 @@ function detectFileType(buffer: Buffer): string | null {
   return null
 }
 
+// HEIC 파일인지 확인
+function isHeicMimeType(mimeType: string): boolean {
+  return mimeType === 'image/heic' || mimeType === 'image/heif'
+}
+
 // 최대 파일 크기 (500MB)
 const MAX_FILE_SIZE = 500 * 1024 * 1024
 
@@ -248,7 +256,39 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({ url })
+    // 이미지인 경우 썸네일 생성 (비디오/문서 제외)
+    let thumbnailUrl: string | null = null
+    const isImageType = finalType.startsWith('image/')
+
+    if (isImageType) {
+      try {
+        let imageBuffer: Buffer = buffer
+
+        // HEIC의 경우 sharp 처리 전에 JPEG로 변환
+        if (isHeicMimeType(finalType)) {
+          const converted = await heicConvert({
+            buffer: Buffer.from(buffer),
+            format: 'JPEG',
+            quality: 0.8,
+          })
+          imageBuffer = Buffer.from(converted)
+        }
+
+        // 400x400 커버 썸네일 생성
+        const thumbnail = await sharp(imageBuffer)
+          .resize(400, 400, { fit: 'cover' })
+          .jpeg({ quality: 70 })
+          .toBuffer()
+
+        const thumbKey = `thumbnails/${userId}/${Date.now()}_thumb.jpg`
+        thumbnailUrl = await uploadToR2(thumbKey, thumbnail, 'image/jpeg')
+      } catch (err) {
+        console.error('[upload] Thumbnail generation failed:', err)
+        // 비차단: 썸네일 실패해도 업로드는 성공
+      }
+    }
+
+    return NextResponse.json({ url, thumbnailUrl })
   } catch (e) {
     if (e instanceof SessionError) return errorResponse(e.code, e.message)
     console.error('Upload error:', e)
