@@ -1,11 +1,9 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 
-// Both auth.ts and user-auth.ts read from the same environment variable.
-// auth.ts fallback: 'fallback-secret-key'
-// user-auth.ts fallback: 'default-secret-key-change-me'
-// The unified module uses GALLERY_PASSWORD with no fallback preference —
-// callers that need the old per-file fallback should pass it explicitly.
+// Separate fallbacks to preserve existing token compatibility.
+// Gallery auth originally used 'fallback-secret-key', user auth used 'default-secret-key-change-me'.
 const GALLERY_SECRET = process.env.GALLERY_PASSWORD || 'fallback-secret-key'
+const USER_SECRET = process.env.GALLERY_PASSWORD || 'default-secret-key-change-me'
 
 // ---------------------------------------------------------------------------
 // Gallery tokens  (auth.ts format)
@@ -69,7 +67,7 @@ export interface UserSessionPayload {
 }
 
 function userSign(data: string): string {
-  return createHmac('sha256', GALLERY_SECRET).update(data).digest('hex')
+  return createHmac('sha256', USER_SECRET).update(data).digest('hex')
 }
 
 export function signUserToken(payload: UserSessionPayload): string {

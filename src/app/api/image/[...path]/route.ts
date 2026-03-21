@@ -83,8 +83,8 @@ export async function GET(
           try {
             const cachedMeta = await getObjectMetadata(cachedKey)
             cachedEtag = cachedMeta.ETag
-          } catch {
-            // ETag 조회 실패 시 무시
+          } catch (error) {
+            console.error('[image-proxy] ETag metadata lookup failed:', error)
           }
 
           if (cachedEtag && request.headers.get('if-none-match') === cachedEtag) {
@@ -101,8 +101,8 @@ export async function GET(
 
           return new NextResponse(stream, { headers: cachedHeaders })
         }
-      } catch {
-        // 캐시 미스 — 원본 다운로드 후 변환
+      } catch (error) {
+        console.error('[image-proxy] HEIC cache miss or R2 error:', error)
       }
 
       // 원본 다운로드 및 변환
@@ -134,7 +134,22 @@ export async function GET(
         })
       } catch (heicError) {
         console.error('[image-proxy] HEIC conversion failed:', heicError)
-        // 변환 실패 시 원본 반환 (fall through은 불가 — Body가 이미 소비됨)
+        // 변환 실패 시 원본 재다운로드하여 반환 (Body가 이미 소비되었으므로)
+        try {
+          const fallback = await getObjectWithRange(fileName)
+          if (fallback.Body) {
+            const stream = fallback.Body.transformToWebStream()
+            return new NextResponse(stream, {
+              headers: {
+                'Content-Type': fallback.ContentType || 'application/octet-stream',
+                'Content-Length': (fallback.ContentLength || 0).toString(),
+                'Cache-Control': 'public, max-age=31536000, immutable',
+              },
+            })
+          }
+        } catch (fallbackError) {
+          console.error('[image-proxy] Fallback fetch also failed:', fallbackError)
+        }
         return NextResponse.json({ error: 'HEIC conversion failed' }, { status: 500 })
       }
     }
