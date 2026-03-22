@@ -579,7 +579,7 @@ export default function ViewerPage() {
         }`}
       >
         <div className="bg-gradient-to-b from-black/90 via-black/60 to-transparent">
-          <div className="flex items-center justify-between px-3 sm:px-4 py-3 sm:py-4">
+          <div className="relative flex items-center justify-between px-3 sm:px-4 py-3 sm:py-4">
             {/* 닫기 버튼 */}
             <button
               onClick={goBack}
@@ -590,8 +590,8 @@ export default function ViewerPage() {
               </svg>
             </button>
 
-            {/* 카운터 */}
-            <div className="px-4 py-2 rounded-full bg-white/10 backdrop-blur-md">
+            {/* 카운터 - 화면 정중앙 */}
+            <div className="absolute left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-md">
               <span className="text-sm font-medium text-white">
                 {currentIndex + 1} <span className="text-white/60">/</span> {photos.length}
               </span>
