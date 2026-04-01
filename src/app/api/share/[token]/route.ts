@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 
 // 공유 링크로 사진 정보 가져오기 (공개 - 인증 불필요)
 export async function GET(

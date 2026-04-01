@@ -1,6 +1,6 @@
 import { randomBytes } from 'crypto'
 import bcrypt from 'bcrypt'
-import { supabase } from '../supabase'
+import { supabaseAdmin as supabase } from '../supabase-admin'
 import { RateLimiter } from '../rate-limit'
 import { signUserToken, verifyUserToken } from '../token'
 

@@ -9,7 +9,7 @@ import type {
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
 } from '@simplewebauthn/server'
-import { supabase } from './supabase'
+import { supabaseAdmin as supabase } from './supabase-admin'
 
 // WebAuthn 설정
 const rpName = 'Cloody'

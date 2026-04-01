@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { errorResponse } from '@/lib/response-utils'
 import { ErrorCode } from '@/lib/errors'
 
@@ -43,6 +43,12 @@ export async function GET(request: NextRequest) {
 
   if (!userId) {
     return errorResponse(ErrorCode.UNAUTHORIZED)
+  }
+
+  // Admin 권한 확인
+  const { data: userData } = await supabase.from('users').select('is_admin').eq('id', userId).single()
+  if (!userData?.is_admin) {
+    return errorResponse(ErrorCode.FORBIDDEN, 'Admin access required')
   }
 
   try {
@@ -90,6 +96,12 @@ export async function DELETE(request: NextRequest) {
 
   if (!userId) {
     return errorResponse(ErrorCode.UNAUTHORIZED)
+  }
+
+  // Admin 권한 확인
+  const { data: userData } = await supabase.from('users').select('is_admin').eq('id', userId).single()
+  if (!userData?.is_admin) {
+    return errorResponse(ErrorCode.FORBIDDEN, 'Admin access required')
   }
 
   try {

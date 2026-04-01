@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import {
@@ -33,11 +34,10 @@ export async function POST(request: NextRequest) {
   try {
     const { password, totpCode } = await request.json()
 
-    // 비밀번호 검증 (타이밍 공격 방지를 위해 일정 시간 대기)
-    const isPasswordValid = password === process.env.GALLERY_PASSWORD
-
-    // 약간의 지연 추가 (타이밍 공격 방지)
-    await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 100))
+    // 비밀번호 검증 (타이밍 공격 방지)
+    const expected = process.env.GALLERY_PASSWORD || ''
+    const isPasswordValid = password.length === expected.length &&
+      crypto.timingSafeEqual(Buffer.from(password), Buffer.from(expected))
 
     if (isPasswordValid) {
       const twoFAEnabled = is2FAEnabled()

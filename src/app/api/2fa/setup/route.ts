@@ -5,7 +5,12 @@ import { logAudit } from '@/lib/audit'
 import { getClientIP } from '@/lib/request-utils'
 
 // GET: 2FA 설정 상태 확인
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const userId = request.headers.get('x-user-id')
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const enabled = is2FAEnabled()
   const existingSecret = getTotpSecret()
 
@@ -16,7 +21,6 @@ export async function GET() {
 
     return NextResponse.json({
       enabled: true,
-      secret: existingSecret,
       qrCode,
       message: '2FA가 활성화되어 있습니다.'
     })
@@ -29,14 +33,17 @@ export async function GET() {
 
   return NextResponse.json({
     enabled: false,
-    secret,
     qrCode,
-    uri,
   })
 }
 
 // POST: 2FA 코드 확인 (테스트용)
 export async function POST(request: NextRequest) {
+  const userId = request.headers.get('x-user-id')
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const ip = getClientIP(request)
   const userAgent = request.headers.get('user-agent') || undefined
 

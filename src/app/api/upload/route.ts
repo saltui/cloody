@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { uploadToR2 } from '@/lib/r2'
 import { logAudit } from '@/lib/audit'
 import { findUserById } from '@/lib/auth'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { requireSession, SessionError } from '@/lib/request-utils'
 import { errorResponse } from '@/lib/response-utils'
 import { ErrorCode } from '@/lib/errors'
@@ -14,12 +14,7 @@ const heicConvert = require('heic-convert')
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// 무제한 스토리지 사용자
-const UNLIMITED_STORAGE_EMAILS = new Set([
-  'jdnfree@icloud.com',
-])
-
-// 일반 사용자 스토리지 제한 (1GB)
+// 스토리지 제한 (1GB)
 const STORAGE_LIMIT = 1 * 1024 * 1024 * 1024 // 1GB
 
 // Magic bytes로 파일 타입 검증
@@ -189,8 +184,8 @@ export async function POST(request: NextRequest) {
       return errorResponse(ErrorCode.INVALID_INPUT, '파일 크기는 500MB를 초과할 수 없습니다.')
     }
 
-    // 스토리지 제한 확인 (무제한 사용자 제외)
-    if (!UNLIMITED_STORAGE_EMAILS.has(user.email.toLowerCase())) {
+    // 스토리지 제한 확인
+    {
       // 현재 사용량 조회
       const { data: storageData } = await supabase
         .from('photos')

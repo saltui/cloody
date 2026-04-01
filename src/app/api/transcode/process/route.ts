@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { getObjectWithRange, BUCKET_NAME } from '@/lib/r2'
 import {
   generateMasterPlaylist,
@@ -215,12 +215,36 @@ async function processJob(photoId: string): Promise<{ success: boolean; error?: 
 }
 
 // Cron 또는 수동으로 호출되는 작업 처리기
-export async function GET(request: NextRequest) {
-  // Vercel Cron 인증 (선택적)
+export async function POST(request: NextRequest) {
+  // Vercel Cron 인증 확인
   const authHeader = request.headers.get('authorization')
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    // 개발 환경에서는 인증 건너뛰기
-    if (process.env.NODE_ENV === 'production') {
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    // 수동 트리거 (특정 비디오) — cron 인증 없이 photoId로 호출
+    try {
+      const { photoId } = await request.json()
+
+      if (!photoId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+
+      // 처리 중 상태로 업데이트
+      await supabase
+        .from('photos')
+        .update({ hls_status: 'processing' })
+        .eq('id', photoId)
+
+      const result = await processJob(photoId)
+
+      if (!result.success) {
+        await supabase
+          .from('photos')
+          .update({ hls_status: 'failed' })
+          .eq('id', photoId)
+      }
+
+      return NextResponse.json(result)
+    } catch (error) {
+      console.error('Manual transcode error:', error)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
   }
@@ -299,35 +323,4 @@ export async function GET(request: NextRequest) {
     processed: results.length,
     results
   })
-}
-
-// 수동 트리거 (특정 비디오)
-export async function POST(request: NextRequest) {
-  try {
-    const { photoId } = await request.json()
-
-    if (!photoId) {
-      return NextResponse.json({ error: 'photoId is required' }, { status: 400 })
-    }
-
-    // 처리 중 상태로 업데이트
-    await supabase
-      .from('photos')
-      .update({ hls_status: 'processing' })
-      .eq('id', photoId)
-
-    const result = await processJob(photoId)
-
-    if (!result.success) {
-      await supabase
-        .from('photos')
-        .update({ hls_status: 'failed' })
-        .eq('id', photoId)
-    }
-
-    return NextResponse.json(result)
-  } catch (error) {
-    console.error('Manual transcode error:', error)
-    return NextResponse.json({ error: 'Failed to process transcoding' }, { status: 500 })
-  }
 }

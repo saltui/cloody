@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSignedImageUrl } from '@/lib/r2'
 
-// 인증은 middleware에서 처리됨
 // 이 API는 R2 URL을 받아 Signed URL을 반환
 
 export async function GET(request: NextRequest) {
+  const userId = request.headers.get('x-user-id')
+  const session = request.cookies.get('gallery_session')
+  if (!userId && !session) {
+    return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
+  }
+
   const url = request.nextUrl.searchParams.get('url')
 
   if (!url) {

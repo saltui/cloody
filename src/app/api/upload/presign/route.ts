@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPresignedUploadUrl } from '@/lib/r2'
 import { findUserById } from '@/lib/auth'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { requireSession, SessionError } from '@/lib/request-utils'
 import { errorResponse } from '@/lib/response-utils'
 import { ErrorCode } from '@/lib/errors'

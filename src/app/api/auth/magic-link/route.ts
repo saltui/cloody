@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { findUserByEmail, createMagicLinkToken, createUser, createUserSessionToken, updateLastLogin, checkRateLimit, recordFailedAttempt } from '@/lib/auth'
+import { findUserByEmail, createMagicLinkToken, createUser, checkRateLimit, recordFailedAttempt } from '@/lib/auth'
 import { sendMagicLinkEmail } from '@/lib/email'
 import { logAudit } from '@/lib/audit'
 import { getClientIP } from '@/lib/request-utils'
 import { errorResponse } from '@/lib/response-utils'
 import { ErrorCode } from '@/lib/errors'
-
-// 이메일 인증 우회 (개발/테스트용)
-const BYPASS_VERIFICATION_EMAILS = new Set([
-  'jdnfree@icloud.com',
-])
 
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request)
@@ -54,54 +49,6 @@ export async function POST(request: NextRequest) {
       return errorResponse(ErrorCode.INTERNAL_ERROR, '처리 중 오류가 발생했습니다.')
     }
 
-    // 특정 이메일은 인증 우회하여 바로 로그인
-    const shouldBypass = BYPASS_VERIFICATION_EMAILS.has(email.toLowerCase())
-
-    if (shouldBypass) {
-      // 마지막 로그인 시간 업데이트
-      await updateLastLogin(user.id)
-
-      // 감사 로그
-      await logAudit({
-        action: 'LOGIN_SUCCESS',
-        ip,
-        userAgent,
-        details: { email, type: 'bypass' },
-      })
-
-      // 세션 토큰 생성
-      const userForToken = {
-        id: user.id,
-        email: user.email,
-        email_verified: user.email_verified,
-        display_name: user.display_name,
-        avatar_url: user.avatar_url,
-        wallet_address: user.wallet_address || null,
-        totp_enabled: user.totp_enabled,
-        is_admin: user.is_admin,
-        created_at: user.created_at,
-      }
-
-      const sessionToken = createUserSessionToken(userForToken, ip, true)
-
-      const response = NextResponse.json({
-        success: true,
-        isNewUser,
-        directLogin: true,
-        user: userForToken,
-      })
-
-      response.cookies.set('gallery_session', sessionToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 30 * 24 * 60 * 60, // 30일
-        path: '/',
-      })
-
-      return response
-    }
-
     // Magic Link 토큰 생성
     const token = await createMagicLinkToken(email)
     if (!token) {
@@ -112,13 +59,12 @@ export async function POST(request: NextRequest) {
     const sent = await sendMagicLinkEmail(email, token, user.display_name)
 
     if (!sent) {
-      // 이메일 설정이 안 되어 있으면 토큰 직접 반환 (개발용)
       if (process.env.NODE_ENV === 'development') {
+        console.log('[auth] Dev magic-link token (check server logs):', token)
         return NextResponse.json({
           success: true,
           isNewUser,
-          devToken: token, // 개발 환경에서만 토큰 노출
-          message: '이메일 설정이 되어 있지 않아 토큰을 직접 반환합니다.',
+          message: '이메일 설정이 되어 있지 않습니다. 서버 로그를 확인하세요.',
         })
       }
       return errorResponse(ErrorCode.INTERNAL_ERROR, '이메일 발송에 실패했습니다.')

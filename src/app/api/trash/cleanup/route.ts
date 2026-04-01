@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { deleteManyFromR2, extractR2KeyFromUrl } from '@/lib/r2'
 
 const TRASH_RETENTION_DAYS = 30
@@ -10,10 +10,7 @@ export async function POST(request: NextRequest) {
   // Vercel Cron 인증 확인
   const authHeader = request.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    // 로컬 개발 환경에서는 허용
-    if (process.env.NODE_ENV !== 'development') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
@@ -110,9 +107,4 @@ export async function POST(request: NextRequest) {
     console.error('[Trash Cleanup] Error:', error)
     return NextResponse.json({ error: 'Cleanup failed' }, { status: 500 })
   }
-}
-
-// GET도 허용 (수동 테스트용)
-export async function GET(request: NextRequest) {
-  return POST(request)
 }

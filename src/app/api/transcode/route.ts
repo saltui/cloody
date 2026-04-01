@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 // 트랜스코딩 작업 큐에 추가
 export async function POST(request: NextRequest) {
+  const userId = request.headers.get('x-user-id')
+  if (!userId) {
+    return errorResponse(ErrorCode.UNAUTHORIZED)
+  }
+
   try {
     const { photoId } = await request.json()
 
@@ -10,11 +17,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'photoId is required' }, { status: 400 })
     }
 
-    // 사진 정보 확인
+    // 사진 정보 확인 (소유권 검증 포함)
     const { data: photo, error: photoError } = await supabase
       .from('photos')
       .select('*')
       .eq('id', photoId)
+      .eq('user_id', userId)
       .single()
 
     if (photoError || !photo) {
@@ -66,6 +74,11 @@ export async function POST(request: NextRequest) {
 
 // 트랜스코딩 상태 조회
 export async function GET(request: NextRequest) {
+  const userId = request.headers.get('x-user-id')
+  if (!userId) {
+    return errorResponse(ErrorCode.UNAUTHORIZED)
+  }
+
   const { searchParams } = new URL(request.url)
   const photoId = searchParams.get('photoId')
 
@@ -77,6 +90,7 @@ export async function GET(request: NextRequest) {
     .from('photos')
     .select('id, hls_status, hls_url')
     .eq('id', photoId)
+    .eq('user_id', userId)
     .single()
 
   if (error || !photo) {

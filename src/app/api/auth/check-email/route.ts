@@ -19,8 +19,8 @@ export async function POST(request: NextRequest) {
 
     const user = await findUserByEmail(email)
 
+    // Always respond as if user might exist to prevent enumeration
     return NextResponse.json({
-      exists: !!user,
       hasPassword: user?.password_hash ? true : false,
     })
   } catch (error) {

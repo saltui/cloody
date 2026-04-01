@@ -1,11 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { deleteFromR2 } from '@/lib/r2'
 import { logAudit } from '@/lib/audit'
+import { verifyUserSessionToken } from '@/lib/auth'
 import { getClientIP } from '@/lib/request-utils'
+import { errorResponse } from '@/lib/response-utils'
+import { ErrorCode } from '@/lib/errors'
 
 export async function DELETE(request: NextRequest) {
   const ip = getClientIP(request)
   const userAgent = request.headers.get('user-agent') || undefined
+
+  // Authentication check
+  const sessionCookie = request.cookies.get('gallery_session')?.value
+  if (!sessionCookie) {
+    return errorResponse(ErrorCode.UNAUTHORIZED)
+  }
+  const session = verifyUserSessionToken(sessionCookie, ip)
+  if (!session.valid) {
+    return errorResponse(ErrorCode.UNAUTHORIZED)
+  }
 
   try {
     const { fileName } = await request.json()

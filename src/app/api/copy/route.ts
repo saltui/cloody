@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
 import { copyObject, R2_PUBLIC_URL } from '@/lib/r2'
 import { logAudit } from '@/lib/audit'
 import { getClientIP } from '@/lib/request-utils'

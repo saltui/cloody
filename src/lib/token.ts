@@ -1,9 +1,9 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 
-// Separate fallbacks to preserve existing token compatibility.
-// Gallery auth originally used 'fallback-secret-key', user auth used 'default-secret-key-change-me'.
-const GALLERY_SECRET = process.env.GALLERY_PASSWORD || 'fallback-secret-key'
-const USER_SECRET = process.env.GALLERY_PASSWORD || 'default-secret-key-change-me'
+const GALLERY_SECRET = process.env.GALLERY_PASSWORD
+if (!GALLERY_SECRET) throw new Error('GALLERY_PASSWORD environment variable is required')
+const USER_SECRET = process.env.USER_TOKEN_SECRET || process.env.GALLERY_PASSWORD
+if (!USER_SECRET) throw new Error('USER_TOKEN_SECRET or GALLERY_PASSWORD environment variable is required')
 
 // ---------------------------------------------------------------------------
 // Gallery tokens  (auth.ts format)
