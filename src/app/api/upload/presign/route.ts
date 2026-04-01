@@ -85,7 +85,7 @@ const ALLOWED_TYPES = new Set([
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = requireSession(request)
+    const { userId } = await requireSession(request)
 
     const user = await findUserById(userId)
     if (!user) {

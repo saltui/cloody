@@ -12,13 +12,14 @@ import { logAudit } from '@/lib/audit'
 import { getClientIP } from '@/lib/request-utils'
 import { errorResponse } from '@/lib/response-utils'
 import { ErrorCode } from '@/lib/errors'
+import { verifyTotpCode } from '@/lib/totp'
 
 export async function POST(request: NextRequest) {
   const ip = getClientIP(request)
   const userAgent = request.headers.get('user-agent') || undefined
 
   // Rate limiting
-  const rateLimit = checkRateLimit(ip)
+  const rateLimit = await checkRateLimit(ip)
   if (!rateLimit.allowed) {
     await logAudit({
       action: 'RATE_LIMITED',
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
     // 사용자 조회
     const user = await findUserByEmail(email)
     if (!user || !user.password_hash) {
-      recordFailedAttempt(ip)
+      await recordFailedAttempt(ip)
       await logAudit({
         action: 'LOGIN_FAILED',
         ip,
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
     // 비밀번호 검증
     const isPasswordValid = await verifyPassword(password, user.password_hash)
     if (!isPasswordValid) {
-      recordFailedAttempt(ip)
+      await recordFailedAttempt(ip)
       await logAudit({
         action: 'LOGIN_FAILED',
         ip,
@@ -75,16 +76,10 @@ export async function POST(request: NextRequest) {
       }
 
       // TOTP 검증
-      const { OTP } = await import('otplib')
-      const otp = new OTP({ strategy: 'totp' })
-      const result = otp.verifySync({
-        secret: user.totp_secret,
-        token: totpCode,
-        epochTolerance: 1,
-      })
+      const isValid = verifyTotpCode(totpCode, user.totp_secret)
 
-      if (!result.valid) {
-        recordFailedAttempt(ip)
+      if (!isValid) {
+        await recordFailedAttempt(ip)
         await logAudit({
           action: '2FA_FAILED',
           ip,
@@ -104,7 +99,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 로그인 성공
-    clearAttempts(ip)
+    await clearAttempts(ip)
 
     // 마지막 로그인 시간 업데이트
     await updateLastLogin(user.id)

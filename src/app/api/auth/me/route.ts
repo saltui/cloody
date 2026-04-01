@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
 
   let userId: string
   try {
-    const session = requireSession(request)
+    const session = await requireSession(request)
     userId = session.userId
   } catch (e) {
     if (e instanceof SessionError) {

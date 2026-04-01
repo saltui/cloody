@@ -7,7 +7,7 @@ import { ErrorCode } from '@/lib/errors'
 // GET: 사용자의 패스키 목록 조회
 export async function GET(request: NextRequest) {
   try {
-    const { userId } = requireSession(request)
+    const { userId } = await requireSession(request)
 
     const passkeys = await getUserPasskeys(userId)
     // 민감한 정보 제외하고 반환
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 // PATCH: 패스키 이름 변경
 export async function PATCH(request: NextRequest) {
   try {
-    const { userId } = requireSession(request)
+    const { userId } = await requireSession(request)
 
     const { passkeyId, name } = await request.json()
 

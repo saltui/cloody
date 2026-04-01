@@ -228,6 +228,8 @@ export interface TokenValidation {
   userId?: string
   email?: string
   displayName?: string | null
+  sessionId?: string
+  createdAt?: number
 }
 
 export function verifyUserSessionToken(token: string, currentIp?: string): TokenValidation {
@@ -259,6 +261,8 @@ export function verifyUserSessionToken(token: string, currentIp?: string): Token
     userId: payload.userId,
     email: payload.email,
     displayName: payload.displayName,
+    sessionId: payload.sessionId,
+    createdAt: payload.createdAt,
   }
 }
 
@@ -373,9 +377,70 @@ export async function updateLastLogin(userId: string): Promise<void> {
     .eq('id', userId)
 }
 
-// Rate Limiting (IP 기반)
+// 세션 철회 (Session Revocation)
+export async function revokeSession(sessionId: string, userId: string, reason?: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('session_revocations')
+    .upsert({
+      session_id: sessionId,
+      user_id: userId,
+      revoked_at: new Date().toISOString(),
+      reason: reason || null,
+    })
+
+  if (error) {
+    console.error('[session] revokeSession error:', error)
+    return false
+  }
+  return true
+}
+
+export async function revokeAllUserSessions(userId: string, reason?: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('session_revocations')
+    .upsert({
+      session_id: `all:${userId}`,
+      user_id: userId,
+      revoked_at: new Date().toISOString(),
+      reason: reason || 'revoke_all',
+    })
+
+  if (error) {
+    console.error('[session] revokeAllUserSessions error:', error)
+    return false
+  }
+  return true
+}
+
+export async function checkSessionRevocation(
+  sessionId: string,
+  userId: string,
+  tokenCreatedAt: number,
+): Promise<boolean> {
+  // Check exact session_id match
+  const { data: exact } = await supabase
+    .from('session_revocations')
+    .select('session_id')
+    .eq('session_id', sessionId)
+    .maybeSingle()
+
+  if (exact) return true
+
+  // Check user-wide revocation (revoked_at must be after the token was created)
+  const tokenCreatedISO = new Date(tokenCreatedAt).toISOString()
+  const { data: userWide } = await supabase
+    .from('session_revocations')
+    .select('session_id')
+    .eq('session_id', `all:${userId}`)
+    .gte('revoked_at', tokenCreatedISO)
+    .maybeSingle()
+
+  return !!userWide
+}
+
+// Rate Limiting (IP 기반, Supabase-backed)
 const rateLimiter = new RateLimiter(5, 15 * 60 * 1000)
 
 export function checkRateLimit(ip: string) { return rateLimiter.check(ip) }
-export function recordFailedAttempt(ip: string) { rateLimiter.record(ip) }
-export function clearAttempts(ip: string) { rateLimiter.clear(ip) }
+export function recordFailedAttempt(ip: string) { return rateLimiter.record(ip) }
+export function clearAttempts(ip: string) { return rateLimiter.clear(ip) }

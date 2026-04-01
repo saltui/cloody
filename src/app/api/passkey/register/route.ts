@@ -10,7 +10,7 @@ import { ErrorCode } from '@/lib/errors'
 // GET: 패스키 등록 옵션 생성
 export async function GET(request: NextRequest) {
   try {
-    const { userId } = requireSession(request)
+    const { userId } = await requireSession(request)
 
     const user = await findUserById(userId)
     if (!user) {
@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
 // POST: 패스키 등록 검증
 export async function POST(request: NextRequest) {
   try {
-    const { userId, ip, userAgent } = requireSession(request)
+    const { userId, ip, userAgent } = await requireSession(request)
 
     const { response, name } = await request.json()
 
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
 // DELETE: 패스키 삭제
 export async function DELETE(request: NextRequest) {
   try {
-    const { userId, ip, userAgent } = requireSession(request)
+    const { userId, ip, userAgent } = await requireSession(request)
 
     const { passkeyId } = await request.json()
 

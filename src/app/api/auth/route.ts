@@ -8,7 +8,6 @@ import {
   clearGalleryAttempts as clearAttempts,
 } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
-import { is2FAEnabled, verifyTotpCode } from '@/lib/totp'
 import { getClientIP } from '@/lib/request-utils'
 import { errorResponse } from '@/lib/response-utils'
 import { ErrorCode } from '@/lib/errors'
@@ -19,7 +18,7 @@ export async function POST(request: NextRequest) {
   const userAgent = request.headers.get('user-agent') || undefined
 
   // Rate limit 확인
-  const rateLimit = checkRateLimit(ip)
+  const rateLimit = await checkRateLimit(ip)
   if (!rateLimit.allowed) {
     const retryAfter = Math.ceil(((rateLimit.lockoutUntil ?? Date.now()) - Date.now()) / 1000)
     // 감사 로그
@@ -32,7 +31,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { password, totpCode } = await request.json()
+    const { password } = await request.json()
 
     // 비밀번호 검증 (타이밍 공격 방지)
     const expected = process.env.GALLERY_PASSWORD || ''
@@ -40,48 +39,7 @@ export async function POST(request: NextRequest) {
       crypto.timingSafeEqual(Buffer.from(password), Buffer.from(expected))
 
     if (isPasswordValid) {
-      const twoFAEnabled = is2FAEnabled()
-
-      // 2FA가 활성화되어 있고 코드가 없으면 2FA 요청
-      if (twoFAEnabled && !totpCode) {
-        return NextResponse.json({
-          success: false,
-          needsTwoFactor: true,
-          error: '2단계 인증 코드를 입력해주세요.'
-        })
-      }
-
-      // 2FA가 활성화되어 있으면 코드 검증
-      if (twoFAEnabled) {
-        const isTotpValid = verifyTotpCode(totpCode)
-        if (!isTotpValid) {
-          // 2FA 실패도 시도 횟수에 포함
-          recordFailedAttempt(ip)
-          const remaining = rateLimit.remainingAttempts - 1
-
-          logAudit({
-            action: '2FA_FAILED',
-            ip,
-            userAgent
-          })
-
-          return errorResponse(
-            ErrorCode.UNAUTHORIZED,
-            remaining > 0
-              ? `잘못된 인증 코드입니다. (${remaining}회 남음)`
-              : '잘못된 인증 코드입니다.',
-            { success: false, needsTwoFactor: true }
-          )
-        }
-
-        logAudit({
-          action: '2FA_VERIFIED',
-          ip,
-          userAgent
-        })
-      }
-
-      clearAttempts(ip) // 성공 시 시도 기록 초기화
+      await clearAttempts(ip) // 성공 시 시도 기록 초기화
 
       const token = createSessionToken(ip) // IP 바인딩 포함
       const cookieStore = await cookies()
@@ -101,7 +59,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 실패 시 기록
-    recordFailedAttempt(ip)
+    await recordFailedAttempt(ip)
     const remaining = rateLimit.remainingAttempts - 1
 
     // 감사 로그 - 로그인 실패

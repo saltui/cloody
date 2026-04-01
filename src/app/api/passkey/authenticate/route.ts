@@ -9,11 +9,13 @@ import { ErrorCode } from '@/lib/errors'
 // GET: 패스키 인증 옵션 생성
 export async function GET(request: NextRequest) {
   const email = request.nextUrl.searchParams.get('email')
+  const ip = getClientIP(request)
+  const userAgent = request.headers.get('user-agent') || ''
 
   try {
     // 이메일 없으면 discoverable 옵션 반환 (이메일 없이 로그인)
     if (!email) {
-      const options = await createDiscoverableAuthenticationOptions()
+      const options = await createDiscoverableAuthenticationOptions(ip, userAgent)
       return NextResponse.json({ options })
     }
 
@@ -41,7 +43,7 @@ export async function POST(request: NextRequest) {
   const userAgent = request.headers.get('user-agent') || undefined
 
   // Rate limiting
-  const rateLimit = checkRateLimit(ip)
+  const rateLimit = await checkRateLimit(ip)
   if (!rateLimit.allowed) {
     await logAudit({
       action: 'RATE_LIMITED',
@@ -67,11 +69,11 @@ export async function POST(request: NextRequest) {
       result = await verifyAuthentication(email, response)
     } else {
       // Discoverable 인증 (이메일 없이)
-      result = await verifyDiscoverableAuthentication(response)
+      result = await verifyDiscoverableAuthentication(response, ip, userAgent || '')
     }
 
     if (!result.verified) {
-      recordFailedAttempt(ip)
+      await recordFailedAttempt(ip)
       await logAudit({
         action: 'LOGIN_FAILED',
         ip,
@@ -82,7 +84,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 로그인 성공
-    clearAttempts(ip)
+    await clearAttempts(ip)
 
     const user = await findUserById(result.userId)
     if (!user) {
@@ -132,7 +134,7 @@ export async function POST(request: NextRequest) {
     return res
   } catch (error) {
     console.error('Passkey authentication error:', error)
-    recordFailedAttempt(ip)
+    await recordFailedAttempt(ip)
     await logAudit({
       action: 'LOGIN_FAILED',
       ip,

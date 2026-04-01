@@ -159,7 +159,7 @@ const MAX_FILE_SIZE = 500 * 1024 * 1024
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, ip, userAgent } = requireSession(request)
+    const { userId, ip, userAgent } = await requireSession(request)
 
     // 사용자 정보 가져오기
     const user = await findUserById(userId)

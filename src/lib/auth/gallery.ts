@@ -66,9 +66,9 @@ export function isSessionValid(token: string): boolean {
   return verifySessionToken(token).valid
 }
 
-// Rate limiting을 위한 메모리 저장소 (프로덕션에서는 Redis 권장)
+// Rate limiting (Supabase-backed)
 const rateLimiter = new RateLimiter(5, 15 * 60 * 1000)
 
 export function checkRateLimit(ip: string) { return rateLimiter.check(ip) }
-export function recordFailedAttempt(ip: string) { rateLimiter.record(ip) }
-export function clearAttempts(ip: string) { rateLimiter.clear(ip) }
+export function recordFailedAttempt(ip: string) { return rateLimiter.record(ip) }
+export function clearAttempts(ip: string) { return rateLimiter.clear(ip) }

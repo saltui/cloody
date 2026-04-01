@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { logAudit } from '@/lib/audit'
-import { verifyUserSessionToken } from '@/lib/auth'
+import { verifyUserSessionToken, revokeSession } from '@/lib/auth'
 import { getClientIP } from '@/lib/request-utils'
 
 export async function POST(request: NextRequest) {
@@ -12,6 +12,11 @@ export async function POST(request: NextRequest) {
   if (sessionCookie) {
     const validation = verifyUserSessionToken(sessionCookie.value)
     if (validation.valid && validation.email) {
+      // Revoke session server-side
+      if (validation.sessionId && validation.userId) {
+        await revokeSession(validation.sessionId, validation.userId, 'logout')
+      }
+
       await logAudit({
         action: 'LOGOUT',
         ip,

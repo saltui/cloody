@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -10,6 +11,10 @@ import type {
   AuthenticatorTransportFuture,
 } from '@simplewebauthn/server'
 import { supabaseAdmin as supabase } from './supabase-admin'
+
+function hashBinding(ip: string, userAgent: string): string {
+  return crypto.createHash('sha256').update(`${ip}:${userAgent}`).digest('hex')
+}
 
 // WebAuthn 설정
 const rpName = 'Cloody'
@@ -241,18 +246,19 @@ export async function verifyAuthentication(
 }
 
 // Discoverable 패스키 인증 옵션 생성 (이메일 없이)
-export async function createDiscoverableAuthenticationOptions() {
+export async function createDiscoverableAuthenticationOptions(ip: string, userAgent: string) {
   const options = await generateAuthenticationOptions({
     rpID,
     allowCredentials: [], // 빈 배열 = 브라우저가 저장된 패스키 중 선택
     userVerification: 'preferred',
   })
 
-  // 챌린지를 임시 테이블에 저장 (5분 후 만료)
+  // 챌린지를 임시 테이블에 저장 (5분 후 만료, IP+UA 바인딩 포함)
   await supabase
     .from('passkey_challenges')
     .insert({
       challenge: options.challenge,
+      binding_hash: hashBinding(ip, userAgent),
       expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
     })
 
@@ -261,7 +267,9 @@ export async function createDiscoverableAuthenticationOptions() {
 
 // Discoverable 패스키 인증 응답 검증 (이메일 없이)
 export async function verifyDiscoverableAuthentication(
-  response: AuthenticationResponseJSON
+  response: AuthenticationResponseJSON,
+  ip: string,
+  userAgent: string
 ) {
   // credential_id로 패스키 찾기
   const { data: passkey } = await supabase
@@ -274,31 +282,31 @@ export async function verifyDiscoverableAuthentication(
     throw new Error('Passkey not found')
   }
 
-  // 임시 챌린지 테이블에서 찾기
-  const { data: challengeRecord } = await supabase
-    .from('passkey_challenges')
-    .select('challenge')
-    .eq('challenge', response.response.clientDataJSON ? undefined : '')
-    .gte('expires_at', new Date().toISOString())
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .single()
-
   // clientDataJSON에서 challenge 추출하여 검증
   const clientData = JSON.parse(
     Buffer.from(response.response.clientDataJSON, 'base64url').toString('utf-8')
   )
 
-  // 해당 챌린지가 유효한지 확인
+  // 해당 챌린지가 유효한지 확인 (바인딩 해시도 함께 검증)
   const { data: validChallenge } = await supabase
     .from('passkey_challenges')
-    .select('challenge')
+    .select('challenge, binding_hash')
     .eq('challenge', clientData.challenge)
     .gte('expires_at', new Date().toISOString())
     .single()
 
   if (!validChallenge) {
     throw new Error('Challenge expired or invalid')
+  }
+
+  // IP+UA 바인딩 검증
+  if (validChallenge.binding_hash && validChallenge.binding_hash !== hashBinding(ip, userAgent)) {
+    // 사용된 챌린지 삭제 (재사용 방지)
+    await supabase
+      .from('passkey_challenges')
+      .delete()
+      .eq('challenge', validChallenge.challenge)
+    throw new Error('Challenge binding mismatch')
   }
 
   const verification = await verifyAuthenticationResponse({
