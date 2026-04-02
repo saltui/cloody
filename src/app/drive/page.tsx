@@ -4507,7 +4507,7 @@ export default function DrivePage() {
               <div
                 key={folder.id}
                 data-folder-id={folder.id}
-                className="list-item flex items-center px-4 py-3.5 sm:py-2 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] sm:gap-4 sm:border-b"
+                className="list-item flex items-center px-4 py-2.5 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] sm:gap-4 border-b"
                 style={{
                   background: selectedFolderIds.has(folder.id) ? 'var(--accent-primary-alpha)' : 'transparent',
                   borderColor: 'var(--border-default)'
@@ -4569,7 +4569,7 @@ export default function DrivePage() {
                 <div className="text-sm hidden sm:block" style={{ color: 'var(--foreground-muted)' }}>폴더</div>
                 <div className="text-sm hidden sm:block" style={{ color: 'var(--foreground-muted)' }}>{formatDate(folder.created_at)}</div>
                 {/* 더보기 버튼 */}
-                <div className="w-10 sm:w-8 relative ml-1 sm:ml-0">
+                <div className="w-10 sm:w-8 relative ml-1 sm:ml-0 flex-shrink-0">
                   <button
                     data-menu-button
                     onClick={(e) => {
@@ -4601,7 +4601,7 @@ export default function DrivePage() {
               <div
                 key={photo.id}
                 data-photo-id={photo.id}
-                className="list-item flex items-center px-4 py-3.5 sm:py-2 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] sm:gap-4 sm:border-b"
+                className="list-item flex items-center px-4 py-2.5 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] sm:gap-4 border-b"
                 style={{
                   background: selectedIds.has(photo.id) ? 'var(--accent-primary-alpha)' : 'transparent',
                   borderColor: 'var(--border-default)'
@@ -4671,7 +4671,7 @@ export default function DrivePage() {
                 </div>
                 <div className="text-sm hidden sm:block" style={{ color: 'var(--foreground-muted)' }}>{formatDate(photo.created_at)}</div>
                 {/* 더보기 버튼 */}
-                <div className="w-10 sm:w-8 relative ml-1 sm:ml-0">
+                <div className="w-10 sm:w-8 relative ml-1 sm:ml-0 flex-shrink-0">
                   <button
                     data-menu-button
                     onClick={(e) => {
