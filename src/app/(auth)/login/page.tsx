@@ -159,12 +159,6 @@ export default function LoginPage() {
         return
       }
 
-      // 인증 우회로 바로 로그인된 경우 (full page reload로 쿠키 반영)
-      if (data.directLogin) {
-        window.location.href = '/drive'
-        return
-      }
-
       setStep('sent')
     } catch (error) {
       console.error('[login] handleSubmit failed:', error)
