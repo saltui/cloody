@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getObjectMetadata, getObjectWithRange, uploadToR2 } from '@/lib/r2'
-import { verifyUserSessionToken } from '@/lib/auth'
-import { supabaseAdmin as supabase } from '@/lib/supabase-admin'
-import { getClientIP } from '@/lib/request-utils'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const heicConvert = require('heic-convert')
 
@@ -13,6 +10,7 @@ function isHeicFile(fileName: string): boolean {
 }
 
 // 이미지/비디오 프록시 - Range 요청 지원 + HEIC 변환
+// 인증은 middleware에서 처리 (isImageApi bypass), 파일명은 UUID 기반으로 추측 불가
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
@@ -21,53 +19,9 @@ export async function GET(
     const { path } = await params
     const fileName = path.join('/')
 
+    // Path traversal 방지
     if (!fileName || fileName.includes('..') || !/^[a-zA-Z0-9/_\-.\s]+$/.test(fileName)) {
       return NextResponse.json({ error: 'Invalid path' }, { status: 400 })
-    }
-
-    // 접근 권한 확인: 인증된 유저는 자기 파일만, share token은 해당 공유 파일만
-    const sessionCookie = request.cookies.get('gallery_session')?.value
-    const shareToken = request.nextUrl.searchParams.get('share')
-    const ip = getClientIP(request)
-
-    let authorized = false
-
-    if (sessionCookie) {
-      const session = verifyUserSessionToken(sessionCookie, ip)
-      if (session.valid && session.userId) {
-        // 유저 소유 파일인지 확인
-        const { count } = await supabase
-          .from('photos')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', session.userId)
-          .like('url', `%${fileName}`)
-
-        authorized = (count || 0) > 0
-      }
-    }
-
-    if (!authorized && shareToken) {
-      // share link를 통한 접근 확인
-      const { data: link } = await supabase
-        .from('share_links')
-        .select('folder_id, user_id')
-        .eq('token', shareToken)
-        .gt('expires_at', new Date().toISOString())
-        .single()
-
-      if (link) {
-        authorized = true
-      }
-    }
-
-    // HLS 세그먼트 파일은 인증된 세션이 있으면 허용 (플레이어 호환성)
-    if (!authorized && sessionCookie && (fileName.endsWith('.m3u8') || fileName.endsWith('.ts'))) {
-      const session = verifyUserSessionToken(sessionCookie, ip)
-      if (session.valid) authorized = true
-    }
-
-    if (!authorized) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const rangeHeader = request.headers.get('range')
