@@ -35,7 +35,7 @@ function addSecurityHeaders(response: NextResponse): NextResponse {
   // CSP (Content Security Policy)
   response.headers.set('Content-Security-Policy', [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' blob:", // Next.js 필요 + heic2any worker
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:", // Next.js + 서드파티 의존성 필요
     "worker-src 'self' blob:", // heic2any + PDF.js Web Worker
     "style-src 'self' 'unsafe-inline'", // Tailwind 필요
     "img-src 'self' data: blob: http://localhost:* https://*.r2.dev https://*.supabase.co",
