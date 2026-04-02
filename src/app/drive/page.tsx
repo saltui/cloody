@@ -2623,7 +2623,7 @@ export default function DrivePage() {
     // 좌클릭만, 그리고 아이템 위에서 시작하지 않을 때만
     if (e.button !== 0) return
     const target = e.target as HTMLElement
-    if (target.closest('.image-item, .folder-item, .list-item, button, input, [data-checkbox], .modal-backdrop, .tds-modal-backdrop, .tds-dialog-backdrop')) return
+    if (target.closest('.image-item, .folder-item, .list-row, button, input, [data-checkbox], .modal-backdrop, .tds-modal-backdrop, .tds-dialog-backdrop')) return
 
     const container = containerRef.current
     if (!container) return
@@ -4507,7 +4507,7 @@ export default function DrivePage() {
               <div
                 key={folder.id}
                 data-folder-id={folder.id}
-                className="list-item flex items-center px-4 py-2.5 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] sm:gap-4 border-b"
+                className="list-row flex items-center px-4 py-2.5 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] sm:gap-4 border-b"
                 style={{
                   background: selectedFolderIds.has(folder.id) ? 'var(--accent-primary-alpha)' : 'transparent',
                   borderColor: 'var(--border-default)'
@@ -4601,7 +4601,7 @@ export default function DrivePage() {
               <div
                 key={photo.id}
                 data-photo-id={photo.id}
-                className="list-item flex items-center px-4 py-2.5 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] sm:gap-4 border-b"
+                className="list-row flex items-center px-4 py-2.5 cursor-pointer transition-colors group sm:grid sm:grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] sm:gap-4 border-b"
                 style={{
                   background: selectedIds.has(photo.id) ? 'var(--accent-primary-alpha)' : 'transparent',
                   borderColor: 'var(--border-default)'
