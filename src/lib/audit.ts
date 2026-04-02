@@ -12,6 +12,7 @@ export type AuditAction =
   | 'IP_MISMATCH'
   | 'RATE_LIMITED'
   | '2FA_ENABLED'
+  | '2FA_DISABLED'
   | '2FA_VERIFIED'
   | '2FA_FAILED'
   | 'TRASH_MOVE'

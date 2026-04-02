@@ -1,8 +1,8 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 
-const GALLERY_SECRET = process.env.GALLERY_PASSWORD
+const GALLERY_SECRET = process.env.GALLERY_PASSWORD!
 if (!GALLERY_SECRET) throw new Error('GALLERY_PASSWORD environment variable is required')
-const USER_SECRET = process.env.USER_TOKEN_SECRET || process.env.GALLERY_PASSWORD
+const USER_SECRET = (process.env.USER_TOKEN_SECRET || process.env.GALLERY_PASSWORD)!
 if (!USER_SECRET) throw new Error('USER_TOKEN_SECRET or GALLERY_PASSWORD environment variable is required')
 
 // ---------------------------------------------------------------------------

@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   const userAgent = request.headers.get('user-agent') || undefined
 
   // Rate limiting
-  const rateLimit = checkRateLimit(ip)
+  const rateLimit = await checkRateLimit(ip)
   if (!rateLimit.allowed) {
     return errorResponse(ErrorCode.RATE_LIMITED, '너무 많은 요청이 있었습니다. 잠시 후 다시 시도해주세요.', {
       lockoutUntil: rateLimit.lockoutUntil,
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
       // 새 사용자 생성 (비밀번호 없이, displayName 포함)
       const result = await createUser(email, undefined, displayName || undefined)
       if (!result.user) {
-        recordFailedAttempt(ip)
+        await recordFailedAttempt(ip)
         return errorResponse(ErrorCode.INVALID_INPUT, result.error || '계정 생성에 실패했습니다.')
       }
       user = await findUserByEmail(email)
