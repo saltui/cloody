@@ -4148,7 +4148,7 @@ export default function DrivePage() {
       {/* 메인 콘텐츠 */}
       <div
         ref={gridContainerRef}
-        className="p-3 sm:p-4 md:p-6 pb-24 sm:pb-6 relative select-none flex-1 overflow-y-auto"
+        className="p-3 sm:p-4 md:p-6 pb-24 sm:pb-16 relative select-none flex-1 overflow-y-auto"
         onMouseDown={(e) => handleDragSelectStart(e, gridContainerRef)}
       >
         {/* 드래그 선택 박스 */}
@@ -4409,8 +4409,8 @@ export default function DrivePage() {
         {/* 리스트 뷰 */}
         {!userLoading && effectiveViewMode === 'list' && (
           <div className="sm:card">
-            {/* 테이블 헤더 - 데스크톱만 */}
-            <div className="hidden sm:grid grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] gap-4 px-4 py-2.5 text-xs font-medium uppercase tracking-wide" style={{ background: 'var(--background-secondary)', color: 'var(--foreground-muted)', borderBottom: '1px solid var(--border-default)' }}>
+            {/* 테이블 헤더 - 데스크톱만 (sticky) */}
+            <div className="hidden sm:grid grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] gap-4 px-4 py-2.5 text-xs font-medium uppercase tracking-wide sticky top-0 z-10" style={{ background: 'var(--background-secondary)', color: 'var(--foreground-muted)', borderBottom: '1px solid var(--border-default)' }}>
               <button
                 onClick={() => {
                   const allPhotoIds = sortedPhotos.map(p => p.id)
