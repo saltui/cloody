@@ -19,8 +19,8 @@ export async function GET(
     const { path } = await params
     const fileName = path.join('/')
 
-    // Path traversal 방지
-    if (!fileName || fileName.includes('..') || !/^[a-zA-Z0-9/_\-.\s]+$/.test(fileName)) {
+    // Path traversal 방지 (..만 차단, 나머지 파일명 문자는 허용)
+    if (!fileName || fileName.includes('..')) {
       return NextResponse.json({ error: 'Invalid path' }, { status: 400 })
     }
 
