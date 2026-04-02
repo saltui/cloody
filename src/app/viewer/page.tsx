@@ -642,7 +642,12 @@ export default function ViewerPage() {
           paddingTop: 'env(safe-area-inset-top, 0px)',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
         }}
-        onClick={() => setShowUI(!showUI)}
+        onClick={(e) => {
+          // 비디오/오디오 요소 또는 그 컨트롤 영역 클릭 시 UI 토글하지 않음
+          const target = e.target as HTMLElement
+          if (target.closest('video, audio, [data-quality-menu-root], .plyr, button')) return
+          setShowUI(!showUI)
+        }}
       >
         {/* 이전 버튼 - 데스크탑 */}
         <button

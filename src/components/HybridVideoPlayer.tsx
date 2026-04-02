@@ -379,7 +379,7 @@ export default memo(function HybridVideoPlayer({
   }, [])
 
   return (
-    <div className="relative inline-block">
+    <div className="relative inline-block z-20">
       <video
         ref={videoRef}
         src={currentSource === 'original' ? src : undefined}
