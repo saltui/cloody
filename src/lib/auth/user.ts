@@ -131,6 +131,11 @@ export async function verifyMagicLinkToken(token: string): Promise<User | null> 
 
   // 만료 확인
   if (new Date(data.magic_link_expires_at) < new Date()) {
+    // 만료된 토큰 즉시 무효화
+    await supabase
+      .from('users')
+      .update({ magic_link_token: null, magic_link_expires_at: null })
+      .eq('id', data.id)
     return null
   }
 

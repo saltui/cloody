@@ -9,11 +9,6 @@ import { ErrorCode } from '@/lib/errors'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// 무제한 스토리지 사용자
-const UNLIMITED_STORAGE_EMAILS = new Set([
-  'jdnfree@icloud.com',
-])
-
 // 일반 사용자 스토리지 제한 (1GB)
 const STORAGE_LIMIT = 1 * 1024 * 1024 * 1024
 
@@ -112,8 +107,8 @@ export async function POST(request: NextRequest) {
       return errorResponse(ErrorCode.INVALID_INPUT, `지원하지 않는 파일 형식입니다: ${fileType}`)
     }
 
-    // 스토리지 제한 확인 (무제한 사용자 제외)
-    if (!UNLIMITED_STORAGE_EMAILS.has(user.email.toLowerCase())) {
+    // 스토리지 제한 확인 (admin 유저 제외)
+    if (!user.is_admin) {
       const { data: storageData } = await supabase
         .from('photos')
         .select('file_size')

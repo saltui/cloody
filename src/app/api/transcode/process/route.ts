@@ -217,36 +217,10 @@ async function processJob(photoId: string): Promise<{ success: boolean; error?: 
 // Cron 또는 수동으로 호출되는 작업 처리기
 export async function POST(request: NextRequest) {
   // Vercel Cron 인증 확인
+  const cronSecret = process.env.CRON_SECRET
   const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    // 수동 트리거 (특정 비디오) — cron 인증 없이 photoId로 호출
-    try {
-      const { photoId } = await request.json()
-
-      if (!photoId) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
-      // 처리 중 상태로 업데이트
-      await supabase
-        .from('photos')
-        .update({ hls_status: 'processing' })
-        .eq('id', photoId)
-
-      const result = await processJob(photoId)
-
-      if (!result.success) {
-        await supabase
-          .from('photos')
-          .update({ hls_status: 'failed' })
-          .eq('id', photoId)
-      }
-
-      return NextResponse.json(result)
-    } catch (error) {
-      console.error('Manual transcode error:', error)
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   console.log('Starting transcoding process...')

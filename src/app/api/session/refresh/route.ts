@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { refreshUserSessionToken } from '@/lib/auth'
+import { refreshUserSessionToken, verifyUserSessionToken, checkSessionRevocation } from '@/lib/auth'
 import { getClientIP } from '@/lib/request-utils'
 import { errorResponse } from '@/lib/response-utils'
 import { ErrorCode } from '@/lib/errors'
@@ -12,6 +12,18 @@ export async function POST(request: NextRequest) {
   }
 
   const ip = getClientIP(request)
+
+  // Revocation 체크: 취소된 세션은 갱신 불가
+  const validation = verifyUserSessionToken(currentToken, ip)
+  if (validation.valid && validation.sessionId && validation.userId && validation.createdAt) {
+    const isRevoked = await checkSessionRevocation(validation.sessionId, validation.userId, validation.createdAt)
+    if (isRevoked) {
+      const response = errorResponse(ErrorCode.SESSION_EXPIRED, 'Session revoked')
+      response.cookies.delete('gallery_session')
+      return response
+    }
+  }
+
   const newToken = refreshUserSessionToken(currentToken, ip)
 
   if (!newToken) {

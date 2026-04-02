@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { changePassword } from '@/lib/auth'
+import { changePassword, checkRateLimit, recordFailedAttempt } from '@/lib/auth'
 import { logAudit } from '@/lib/audit'
 import { getClientIP } from '@/lib/request-utils'
 import { errorResponse } from '@/lib/response-utils'
@@ -12,6 +12,13 @@ export async function POST(request: NextRequest) {
 
   if (!userId) {
     return errorResponse(ErrorCode.UNAUTHORIZED, '인증이 필요합니다.')
+  }
+
+  // Rate limiting
+  const rateLimit = await checkRateLimit(ip)
+  if (!rateLimit.allowed) {
+    const retryMin = rateLimit.lockoutUntil ? Math.ceil((rateLimit.lockoutUntil - Date.now()) / 60000) : 15
+    return errorResponse(ErrorCode.RATE_LIMITED, `너무 많은 시도입니다. ${retryMin}분 후에 다시 시도해주세요.`)
   }
 
   try {
@@ -28,6 +35,7 @@ export async function POST(request: NextRequest) {
     const result = await changePassword(userId, currentPassword, newPassword)
 
     if (!result.success) {
+      await recordFailedAttempt(ip)
       await logAudit({
         action: 'LOGIN_FAILED',
         ip,

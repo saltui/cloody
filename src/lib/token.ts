@@ -36,10 +36,12 @@ export function verifyGalleryToken(token: string): GallerySessionPayload | null 
     const payloadStr = token.slice(0, dotIndex)
     const signature = token.slice(dotIndex + 1)
 
+    if (!signature) return null
     const expectedSignature = gallerySign(payloadStr)
     const sigBuf = Buffer.from(signature, 'base64url')
     const expBuf = Buffer.from(expectedSignature, 'base64url')
 
+    if (sigBuf.length === 0 || expBuf.length === 0) return null
     if (sigBuf.length !== expBuf.length) return null
     if (!timingSafeEqual(sigBuf, expBuf)) return null
 
@@ -84,10 +86,12 @@ export function verifyUserToken(token: string): UserSessionPayload | null {
     const data = token.slice(0, dotIndex)
     const signature = token.slice(dotIndex + 1)
 
+    if (!signature) return null
     const expectedSignature = userSign(data)
     const sigBuf = Buffer.from(signature, 'hex')
     const expBuf = Buffer.from(expectedSignature, 'hex')
 
+    if (sigBuf.length === 0 || expBuf.length === 0) return null
     if (sigBuf.length !== expBuf.length) return null
     if (!timingSafeEqual(sigBuf, expBuf)) return null
 

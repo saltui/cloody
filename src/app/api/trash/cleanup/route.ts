@@ -8,8 +8,9 @@ const TRASH_RETENTION_DAYS = 30
 // vercel.json에 cron 설정 필요: { "path": "/api/trash/cleanup", "schedule": "0 3 * * *" }
 export async function POST(request: NextRequest) {
   // Vercel Cron 인증 확인
+  const cronSecret = process.env.CRON_SECRET
   const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
