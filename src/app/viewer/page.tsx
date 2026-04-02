@@ -694,8 +694,8 @@ export default function ViewerPage() {
           </svg>
         </button>
 
-        {/* 로딩 스피너 */}
-        {imageLoading && (
+        {/* 로딩 스피너 (비디오는 자체 로딩 UI 사용) */}
+        {imageLoading && !isCurrentVideo && (
           <div className="absolute inset-0 flex items-center justify-center z-5">
             <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(8px)' }}>
               <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
