@@ -13,6 +13,8 @@ import { useToast } from '@/components/Toast'
 import Sidebar, { FileCategory } from '@/components/Sidebar'
 import { Home, Image as ImageIcon, CloudUpload, Menu } from 'lucide-react'
 import { FileThumbnail, isMediaFile, getFileTypeLabel } from '@/lib/file-icons'
+import LazyVideoThumbnail from '@/components/LazyVideoThumbnail'
+import { isVideoFile } from '@/lib/url-utils'
 import heic2any from 'heic2any'
 
 // file_type을 DB 컬럼 크기(50자)에 맞게 제한
@@ -4368,14 +4370,25 @@ export default function DrivePage() {
                     >
                       {/* 미디어 파일이면 썸네일, 아니면 파일 아이콘 */}
                       {isMediaFile(photo.name) ? (
-                        <img
-                          src={toProxyUrl(photo.thumbnail_url || photo.url)}
-                          alt=""
-                          className={`transition-transform duration-300 ${selectedIds.has(photo.id) ? 'scale-90' : ''}`}
-                          draggable={false}
-                          loading="lazy"
-                          decoding="async"
-                        />
+                        isVideoFile(photo.name) && !photo.thumbnail_url ? (
+                          <LazyVideoThumbnail
+                            photoId={photo.id}
+                            videoUrl={photo.url}
+                            className={`transition-transform duration-300 ${selectedIds.has(photo.id) ? 'scale-90' : ''}`}
+                            onThumbnailGenerated={(url) => {
+                              setPhotos(prev => prev.map(p => p.id === photo.id ? { ...p, thumbnail_url: url } : p))
+                            }}
+                          />
+                        ) : (
+                          <img
+                            src={toProxyUrl(photo.thumbnail_url || photo.url)}
+                            alt=""
+                            className={`transition-transform duration-300 ${selectedIds.has(photo.id) ? 'scale-90' : ''}`}
+                            draggable={false}
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        )
                       ) : (
                         <div className="w-full h-full flex flex-col items-center justify-center" style={{ background: 'var(--background-tertiary)' }}>
                           <FileThumbnail
@@ -4649,7 +4662,17 @@ export default function DrivePage() {
                   {/* 모바일: 더 큰 썸네일 */}
                   <div className="w-12 h-12 sm:w-10 sm:h-10 rounded-xl sm:rounded-lg overflow-hidden flex-shrink-0" style={{ background: 'var(--background-tertiary)' }}>
                     {isMediaFile(photo.name) ? (
-                      <img src={toProxyUrl(photo.thumbnail_url || photo.url)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                      isVideoFile(photo.name) && !photo.thumbnail_url ? (
+                        <LazyVideoThumbnail
+                          photoId={photo.id}
+                          videoUrl={photo.url}
+                          onThumbnailGenerated={(url) => {
+                            setPhotos(prev => prev.map(p => p.id === photo.id ? { ...p, thumbnail_url: url } : p))
+                          }}
+                        />
+                      ) : (
+                        <img src={toProxyUrl(photo.thumbnail_url || photo.url)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                      )
                     ) : (
                       <FileThumbnail filename={photo.name} size="sm" />
                     )}

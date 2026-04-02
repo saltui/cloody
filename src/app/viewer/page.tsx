@@ -8,6 +8,7 @@ import { useDataCache } from '@/lib/data-cache'
 import { useToast } from '@/components/Toast'
 import { getFileCategory, TextPreview, PDFPreview, OfficePreview, AudioPreview, UnknownFilePreview } from '@/components/FilePreview'
 import HybridVideoPlayer from '@/components/HybridVideoPlayer'
+import { toDirectVideoUrl } from '@/lib/url-utils'
 
 // R2 URL을 프록시 URL로 즉시 변환
 function toProxyUrl(url: string): string {
@@ -156,7 +157,12 @@ export default function ViewerPage() {
     ].filter(i => i >= 0 && i < photos.length)
 
     preloadIndices.forEach(idx => {
-      const originalUrl = photos[idx].url
+      const photo = photos[idx]
+      const fileCategory = getFileCategory(photo.name)
+      // 이미지만 프리로드 (비디오/문서는 new Image()로 프리로드 불가, 대역폭 낭비)
+      if (fileCategory !== 'image') return
+
+      const originalUrl = photo.url
       const proxyUrl = toProxyUrl(originalUrl)
 
       if (proxyUrl && !loadedImages.has(originalUrl)) {
@@ -586,6 +592,7 @@ export default function ViewerPage() {
 
   const currentPhoto = photos[currentIndex]
   const currentSignedUrl = toProxyUrl(currentPhoto.url)
+  const currentVideoUrl = isCurrentVideo ? toDirectVideoUrl(currentPhoto.url) : currentSignedUrl
 
   return (
     <main
@@ -718,7 +725,7 @@ export default function ViewerPage() {
               return (
                 <HybridVideoPlayer
                   key={currentPhoto.url}
-                  src={currentSignedUrl}
+                  src={currentVideoUrl}
                   hlsSrc={currentPhoto.hls_url ? toProxyUrl(currentPhoto.hls_url) : null}
                   hlsStatus={currentPhoto.hls_status || 'not_applicable'}
                   controls
