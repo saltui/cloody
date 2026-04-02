@@ -2934,12 +2934,12 @@ export default function DrivePage() {
     }
   }
 
-  const toggleSelect = (id: string, e: React.MouseEvent, index: number) => {
+  const toggleSelect = (id: string, e: React.MouseEvent, index: number, forcePreserve = false) => {
     e.stopPropagation()
 
-    // Cmd/Ctrl 없이 클릭하면 기존 선택 해제 후 새로 선택 (단, 이미 선택 모드면 추가 선택)
+    // Cmd/Ctrl 없이 클릭하면 기존 선택 해제 후 새로 선택 (단, 이미 선택 모드 또는 forcePreserve면 추가 선택)
     const isMultiSelectKey = e.shiftKey || e.metaKey || e.ctrlKey
-    const shouldPreserve = isMultiSelectKey || isSelecting
+    const shouldPreserve = isMultiSelectKey || isSelecting || forcePreserve
 
     const newSet = shouldPreserve ? new Set(selectedIds) : new Set<string>()
 
@@ -2963,13 +2963,13 @@ export default function DrivePage() {
     setLastSelectedIndex({ type: 'photo', index })
   }
 
-  const toggleFolderSelect = (id: string, e: React.MouseEvent, index?: number) => {
+  const toggleFolderSelect = (id: string, e: React.MouseEvent, index?: number, forcePreserve = false) => {
     e.stopPropagation()
     const currentIndex = index ?? sortedFolders.findIndex(f => f.id === id)
 
-    // Cmd/Ctrl 없이 클릭하면 기존 선택 해제 후 새로 선택 (단, 이미 선택 모드면 추가 선택)
+    // Cmd/Ctrl 없이 클릭하면 기존 선택 해제 후 새로 선택 (단, 이미 선택 모드 또는 forcePreserve면 추가 선택)
     const isMultiSelectKey = e.shiftKey || e.metaKey || e.ctrlKey
-    const shouldPreserve = isMultiSelectKey || isSelecting
+    const shouldPreserve = isMultiSelectKey || isSelecting || forcePreserve
 
     const newSet = shouldPreserve ? new Set(selectedFolderIds) : new Set<string>()
 
@@ -4145,6 +4145,75 @@ export default function DrivePage() {
         </div>
       )}
 
+      {/* 리스트뷰 테이블 헤더 - 스크롤 영역 바깥에 고정 */}
+      {!userLoading && effectiveViewMode === 'list' && (
+        <div className="hidden sm:grid grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] gap-4 px-4 md:px-6 py-2.5 text-xs font-medium uppercase tracking-wide flex-shrink-0" style={{ background: 'var(--background-secondary)', color: 'var(--foreground-muted)', borderBottom: '1px solid var(--border-default)' }}>
+          <button
+            onClick={() => {
+              const allPhotoIds = sortedPhotos.map(p => p.id)
+              const allFolderIds = sortedFolders.map(f => f.id)
+              const allSelected = allPhotoIds.every(id => selectedIds.has(id)) && allFolderIds.every(id => selectedFolderIds.has(id))
+              if (allSelected) {
+                setSelectedIds(new Set())
+                setSelectedFolderIds(new Set())
+              } else {
+                setSelectedIds(new Set(allPhotoIds))
+                setSelectedFolderIds(new Set(allFolderIds))
+              }
+            }}
+            className="w-5 h-5 rounded border-2 flex items-center justify-center transition-all hover:border-[var(--accent-primary)]"
+            style={{
+              borderColor: (sortedPhotos.length > 0 || sortedFolders.length > 0) && sortedPhotos.every(p => selectedIds.has(p.id)) && sortedFolders.every(f => selectedFolderIds.has(f.id)) ? 'var(--accent-primary)' : 'var(--border-default)',
+              background: (sortedPhotos.length > 0 || sortedFolders.length > 0) && sortedPhotos.every(p => selectedIds.has(p.id)) && sortedFolders.every(f => selectedFolderIds.has(f.id)) ? 'var(--accent-primary)' : 'transparent',
+            }}
+          >
+            {(sortedPhotos.length > 0 || sortedFolders.length > 0) && sortedPhotos.every(p => selectedIds.has(p.id)) && sortedFolders.every(f => selectedFolderIds.has(f.id)) && (
+              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </button>
+          <button
+            onClick={() => {
+              if (sortBy === 'name') {
+                setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+              } else {
+                setSortBy('name')
+                setSortOrder('asc')
+              }
+            }}
+            className="flex items-center gap-1.5 hover:opacity-80 transition-opacity text-left"
+          >
+            이름
+            {sortBy === 'name' && (
+              <span style={{ color: 'var(--accent-primary)' }}>
+                {sortOrder === 'asc' ? '↑' : '↓'}
+              </span>
+            )}
+          </button>
+          <div>유형</div>
+          <button
+            onClick={() => {
+              if (sortBy === 'date') {
+                setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
+              } else {
+                setSortBy('date')
+                setSortOrder('desc')
+              }
+            }}
+            className="flex items-center gap-1.5 hover:opacity-80 transition-opacity text-left"
+          >
+            수정일
+            {sortBy === 'date' && (
+              <span style={{ color: 'var(--accent-primary)' }}>
+                {sortOrder === 'asc' ? '↑' : '↓'}
+              </span>
+            )}
+          </button>
+          <div className="w-8" />
+        </div>
+      )}
+
       {/* 메인 콘텐츠 */}
       <div
         ref={gridContainerRef}
@@ -4409,73 +4478,6 @@ export default function DrivePage() {
         {/* 리스트 뷰 */}
         {!userLoading && effectiveViewMode === 'list' && (
           <div className="sm:card">
-            {/* 테이블 헤더 - 데스크톱만 (sticky, 좌우 풀폭) */}
-            <div className="hidden sm:grid grid-cols-[auto_minmax(200px,1fr)_80px_120px_auto] gap-4 py-2.5 text-xs font-medium uppercase tracking-wide sticky top-0 z-10 -mx-4 md:-mx-6 px-4 md:px-6" style={{ background: 'var(--background-secondary)', color: 'var(--foreground-muted)', borderBottom: '1px solid var(--border-default)' }}>
-              <button
-                onClick={() => {
-                  const allPhotoIds = sortedPhotos.map(p => p.id)
-                  const allFolderIds = sortedFolders.map(f => f.id)
-                  const allSelected = allPhotoIds.every(id => selectedIds.has(id)) && allFolderIds.every(id => selectedFolderIds.has(id))
-                  if (allSelected) {
-                    setSelectedIds(new Set())
-                    setSelectedFolderIds(new Set())
-                  } else {
-                    setSelectedIds(new Set(allPhotoIds))
-                    setSelectedFolderIds(new Set(allFolderIds))
-                  }
-                }}
-                className="w-5 h-5 rounded border-2 flex items-center justify-center transition-all hover:border-[var(--accent-primary)]"
-                style={{
-                  borderColor: (sortedPhotos.length > 0 || sortedFolders.length > 0) && sortedPhotos.every(p => selectedIds.has(p.id)) && sortedFolders.every(f => selectedFolderIds.has(f.id)) ? 'var(--accent-primary)' : 'var(--border-default)',
-                  background: (sortedPhotos.length > 0 || sortedFolders.length > 0) && sortedPhotos.every(p => selectedIds.has(p.id)) && sortedFolders.every(f => selectedFolderIds.has(f.id)) ? 'var(--accent-primary)' : 'transparent',
-                }}
-              >
-                {(sortedPhotos.length > 0 || sortedFolders.length > 0) && sortedPhotos.every(p => selectedIds.has(p.id)) && sortedFolders.every(f => selectedFolderIds.has(f.id)) && (
-                  <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-              </button>
-              <button
-                onClick={() => {
-                  if (sortBy === 'name') {
-                    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
-                  } else {
-                    setSortBy('name')
-                    setSortOrder('asc')
-                  }
-                }}
-                className="flex items-center gap-1.5 hover:opacity-80 transition-opacity text-left"
-              >
-                이름
-                {sortBy === 'name' && (
-                  <span style={{ color: 'var(--accent-primary)' }}>
-                    {sortOrder === 'asc' ? '↑' : '↓'}
-                  </span>
-                )}
-              </button>
-              <div>유형</div>
-              <button
-                onClick={() => {
-                  if (sortBy === 'date') {
-                    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
-                  } else {
-                    setSortBy('date')
-                    setSortOrder('desc')
-                  }
-                }}
-                className="flex items-center gap-1.5 hover:opacity-80 transition-opacity text-left"
-              >
-                수정일
-                {sortBy === 'date' && (
-                  <span style={{ color: 'var(--accent-primary)' }}>
-                    {sortOrder === 'asc' ? '↑' : '↓'}
-                  </span>
-                )}
-              </button>
-              <div className="w-8" />
-            </div>
-
             {/* 모바일 정렬 헤더 */}
             <div className="sm:hidden flex items-center gap-2 px-4 py-2.5">
               <button
@@ -4533,10 +4535,10 @@ export default function DrivePage() {
                 }}
                 onMouseLeave={(e) => !selectedFolderIds.has(folder.id) && (e.currentTarget.style.background = 'transparent')}
               >
-                {/* 체크박스 - 선택 모드일 때만 모바일에서 표시 */}
+                {/* 체크박스 - 선택 모드일 때만 모바일에서 표시, 항상 다중선택 */}
                 <div
                   className={`mr-3 sm:mr-0 ${isSelecting ? 'block' : 'hidden sm:block'}`}
-                  onClick={(e) => toggleFolderSelect(folder.id, e, folderIndex)}
+                  onClick={(e) => toggleFolderSelect(folder.id, e, folderIndex, true)}
                 >
                   <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
                     selectedFolderIds.has(folder.id)
@@ -4625,10 +4627,10 @@ export default function DrivePage() {
                 onMouseEnter={(e) => !selectedIds.has(photo.id) && (e.currentTarget.style.background = 'var(--background-secondary)')}
                 onMouseLeave={(e) => !selectedIds.has(photo.id) && (e.currentTarget.style.background = 'transparent')}
               >
-                {/* 체크박스 - 선택 모드일 때만 모바일에서 표시 */}
+                {/* 체크박스 - 선택 모드일 때만 모바일에서 표시, 항상 다중선택 */}
                 <div
                   className={`mr-3 sm:mr-0 ${isSelecting ? 'block' : 'hidden sm:block'}`}
-                  onClick={(e) => toggleSelect(photo.id, e, index)}
+                  onClick={(e) => toggleSelect(photo.id, e, index, true)}
                 >
                   <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
                     selectedIds.has(photo.id)
