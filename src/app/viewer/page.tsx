@@ -285,6 +285,7 @@ export default function ViewerPage() {
   const isPinchingRef = useRef(false)
   const isPanningRef = useRef(false)
   const dragOffsetRef = useRef(0)
+  const touchStartTimeRef = useRef<number>(0)
   const [dragOffset, setDragOffset] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -319,6 +320,7 @@ export default function ViewerPage() {
     if (e.touches.length === 1) {
       const touch = e.touches[0]
       touchStartRef.current = { x: touch.clientX, y: touch.clientY }
+      touchStartTimeRef.current = e.timeStamp
       lastTouchRef.current = { x: touch.clientX, y: touch.clientY }
       isPinchingRef.current = false
       isPanningRef.current = scale > 1 // 확대 상태면 패닝 모드
@@ -404,8 +406,11 @@ export default function ViewerPage() {
 
         // 수평 이동이 수직보다 크면 스와이프로 간주
         if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
-          const maxOffset = typeof window !== 'undefined' ? window.innerWidth * 0.3 : 100
-          dragOffsetRef.current = Math.max(-maxOffset, Math.min(maxOffset, dx))
+          // 끝에서 저항감 추가 (더 이상 이동 불가한 방향)
+          const atStart = currentIndex === 0 && dx > 0
+          const atEnd = currentIndex === photos.length - 1 && dx < 0
+          const resistance = (atStart || atEnd) ? 0.3 : 1
+          dragOffsetRef.current = dx * resistance
           setDragOffset(dragOffsetRef.current)
         }
         lastTouchRef.current = { x: touch.clientX, y: touch.clientY }
@@ -439,31 +444,48 @@ export default function ViewerPage() {
 
     // 스와이프 처리 (축소 상태에서만)
     if (scale === 1 && touchStartRef.current && e.changedTouches.length > 0) {
-      const touchEnd = e.changedTouches[0].clientX
-      const diff = touchStartRef.current.x - touchEnd
+      const touchEnd = e.changedTouches[0]
+      const diff = touchStartRef.current.x - touchEnd.clientX
+      const velocity = Math.abs(diff) / Math.max(1, e.timeStamp - (touchStartTimeRef.current || e.timeStamp))
+      const threshold = velocity > 0.5 ? 30 : 80 // 빠르게 스와이프하면 낮은 임계값
 
-      if (Math.abs(diff) > 50) {
+      if (Math.abs(diff) > threshold) {
         const goingNext = diff > 0 && currentIndex < photos.length - 1
         const goingPrev = diff < 0 && currentIndex > 0
 
         if (goingNext || goingPrev) {
-          // 즉시 상태 리셋
+          // 슬라이드 아웃 애니메이션: 현재 이미지를 화면 밖으로
+          const screenWidth = window.innerWidth
+          const slideOutTarget = goingNext ? -screenWidth : screenWidth
           setIsAnimating(true)
-          setEnterDirection(goingNext ? 'left' : 'right')
-          setPosition({ x: 0, y: 0 })
-          setScale(1)
-          dragOffsetRef.current = 0
-          setDragOffset(0)
-          setCurrentIndex(prev => goingNext ? prev + 1 : prev - 1)
+          setDragOffset(slideOutTarget)
 
           setTimeout(() => {
-            setEnterDirection(null)
-            setIsAnimating(false)
-          }, 200)
+            // 새 이미지로 교체 후 반대편에서 슬라이드 인
+            setDragOffset(goingNext ? screenWidth : -screenWidth)
+            setPosition({ x: 0, y: 0 })
+            setScale(1)
+            setCurrentIndex(prev => goingNext ? prev + 1 : prev - 1)
+
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                setDragOffset(0)
+                setTimeout(() => {
+                  setIsAnimating(false)
+                }, 280)
+              })
+            })
+          }, 180)
+
+          touchStartRef.current = null
+          lastTouchRef.current = null
+          dragOffsetRef.current = 0
+          return
         }
       }
     }
 
+    // 스와이프 미달: 부드럽게 원래 위치로 스냅백
     touchStartRef.current = null
     lastTouchRef.current = null
     dragOffsetRef.current = 0
@@ -676,12 +698,12 @@ export default function ViewerPage() {
 
         {/* 이미지/비디오 */}
         <div
-          className={`flex items-center justify-center ${
-            enterDirection ? 'animate-slide-in-left' : ''
-          }`}
+          className="flex items-center justify-center"
           style={{
             transform: `translateX(${dragOffset + position.x}px) translateY(${position.y}px) scale(${scale})`,
-            transition: isAnimating || isPanningRef.current || isPinchingRef.current ? 'none' : 'transform 0.2s cubic-bezier(0.25, 0.1, 0.25, 1)',
+            transition: isPanningRef.current || isPinchingRef.current || (dragOffsetRef.current !== 0 && !isAnimating)
+              ? 'none'
+              : 'transform 0.28s cubic-bezier(0.25, 0.1, 0.25, 1)',
             touchAction: scale > 1 ? 'none' : 'pan-y',
             willChange: 'transform',
           }}
