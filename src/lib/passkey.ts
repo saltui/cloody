@@ -118,6 +118,7 @@ export async function verifyRegistration(
     expectedChallenge: user.passkey_challenge,
     expectedOrigin: origin,
     expectedRPID: rpID,
+    requireUserVerification: false,
   })
 
   if (!verification.verified || !verification.registrationInfo) {
@@ -218,6 +219,7 @@ export async function verifyAuthentication(
     expectedChallenge: user.passkey_challenge,
     expectedOrigin: origin,
     expectedRPID: rpID,
+    requireUserVerification: false,
     credential: {
       id: passkey.credential_id,
       publicKey: Buffer.from(passkey.public_key, 'base64url'),
@@ -317,6 +319,7 @@ export async function verifyDiscoverableAuthentication(
     expectedChallenge: validChallenge.challenge,
     expectedOrigin: origin,
     expectedRPID: rpID,
+    requireUserVerification: false,
     credential: {
       id: passkey.credential_id,
       publicKey: Buffer.from(passkey.public_key, 'base64url'),
