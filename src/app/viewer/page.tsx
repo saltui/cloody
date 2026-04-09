@@ -268,8 +268,8 @@ export default function ViewerPage() {
       }
     }
 
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [goNext, goPrev, goBack, isCurrentVideo])
 
   // 터치/스와이프/줌 상태

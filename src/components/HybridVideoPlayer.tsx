@@ -379,7 +379,7 @@ export default memo(function HybridVideoPlayer({
   }, [])
 
   return (
-    <div className="relative inline-block z-20">
+    <div className="relative z-20 w-full h-full flex items-center justify-center">
       <video
         ref={videoRef}
         src={currentSource === 'original' ? src : undefined}
@@ -389,7 +389,7 @@ export default memo(function HybridVideoPlayer({
         muted={muted}
         loop={loop}
         playsInline
-        className={`${className}`}
+        className={`w-full h-full ${className}`}
         style={{ objectFit: 'contain', ...style }}
         onLoadStart={handleLoadStart}
         onCanPlay={handleCanPlay}
