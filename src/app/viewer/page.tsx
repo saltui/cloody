@@ -292,15 +292,14 @@ export default function ViewerPage() {
   const isPanningRef = useRef(false)
   const dragOffsetRef = useRef(0)
   const touchStartTimeRef = useRef<number>(0)
+  const noTransitionRef = useRef(false)
   const [dragOffset, setDragOffset] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // 이미지 변경 시 줌 리셋
+  // 이미지 변경 시 줌 리셋 (transition 없이)
   useEffect(() => {
     setScale(1)
     setPosition({ x: 0, y: 0 })
-    dragOffsetRef.current = 0
-    setDragOffset(0)
   }, [currentIndex])
 
   // 두 손가락 거리 계산
@@ -466,13 +465,19 @@ export default function ViewerPage() {
           setIsAnimating(true)
           setDragOffset(slideTarget)
 
-          // 애니메이션 완료 후 인덱스 변경 & 오프셋 리셋
+          // 애니메이션 완료 후 transition 끄고 인덱스 교체
           setTimeout(() => {
-            setCurrentIndex(prev => goingNext ? prev + 1 : prev - 1)
+            noTransitionRef.current = true
             setDragOffset(0)
+            dragOffsetRef.current = 0
+            setCurrentIndex(prev => goingNext ? prev + 1 : prev - 1)
             setPosition({ x: 0, y: 0 })
             setScale(1)
             setIsAnimating(false)
+            // 다음 프레임에서 transition 복원
+            requestAnimationFrame(() => {
+              noTransitionRef.current = false
+            })
           }, 300)
 
           touchStartRef.current = null
@@ -794,7 +799,7 @@ export default function ViewerPage() {
             width: '300vw',
             marginLeft: '-100vw',
             transform: `translateX(${dragOffset + (scale > 1 ? position.x : 0)}px) translateY(${position.y}px) scale(${scale})`,
-            transition: isPanningRef.current || isPinchingRef.current || (dragOffsetRef.current !== 0 && !isAnimating)
+            transition: noTransitionRef.current || isPanningRef.current || isPinchingRef.current || (dragOffsetRef.current !== 0 && !isAnimating)
               ? 'none'
               : 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
             touchAction: scale > 1 ? 'none' : 'pan-y',
