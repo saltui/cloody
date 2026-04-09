@@ -351,8 +351,10 @@ async function uploadWithPresignedUrl(
       return await new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest()
 
-        // 5분 타임아웃 설정
-        xhr.timeout = 5 * 60 * 1000
+        // 파일 크기에 비례한 타임아웃 (최소 5분, 100MB당 5분 추가, 최대 60분)
+        const baseTimeout = 5 * 60 * 1000
+        const sizeBasedTimeout = Math.ceil(file.size / (100 * 1024 * 1024)) * 5 * 60 * 1000
+        xhr.timeout = Math.min(Math.max(baseTimeout, sizeBasedTimeout), 60 * 60 * 1000)
 
         xhr.upload.addEventListener('progress', (event) => {
           if (event.lengthComputable) {
