@@ -750,7 +750,7 @@ export default function ViewerPage() {
       {/* 이미지 영역 - 화면 중앙에 절대 위치 (safe area 고려) */}
       <div
         ref={containerRef}
-        className="absolute inset-0 flex items-center justify-center z-10"
+        className="absolute inset-0 flex items-center z-10 overflow-hidden"
         style={{
           paddingTop: 'env(safe-area-inset-top, 0px)',
           paddingBottom: 'env(safe-area-inset-bottom, 0px)',
