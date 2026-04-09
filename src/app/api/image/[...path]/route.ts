@@ -76,35 +76,30 @@ export async function GET(
     if (isHeicFile(fileName)) {
       const cachedKey = `converted/${fileName}.jpg`
 
-      // 캐시된 JPEG 버전 확인
+      // 캐시된 JPEG 버전 확인 (메타데이터 먼저 조회하여 ETag 304 처리)
       try {
+        const cachedMeta = await getObjectMetadata(cachedKey)
+        const cachedEtag = cachedMeta.ETag
+
+        // ETag 매칭 시 304 반환 (body 다운로드 없이)
+        if (cachedEtag && request.headers.get('if-none-match') === cachedEtag) {
+          return new NextResponse(null, { status: 304 })
+        }
+
         const cached = await getObjectWithRange(cachedKey)
         if (cached.Body) {
-          // ETag 조건부 요청 처리 (캐시된 버전)
-          let cachedEtag: string | undefined
-          try {
-            const cachedMeta = await getObjectMetadata(cachedKey)
-            cachedEtag = cachedMeta.ETag
-          } catch (error) {
-            console.error('[image-proxy] ETag metadata lookup failed:', error)
-          }
-
-          if (cachedEtag && request.headers.get('if-none-match') === cachedEtag) {
-            return new NextResponse(null, { status: 304 })
-          }
-
           const stream = cached.Body.transformToWebStream()
           const cachedHeaders: Record<string, string> = {
             'Content-Type': 'image/jpeg',
-            'Content-Length': (cached.ContentLength || 0).toString(),
+            'Content-Length': (cachedMeta.ContentLength || 0).toString(),
             'Cache-Control': 'public, max-age=31536000, immutable',
           }
           if (cachedEtag) cachedHeaders['ETag'] = cachedEtag
 
           return new NextResponse(stream, { headers: cachedHeaders })
         }
-      } catch (error) {
-        console.error('[image-proxy] HEIC cache miss or R2 error:', error)
+      } catch {
+        // 캐시 미스 — 변환 진행
       }
 
       // 원본 다운로드 및 변환
@@ -122,10 +117,12 @@ export async function GET(
           quality: 0.9,
         })
 
-        // Fire-and-forget: 변환된 버전을 R2에 캐싱
-        uploadToR2(cachedKey, Buffer.from(jpegBuffer), 'image/jpeg').catch((err) =>
+        // 변환된 버전을 R2에 캐싱 (await로 보장)
+        try {
+          await uploadToR2(cachedKey, Buffer.from(jpegBuffer), 'image/jpeg')
+        } catch (err) {
           console.error('[image-proxy] Failed to cache HEIC conversion:', err)
-        )
+        }
 
         return new NextResponse(new Uint8Array(jpegBuffer), {
           headers: {

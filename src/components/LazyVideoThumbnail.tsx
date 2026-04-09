@@ -29,6 +29,13 @@ export default memo(function LazyVideoThumbnail({
   const containerRef = useRef<HTMLDivElement>(null)
   const attemptedRef = useRef(false)
 
+  // 외부에서 thumbnailUrl이 나중에 들어오면 반영
+  useEffect(() => {
+    if (thumbnailUrl && !thumbSrc) {
+      setThumbSrc(toProxyUrl(thumbnailUrl))
+    }
+  }, [thumbnailUrl, thumbSrc])
+
   useEffect(() => {
     if (thumbSrc || attemptedRef.current || !containerRef.current) return
 
