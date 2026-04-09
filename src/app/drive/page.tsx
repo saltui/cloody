@@ -1859,8 +1859,13 @@ export default function DrivePage() {
     }
 
     if (validFiles.length > 0) {
-      setPendingFiles(validFiles)
-      setShowFolderPicker(true)
+      // 현재 폴더가 있으면 바로 업로드 (폴더 피커 생략)
+      if (currentFolderId) {
+        await handleUploadToFolder(currentFolderId, validFiles)
+      } else {
+        setPendingFiles(validFiles)
+        setShowFolderPicker(true)
+      }
     }
     e.target.value = ''
   }
@@ -2116,13 +2121,14 @@ export default function DrivePage() {
   }
 
   // 폴더 선택 후 업로드
-  const handleUploadToFolder = async (targetFolderId: string | null) => {
-    if (pendingFiles.length === 0) return
+  const handleUploadToFolder = async (targetFolderId: string | null, files?: File[]) => {
+    const filesToProcess = files || pendingFiles
+    if (filesToProcess.length === 0) return
 
     setShowFolderPicker(false)
 
     // 중복 파일 체크
-    const { duplicates, nonDuplicates } = await checkDuplicates(pendingFiles, targetFolderId)
+    const { duplicates, nonDuplicates } = await checkDuplicates(filesToProcess, targetFolderId)
 
     if (duplicates.length > 0) {
       // 중복 파일이 있으면 모달 표시
@@ -2135,7 +2141,7 @@ export default function DrivePage() {
     }
 
     // 중복 없으면 바로 업로드
-    await executeUpload(pendingFiles, targetFolderId)
+    await executeUpload(filesToProcess, targetFolderId)
   }
 
   // 중복 처리 후 실제 업로드 실행
