@@ -460,28 +460,20 @@ export default function ViewerPage() {
         const goingPrev = diff < 0 && currentIndex > 0
 
         if (goingNext || goingPrev) {
-          // 슬라이드 아웃 애니메이션: 현재 이미지를 화면 밖으로
+          // 화면 너비만큼 밀어서 다음/이전 이미지로 전환
           const screenWidth = window.innerWidth
-          const slideOutTarget = goingNext ? -screenWidth : screenWidth
+          const slideTarget = goingNext ? -screenWidth : screenWidth
           setIsAnimating(true)
-          setDragOffset(slideOutTarget)
+          setDragOffset(slideTarget)
 
+          // 애니메이션 완료 후 인덱스 변경 & 오프셋 리셋
           setTimeout(() => {
-            // 새 이미지로 교체 후 반대편에서 슬라이드 인
-            setDragOffset(goingNext ? screenWidth : -screenWidth)
+            setCurrentIndex(prev => goingNext ? prev + 1 : prev - 1)
+            setDragOffset(0)
             setPosition({ x: 0, y: 0 })
             setScale(1)
-            setCurrentIndex(prev => goingNext ? prev + 1 : prev - 1)
-
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                setDragOffset(0)
-                setTimeout(() => {
-                  setIsAnimating(false)
-                }, 280)
-              })
-            })
-          }, 180)
+            setIsAnimating(false)
+          }, 300)
 
           touchStartRef.current = null
           lastTouchRef.current = null
@@ -594,6 +586,98 @@ export default function ViewerPage() {
   const currentSignedUrl = toProxyUrl(currentPhoto.url)
   const currentVideoUrl = isCurrentVideo ? toDirectVideoUrl(currentPhoto.url) : currentSignedUrl
 
+  // 슬라이드 패널용 컨텐츠 렌더링
+  const renderSlideContent = (photo: Photo, isCurrent: boolean) => {
+    const fileCategory = getFileCategory(photo.name)
+    const isVideo = photo.is_video || fileCategory === 'video'
+    const maxHeightStyle = { maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))' }
+    const fullHeightStyle = { height: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 80px)' }
+    const photoProxyUrl = toProxyUrl(photo.url)
+    const videoUrl = isVideo ? toDirectVideoUrl(photo.url) : photoProxyUrl
+
+    if (isVideo && isCurrent) {
+      return (
+        <HybridVideoPlayer
+          key={photo.url}
+          src={videoUrl}
+          hlsSrc={photo.hls_url ? toProxyUrl(photo.hls_url) : null}
+          hlsStatus={photo.hls_status || 'not_applicable'}
+          controls
+          autoPlay
+          className="max-w-full object-contain"
+          style={maxHeightStyle}
+          onCanPlay={() => setImageLoading(false)}
+          onVideoReady={(video) => { activeVideoRef.current = video }}
+          onError={() => setImageLoading(false)}
+        />
+      )
+    }
+
+    if (isVideo && !isCurrent) {
+      // 비현재 비디오 슬라이드: 썸네일만 표시
+      return <div className="w-full h-full flex items-center justify-center bg-black" />
+    }
+
+    if (fileCategory === 'image') {
+      return (
+        <img
+          key={photo.url}
+          src={photoProxyUrl}
+          alt=""
+          className={`max-w-full object-contain select-none ${
+            isCurrent ? `transition-opacity duration-300 ${imageLoading ? 'opacity-0' : 'opacity-100'}` : ''
+          }`}
+          style={maxHeightStyle}
+          draggable={false}
+          onLoad={isCurrent ? handleImageLoad : undefined}
+        />
+      )
+    }
+
+    if (isCurrent && (fileCategory === 'text' || fileCategory === 'code')) {
+      return (
+        <div className="w-full max-w-4xl mx-auto overflow-hidden" style={fullHeightStyle}>
+          <TextPreview url={photoProxyUrl} filename={photo.name} onDownload={() => startDownload([{ id: photo.id, url: photo.url, name: photo.name }])} />
+        </div>
+      )
+    }
+
+    if (isCurrent && fileCategory === 'pdf') {
+      return (
+        <div className="w-full max-w-5xl mx-auto overflow-hidden" style={fullHeightStyle}>
+          <PDFPreview url={photoProxyUrl} filename={photo.name} onDownload={() => startDownload([{ id: photo.id, url: photo.url, name: photo.name }])} />
+        </div>
+      )
+    }
+
+    if (isCurrent && fileCategory === 'office') {
+      return (
+        <div className="w-full max-w-5xl mx-auto overflow-hidden" style={fullHeightStyle}>
+          <OfficePreview url={photoProxyUrl} filename={photo.name} onDownload={() => startDownload([{ id: photo.id, url: photo.url, name: photo.name }])} />
+        </div>
+      )
+    }
+
+    if (isCurrent && fileCategory === 'audio') {
+      return (
+        <div className="w-full max-w-2xl mx-auto" style={fullHeightStyle}>
+          <AudioPreview url={photoProxyUrl} filename={photo.name} />
+        </div>
+      )
+    }
+
+    if (isCurrent) {
+      return (
+        <UnknownFilePreview filename={photo.name} fileSize={photo.file_size} onDownload={() => startDownload([{ id: photo.id, url: photo.url, name: photo.name }])} />
+      )
+    }
+
+    return <div className="w-full h-full bg-black" />
+  }
+
+  const prevPhoto = currentIndex > 0 ? photos[currentIndex - 1] : null
+  const nextPhoto = currentIndex < photos.length - 1 ? photos[currentIndex + 1] : null
+
   return (
     <main
       className="h-screen bg-black overflow-hidden fixed inset-0"
@@ -703,113 +787,32 @@ export default function ViewerPage() {
           </div>
         )}
 
-        {/* 이미지/비디오 */}
+        {/* 3-패널 슬라이더: 이전/현재/다음 나란히 배치 */}
         <div
-          className="flex items-center justify-center"
+          className="flex items-stretch"
           style={{
-            transform: `translateX(${dragOffset + position.x}px) translateY(${position.y}px) scale(${scale})`,
+            width: '300vw',
+            marginLeft: '-100vw',
+            transform: `translateX(${dragOffset + (scale > 1 ? position.x : 0)}px) translateY(${position.y}px) scale(${scale})`,
             transition: isPanningRef.current || isPinchingRef.current || (dragOffsetRef.current !== 0 && !isAnimating)
               ? 'none'
-              : 'transform 0.28s cubic-bezier(0.25, 0.1, 0.25, 1)',
+              : 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
             touchAction: scale > 1 ? 'none' : 'pan-y',
             willChange: 'transform',
           }}
         >
-          {(() => {
-            const fileCategory = getFileCategory(currentPhoto.name)
-            const isVideo = currentPhoto.is_video || fileCategory === 'video'
-            const maxHeightStyle = { maxHeight: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))' }
-            const fullHeightStyle = { height: 'calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 80px)' }
-
-            if (isVideo) {
-              return (
-                <HybridVideoPlayer
-                  key={currentPhoto.url}
-                  src={currentVideoUrl}
-                  hlsSrc={currentPhoto.hls_url ? toProxyUrl(currentPhoto.hls_url) : null}
-                  hlsStatus={currentPhoto.hls_status || 'not_applicable'}
-                  controls
-                  autoPlay
-                  className="max-w-full object-contain"
-                  style={maxHeightStyle}
-                  onCanPlay={() => setImageLoading(false)}
-                  onVideoReady={(video) => {
-                    activeVideoRef.current = video
-                  }}
-                  onError={() => setImageLoading(false)}
-                />
-              )
-            }
-
-            if (fileCategory === 'image') {
-              return (
-                <img
-                  key={currentPhoto.url}
-                  src={currentSignedUrl}
-                  alt=""
-                  className={`max-w-full object-contain select-none transition-opacity duration-300 ${
-                    imageLoading ? 'opacity-0' : 'opacity-100'
-                  }`}
-                  style={maxHeightStyle}
-                  draggable={false}
-                  onLoad={handleImageLoad}
-                />
-              )
-            }
-
-            if (fileCategory === 'text' || fileCategory === 'code') {
-              return (
-                <div className="w-full max-w-4xl mx-auto overflow-hidden" style={fullHeightStyle}>
-                  <TextPreview
-                    url={currentSignedUrl}
-                    filename={currentPhoto.name}
-                    onDownload={() => startDownload([{ id: currentPhoto.id, url: currentPhoto.url, name: currentPhoto.name }])}
-                  />
-                </div>
-              )
-            }
-
-            if (fileCategory === 'pdf') {
-              return (
-                <div className="w-full max-w-5xl mx-auto overflow-hidden" style={fullHeightStyle}>
-                  <PDFPreview
-                    url={currentSignedUrl}
-                    filename={currentPhoto.name}
-                    onDownload={() => startDownload([{ id: currentPhoto.id, url: currentPhoto.url, name: currentPhoto.name }])}
-                  />
-                </div>
-              )
-            }
-
-            if (fileCategory === 'office') {
-              return (
-                <div className="w-full max-w-5xl mx-auto overflow-hidden" style={fullHeightStyle}>
-                  <OfficePreview
-                    url={currentSignedUrl}
-                    filename={currentPhoto.name}
-                    onDownload={() => startDownload([{ id: currentPhoto.id, url: currentPhoto.url, name: currentPhoto.name }])}
-                  />
-                </div>
-              )
-            }
-
-            if (fileCategory === 'audio') {
-              return (
-                <div className="w-full max-w-2xl mx-auto">
-                  <AudioPreview url={currentSignedUrl} filename={currentPhoto.name} />
-                </div>
-              )
-            }
-
-            // Unknown file type
-            return (
-              <UnknownFilePreview
-                filename={currentPhoto.name}
-                fileSize={currentPhoto.file_size}
-                onDownload={() => startDownload([{ id: currentPhoto.id, url: currentPhoto.url, name: currentPhoto.name }])}
-              />
-            )
-          })()}
+          {/* 이전 슬라이드 */}
+          <div className="w-[100vw] flex-shrink-0 flex items-center justify-center overflow-hidden">
+            {prevPhoto && renderSlideContent(prevPhoto, false)}
+          </div>
+          {/* 현재 슬라이드 */}
+          <div className="w-[100vw] flex-shrink-0 flex items-center justify-center overflow-hidden">
+            {renderSlideContent(currentPhoto, true)}
+          </div>
+          {/* 다음 슬라이드 */}
+          <div className="w-[100vw] flex-shrink-0 flex items-center justify-center overflow-hidden">
+            {nextPhoto && renderSlideContent(nextPhoto, false)}
+          </div>
         </div>
 
         {/* 다음 버튼 - 데스크탑 */}
