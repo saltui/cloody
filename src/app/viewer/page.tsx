@@ -845,17 +845,6 @@ export default function ViewerPage() {
           }`}
         >
           <div className="bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-8 pb-4 sm:pb-6 px-4">
-            {/* 프로그레스 바 */}
-            <div className="w-full h-1 bg-white/20 rounded-full overflow-hidden mb-4">
-              <div
-                className="h-full rounded-full transition-all duration-300"
-                style={{
-                  width: `${((currentIndex + 1) / photos.length) * 100}%`,
-                  background: 'var(--accent-primary)'
-                }}
-              />
-            </div>
-
           {/* 모바일 네비게이션 버튼 */}
           <div className="flex sm:hidden items-center justify-center gap-8">
             <button
