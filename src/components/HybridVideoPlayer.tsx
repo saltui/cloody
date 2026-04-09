@@ -398,12 +398,7 @@ export default memo(function HybridVideoPlayer({
         onError={handleError}
       />
 
-      {/* 로딩 인디케이터 */}
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-          <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin" />
-        </div>
-      )}
+      {/* 로딩 인디케이터 — 뷰어에서는 자체 스피너를 사용하므로 여기선 표시하지 않음 */}
 
       {/* 에러 표시 */}
       {error && (
