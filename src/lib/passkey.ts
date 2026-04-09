@@ -141,7 +141,7 @@ export async function verifyRegistration(
 
   if (error) {
     console.error('Error saving passkey:', error)
-    throw new Error('Failed to save passkey')
+    throw new Error(`Failed to save passkey: ${error.message} (${error.code})`)
   }
 
   // 챌린지 삭제
