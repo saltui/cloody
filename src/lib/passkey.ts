@@ -107,8 +107,11 @@ export async function verifyRegistration(
     .single()
 
   if (!user?.passkey_challenge) {
+    console.error('[passkey] Challenge not found for user:', userId, 'data:', user)
     throw new Error('Challenge not found')
   }
+
+  console.log('[passkey] verifyRegistration config:', { expectedOrigin: origin, expectedRPID: rpID, challengeLength: user.passkey_challenge.length })
 
   const verification = await verifyRegistrationResponse({
     response,
