@@ -1211,6 +1211,8 @@ export default function DrivePage() {
     }
 
     setCurrentFolderId(folderId)
+    window.scrollTo(0, 0)
+    gridContainerRef.current?.scrollTo(0, 0)
     fetchData(folderId, category)
     fetchStorageUsage(true)
   }, [searchParams, fetchData, fetchStorageUsage])
